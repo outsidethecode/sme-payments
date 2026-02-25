@@ -1,0 +1,3 @@
+This challenge will address accelerating payment and improving liquidity for SMEs – with a focus on demonstrating economic impact potential across the economy. We’re seeking innovative solutions for a unified, digital ‘procurement-to-pay’ service for SMEs, enabled by future payment technologies that streamline procurement, automate payment verification, accelerate settlement, and provide access to embedded low-cost liquidity products such as trade finance.
+
+Solutions could reduce B2B payments delays impacting SME cashflow, and tackle inefficient trade credit systems. This has a significant impact on the economy – late payments cost SMEs £22k/year and contribute to 50,000 closures annually.
