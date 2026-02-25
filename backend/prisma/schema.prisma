@@ -1,0 +1,253 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Users ────────────────────────────────────────────────────
+
+enum UserRole {
+  BUYER
+  SUPPLIER
+  LIQUIDITY_PARTNER
+  ADMIN
+}
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  password      String
+  name          String
+  role          UserRole
+  companyName   String   @map("company_name")
+  companyNumber String?  @map("company_number")
+  balance       Int      @default(0) // simulated balance in pennies
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  passkeys             UserPasskey[]
+  purchaseOrdersBuyer  PurchaseOrder[]      @relation("BuyerOrders")
+  purchaseOrdersSupplier PurchaseOrder[]    @relation("SupplierOrders")
+  paymentLocks         PaymentLock[]
+  earlyPaymentsSupplier EarlyPaymentRequest[] @relation("SupplierEarlyPayments")
+  earlyPaymentsLP      EarlyPaymentRequest[] @relation("LPEarlyPayments")
+  settlementsFrom      Settlement[]         @relation("SettlementFrom")
+  settlementsTo        Settlement[]         @relation("SettlementTo")
+  eventLogs            EventLog[]
+
+  @@map("users")
+}
+
+// ── Passkeys (WebAuthn) ──────────────────────────────────────
+
+model UserPasskey {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  credentialId String   @unique @map("credential_id")
+  publicKey    Bytes    @map("public_key")
+  signCount    Int      @default(0) @map("sign_count")
+  deviceType   String?  @map("device_type") // singleDevice | multiDevice
+  backedUp     Boolean  @default(false) @map("backed_up")
+  transports   String[] @default([])
+  createdAt    DateTime @default(now()) @map("created_at")
+  lastUsedAt   DateTime? @map("last_used_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("user_passkeys")
+}
+
+// ── Purchase Orders ──────────────────────────────────────────
+
+enum POStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  IN_PROGRESS
+  DELIVERED
+  VERIFIED
+  SETTLED
+  DISPUTED
+  CANCELLED
+}
+
+enum AcceptanceType {
+  BUYER_CONFIRMATION
+  AUTO_ACCEPT
+}
+
+model PurchaseOrder {
+  id                    String         @id @default(uuid())
+  referenceNumber       String         @unique @map("reference_number")
+  buyerId               String         @map("buyer_id")
+  supplierId            String         @map("supplier_id")
+  description           String
+  lineItems             Json           @map("line_items")
+  amount                Int            // in pennies
+  currency              String         @default("GBP")
+  acceptanceType        AcceptanceType @default(BUYER_CONFIRMATION) @map("acceptance_type")
+  acceptanceWindowHours Int            @default(48) @map("acceptance_window_hours")
+  status                POStatus       @default(DRAFT)
+  paymentLocked         Boolean        @default(false) @map("payment_locked")
+  lockedAt              DateTime?      @map("locked_at")
+  acceptedAt            DateTime?      @map("accepted_at")
+  deliveredAt           DateTime?      @map("delivered_at")
+  verifiedAt            DateTime?      @map("verified_at")
+  settledAt             DateTime?      @map("settled_at")
+  createdAt             DateTime       @default(now()) @map("created_at")
+  updatedAt             DateTime       @updatedAt @map("updated_at")
+
+  buyer    User @relation("BuyerOrders", fields: [buyerId], references: [id])
+  supplier User @relation("SupplierOrders", fields: [supplierId], references: [id])
+
+  paymentLock         PaymentLock?
+  earlyPaymentRequest EarlyPaymentRequest?
+  settlements         Settlement[]
+  platformFees        PlatformFee[]
+
+  @@map("purchase_orders")
+}
+
+// ── Payment Locks (Simulated Open Banking) ───────────────────
+
+enum PaymentLockStatus {
+  PENDING
+  LOCKED
+  RELEASED
+  REFUNDED
+}
+
+model PaymentLock {
+  id              String            @id @default(uuid())
+  purchaseOrderId String            @unique @map("purchase_order_id")
+  buyerId         String            @map("buyer_id")
+  amount          Int
+  status          PaymentLockStatus @default(PENDING)
+  openBankingRef  String?           @map("open_banking_ref")
+  lockedAt        DateTime?         @map("locked_at")
+  releasedAt      DateTime?         @map("released_at")
+  createdAt       DateTime          @default(now()) @map("created_at")
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  buyer         User          @relation(fields: [buyerId], references: [id])
+
+  @@map("payment_locks")
+}
+
+// ── Early Payment Requests ───────────────────────────────────
+
+enum EarlyPaymentStatus {
+  REQUESTED
+  APPROVED
+  FUNDED
+  SETTLED
+  REJECTED
+  DEFAULTED
+}
+
+model EarlyPaymentRequest {
+  id                 String             @id @default(uuid())
+  purchaseOrderId    String             @unique @map("purchase_order_id")
+  supplierId         String             @map("supplier_id")
+  liquidityPartnerId String?            @map("liquidity_partner_id")
+  faceValue          Int                @map("face_value")
+  serviceFee         Int                @map("service_fee") // flat service fee (ujrah)
+  netAdvance         Int                @map("net_advance")
+  status             EarlyPaymentStatus @default(REQUESTED)
+  riskAcknowledged   Boolean            @default(false) @map("risk_acknowledged")
+  fundedAt           DateTime?          @map("funded_at")
+  settledAt          DateTime?          @map("settled_at")
+  createdAt          DateTime           @default(now()) @map("created_at")
+
+  purchaseOrder    PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  supplier         User          @relation("SupplierEarlyPayments", fields: [supplierId], references: [id])
+  liquidityPartner User?         @relation("LPEarlyPayments", fields: [liquidityPartnerId], references: [id])
+
+  @@map("early_payment_requests")
+}
+
+// ── Settlements ──────────────────────────────────────────────
+
+enum SettlementType {
+  STANDARD
+  EARLY_PAY_ADVANCE
+  EARLY_PAY_SETTLEMENT
+}
+
+enum SettlementStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+model Settlement {
+  id              String           @id @default(uuid())
+  purchaseOrderId String           @map("purchase_order_id")
+  fromUserId      String           @map("from_user_id")
+  toUserId        String           @map("to_user_id")
+  amount          Int
+  type            SettlementType
+  status          SettlementStatus @default(PENDING)
+  completedAt     DateTime?        @map("completed_at")
+  createdAt       DateTime         @default(now()) @map("created_at")
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  fromUser      User          @relation("SettlementFrom", fields: [fromUserId], references: [id])
+  toUser        User          @relation("SettlementTo", fields: [toUserId], references: [id])
+
+  @@map("settlements")
+}
+
+// ── Event Log (Append-Only Immutable Ledger) ─────────────────
+
+model EventLog {
+  id              String   @id @default(uuid())
+  sequence        Int      @default(autoincrement())
+  entitySequence  Int      @map("entity_sequence")
+  entityType      String   @map("entity_type")
+  entityId        String   @map("entity_id")
+  eventType       String   @map("event_type")
+  actorId         String   @map("actor_id")
+  actorRole       String   @map("actor_role")
+  payload         Json
+  timestamp       DateTime @default(now())
+  actorSignature  String   @map("actor_signature")
+  authenticatorData String? @map("authenticator_data")
+  actorPublicKey  String   @map("actor_public_key")
+  credentialId    String?  @map("credential_id")
+  previousHash    String   @map("previous_hash")
+  eventHash       String   @unique @map("event_hash")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  actor User @relation(fields: [actorId], references: [id])
+
+  @@unique([entityId, entitySequence])
+  @@index([entityId, entitySequence])
+  @@index([sequence])
+  @@index([actorId])
+  @@index([entityType, eventType])
+  @@map("event_log")
+}
+
+// ── Platform Fees ────────────────────────────────────────────
+
+enum FeeType {
+  TRANSACTION
+  EARLY_PAY_FACILITATION
+}
+
+model PlatformFee {
+  id              String   @id @default(uuid())
+  purchaseOrderId String   @map("purchase_order_id")
+  feeType         FeeType  @map("fee_type")
+  amount          Int
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+
+  @@map("platform_fees")
+}
