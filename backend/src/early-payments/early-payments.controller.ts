@@ -13,11 +13,35 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RolesGuard } from "../auth/roles.guard";
 import { Roles } from "../auth/roles.decorator";
 import { EarlyPaymentsService } from "./early-payments.service";
-import { IsString } from "class-validator";
+import { IsString, IsOptional, ValidateNested } from "class-validator";
+import { Type } from "class-transformer";
+
+class SignatureDataDto {
+  @IsOptional()
+  @IsString()
+  signature?: string;
+
+  @IsOptional()
+  @IsString()
+  authenticatorData?: string;
+
+  @IsOptional()
+  @IsString()
+  publicKey?: string;
+
+  @IsOptional()
+  @IsString()
+  credentialId?: string;
+}
 
 class RequestEarlyPaymentDto {
   @IsString()
   purchaseOrderId: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => SignatureDataDto)
+  signatureData?: SignatureDataDto;
 }
 
 @ApiTags("Early Payments")
@@ -34,6 +58,7 @@ export class EarlyPaymentsController {
     return this.earlyPaymentsService.requestEarlyPayment(
       dto.purchaseOrderId,
       req.user.id,
+      dto.signatureData as any,
     );
   }
 
@@ -61,7 +86,11 @@ export class EarlyPaymentsController {
   @Patch(":id/fund")
   @Roles("LIQUIDITY_PARTNER")
   @ApiOperation({ summary: "Fund an early payment request (LP only)" })
-  async fund(@Param("id") id: string, @Request() req: any) {
-    return this.earlyPaymentsService.fund(id, req.user.id);
+  async fund(
+    @Param("id") id: string,
+    @Request() req: any,
+    @Body() body?: { signatureData?: any },
+  ) {
+    return this.earlyPaymentsService.fund(id, req.user.id, body?.signatureData);
   }
 }

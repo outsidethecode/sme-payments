@@ -1,8 +1,14 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { earlyPayApi, poApi } from "@/lib/api";
+import {
+  earlyPayApi,
+  poApi,
+  passkeysApi,
+  type SignaturePayload,
+} from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { usePasskey } from "@/lib/use-passkey";
 import {
   formatCurrency,
   formatDate,
@@ -30,7 +36,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Zap, DollarSign, ShieldCheck, TrendingUp } from "lucide-react";
+import {
+  Zap,
+  DollarSign,
+  ShieldCheck,
+  TrendingUp,
+  Fingerprint,
+} from "lucide-react";
 import { useState } from "react";
 
 export default function EarlyPaymentsPage() {
@@ -50,6 +62,7 @@ export default function EarlyPaymentsPage() {
 
 function SupplierView() {
   const queryClient = useQueryClient();
+  const { hasPasskey, signing, signAction } = usePasskey();
 
   const { data: earlyPayments, isLoading: epLoading } = useQuery({
     queryKey: ["early-payments"],
@@ -62,11 +75,31 @@ function SupplierView() {
   });
 
   const requestMutation = useMutation({
-    mutationFn: (poId: string) => earlyPayApi.request(poId),
+    mutationFn: async (poId: string) => {
+      const sigResult = await signAction("EARLY_PAYMENT_REQUESTED", poId);
+      let signatureData: SignaturePayload | undefined;
+      if (sigResult) {
+        const { data: verified } = await passkeysApi.authVerify(
+          sigResult.purpose,
+          sigResult.assertion,
+        );
+        signatureData = {
+          signature: verified.signature,
+          authenticatorData: verified.authenticatorData,
+          publicKey: verified.publicKey,
+          credentialId: verified.credentialId,
+        };
+      }
+      return earlyPayApi.request(poId, signatureData);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["early-payments"] });
       queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
-      toast.success("Early payment requested successfully");
+      toast.success(
+        hasPasskey
+          ? "Early payment requested ✓ Passkey signed"
+          : "Early payment requested successfully",
+      );
     },
     onError: (err: Error & { response?: { data?: { message?: string } } }) => {
       toast.error(
@@ -77,7 +110,9 @@ function SupplierView() {
 
   const eligiblePOs = pos?.filter(
     (po) =>
-      (po.status === "ACCEPTED" || po.status === "IN_PROGRESS") &&
+      (po.status === "ACCEPTED" ||
+        po.status === "IN_PROGRESS" ||
+        po.status === "DELIVERED") &&
       !earlyPayments?.find((ep) => ep.purchaseOrderId === po.id),
   );
 
@@ -118,8 +153,7 @@ function SupplierView() {
         <CardHeader>
           <CardTitle className="text-base">Eligible Purchase Orders</CardTitle>
           <CardDescription>
-            Accepted POs with locked payment that you can request early payment
-            on
+            POs with locked payment that you can request early payment on
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -143,6 +177,7 @@ function SupplierView() {
                 <TableRow>
                   <TableHead>Reference</TableHead>
                   <TableHead>Buyer</TableHead>
+                  <TableHead>Status</TableHead>
                   <TableHead>Amount</TableHead>
                   <TableHead>Fee (2.5%)</TableHead>
                   <TableHead>You Receive</TableHead>
@@ -161,6 +196,11 @@ function SupplierView() {
                         {po.reference}
                       </TableCell>
                       <TableCell>{po.buyer?.companyName ?? "—"}</TableCell>
+                      <TableCell>
+                        <Badge variant={statusVariant(po.status)}>
+                          {statusLabel(po.status)}
+                        </Badge>
+                      </TableCell>
                       <TableCell className="font-medium">
                         {formatCurrency(po.totalAmountPennies)}
                       </TableCell>
@@ -174,10 +214,14 @@ function SupplierView() {
                         <Button
                           size="sm"
                           onClick={() => requestMutation.mutate(po.id)}
-                          disabled={requestMutation.isPending}
+                          disabled={requestMutation.isPending || signing}
                         >
-                          <Zap className="mr-1 h-3 w-3" />
-                          Request
+                          {signing ? (
+                            <Fingerprint className="mr-1 h-3 w-3 animate-pulse" />
+                          ) : (
+                            <Zap className="mr-1 h-3 w-3" />
+                          )}
+                          {signing ? "Signing…" : "Request"}
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -245,6 +289,7 @@ function SupplierView() {
 function LPView() {
   const queryClient = useQueryClient();
   const [fundingId, setFundingId] = useState<string | null>(null);
+  const { hasPasskey, signing, signAction } = usePasskey();
 
   const { data: marketplace, isLoading: mktLoading } = useQuery({
     queryKey: ["early-payments-marketplace"],
@@ -257,14 +302,34 @@ function LPView() {
   });
 
   const fundMutation = useMutation({
-    mutationFn: (id: string) => earlyPayApi.fund(id),
+    mutationFn: async (id: string) => {
+      const sigResult = await signAction("EARLY_PAYMENT_FUNDED", id);
+      let signatureData: SignaturePayload | undefined;
+      if (sigResult) {
+        const { data: verified } = await passkeysApi.authVerify(
+          sigResult.purpose,
+          sigResult.assertion,
+        );
+        signatureData = {
+          signature: verified.signature,
+          authenticatorData: verified.authenticatorData,
+          publicKey: verified.publicKey,
+          credentialId: verified.credentialId,
+        };
+      }
+      return earlyPayApi.fund(id, signatureData);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ["early-payments-marketplace"],
       });
       queryClient.invalidateQueries({ queryKey: ["early-payments"] });
       queryClient.invalidateQueries({ queryKey: ["balance"] });
-      toast.success("Early payment funded successfully");
+      toast.success(
+        hasPasskey
+          ? "Early payment funded ✓ Passkey signed"
+          : "Early payment funded successfully",
+      );
       setFundingId(null);
     },
     onError: (err: Error & { response?: { data?: { message?: string } } }) => {
@@ -398,9 +463,18 @@ function LPView() {
                         <Button
                           size="sm"
                           onClick={() => fundMutation.mutate(ep.id)}
-                          disabled={fundMutation.isPending}
+                          disabled={fundMutation.isPending || signing}
                         >
-                          {fundMutation.isPending ? "Funding…" : "Confirm"}
+                          {signing ? (
+                            <>
+                              <Fingerprint className="mr-1 h-3 w-3 animate-pulse" />
+                              Signing…
+                            </>
+                          ) : fundMutation.isPending ? (
+                            "Funding…"
+                          ) : (
+                            "Confirm"
+                          )}
                         </Button>
                         <Button
                           size="sm"

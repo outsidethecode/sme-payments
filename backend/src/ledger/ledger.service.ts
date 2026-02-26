@@ -2,6 +2,14 @@ import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { createHash } from "crypto";
 
+/** Optional passkey signature data to attach to a ledger event. */
+export interface SignatureData {
+  signature: string;
+  authenticatorData: string;
+  publicKey: string;
+  credentialId: string;
+}
+
 /**
  * Canonical JSON serialization with sorted keys.
  * PostgreSQL JSONB does not preserve key order, so we must sort
@@ -34,6 +42,14 @@ export interface LogEventInput {
   actorId: string;
   actorRole: string;
   payload: Record<string, unknown>;
+  /** Real passkey signature (base64). Falls back to SYSTEM if omitted. */
+  signature?: string;
+  /** Authenticator data from WebAuthn assertion (base64). */
+  authenticatorData?: string;
+  /** Actor's public key (base64). Falls back to SYSTEM if omitted. */
+  publicKey?: string;
+  /** Credential ID that produced the signature. */
+  credentialId?: string;
 }
 
 @Injectable()
@@ -72,6 +88,12 @@ export class LedgerService {
 
     const eventHash = createHash("sha256").update(hashInput).digest("hex");
 
+    // Use real passkey signature if provided, otherwise mark as SYSTEM
+    const actorSignature = input.signature ?? "SYSTEM";
+    const actorPublicKey = input.publicKey ?? "SYSTEM";
+    const authenticatorData = input.authenticatorData ?? null;
+    const credentialId = input.credentialId ?? null;
+
     return this.prisma.eventLog.create({
       data: {
         entityType: input.entityType,
@@ -84,9 +106,10 @@ export class LedgerService {
         timestamp,
         previousHash,
         eventHash,
-        // For MVP, we use a placeholder signature — real Passkey signing comes later
-        actorSignature: "MVP_PLACEHOLDER",
-        actorPublicKey: "MVP_PLACEHOLDER",
+        actorSignature,
+        authenticatorData,
+        actorPublicKey,
+        credentialId,
       },
     });
   }
@@ -105,9 +128,12 @@ export class LedgerService {
   /**
    * Verify the hash chain for a given entity.
    */
-  async verifyChain(
-    entityId: string,
-  ): Promise<{ valid: boolean; eventCount?: number; details: string }> {
+  async verifyChain(entityId: string): Promise<{
+    valid: boolean;
+    eventCount?: number;
+    signedCount?: number;
+    details: string;
+  }> {
     const events = await this.prisma.eventLog.findMany({
       where: { entityId },
       orderBy: { entitySequence: "asc" },
@@ -117,8 +143,18 @@ export class LedgerService {
       return { valid: true, details: "No events found for this entity" };
     }
 
+    let signedCount = 0;
+
     for (let i = 0; i < events.length; i++) {
       const event = events[i];
+
+      // Track passkey-signed events
+      if (
+        event.actorSignature !== "SYSTEM" &&
+        event.actorSignature !== "MVP_PLACEHOLDER"
+      ) {
+        signedCount++;
+      }
 
       // Check previous hash linkage
       if (i === 0) {
@@ -163,7 +199,8 @@ export class LedgerService {
     return {
       valid: true,
       eventCount: events.length,
-      details: `All ${events.length} events verified successfully`,
+      signedCount,
+      details: `All ${events.length} events verified (${signedCount} passkey-signed, ${events.length - signedCount} system)`,
     };
   }
 }

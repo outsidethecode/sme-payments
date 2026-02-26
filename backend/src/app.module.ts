@@ -11,6 +11,7 @@ import { SettlementsModule } from "./settlements/settlements.module";
 import { BankModule } from "./bank/bank.module";
 import { LedgerModule } from "./ledger/ledger.module";
 import { AdminModule } from "./admin/admin.module";
+import { PasskeysModule } from "./passkeys/passkeys.module";
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { AdminModule } from "./admin/admin.module";
     BankModule,
     LedgerModule,
     AdminModule,
+    PasskeysModule,
   ],
 })
 export class AppModule {}

@@ -123,4 +123,15 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* Tailwind v4 removed default cursor:pointer — restore for interactive elements */
+  button,
+  [role="button"],
+  a,
+  select,
+  summary,
+  [type="button"],
+  [type="submit"],
+  [type="reset"] {
+    cursor: pointer;
+  }
 }

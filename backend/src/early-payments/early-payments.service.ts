@@ -5,7 +5,7 @@ import {
   ForbiddenException,
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
-import { LedgerService } from "../ledger/ledger.service";
+import { LedgerService, SignatureData } from "../ledger/ledger.service";
 
 @Injectable()
 export class EarlyPaymentsService {
@@ -15,10 +15,14 @@ export class EarlyPaymentsService {
   ) {}
 
   /**
-   * Supplier requests early payment on an ACCEPTED PO
-   * The PO must be accepted (payment locked) but not yet delivered/settled
+   * Supplier requests early payment on an ACCEPTED / IN_PROGRESS / DELIVERED PO.
+   * The PO must have a locked payment but not yet settled.
    */
-  async requestEarlyPayment(purchaseOrderId: string, supplierId: string) {
+  async requestEarlyPayment(
+    purchaseOrderId: string,
+    supplierId: string,
+    sig?: SignatureData,
+  ) {
     const po = await this.prisma.purchaseOrder.findUnique({
       where: { id: purchaseOrderId },
       include: { paymentLock: true },
@@ -30,9 +34,10 @@ export class EarlyPaymentsService {
         "Only the supplier of this PO can request early payment",
       );
     }
-    if (po.status !== "ACCEPTED" && po.status !== "IN_PROGRESS") {
+    const eligibleStatuses = ["ACCEPTED", "IN_PROGRESS", "DELIVERED"];
+    if (!eligibleStatuses.includes(po.status)) {
       throw new BadRequestException(
-        `PO must be in ACCEPTED or IN_PROGRESS status to request early payment (currently ${po.status})`,
+        `PO must be in ACCEPTED, IN_PROGRESS, or DELIVERED status to request early payment (currently ${po.status})`,
       );
     }
     if (!po.paymentLock || po.paymentLock.status !== "LOCKED") {
@@ -111,6 +116,7 @@ export class EarlyPaymentsService {
         serviceFee: feeAmount,
         netAdvance,
       },
+      ...sig,
     });
 
     return this.formatEarlyPayment(request);
@@ -240,7 +246,7 @@ export class EarlyPaymentsService {
    * LP funds an early payment request
    * LP pays supplier the net advance, LP assumes delivery risk
    */
-  async fund(id: string, lpId: string) {
+  async fund(id: string, lpId: string, sig?: SignatureData) {
     const request = await this.prisma.earlyPaymentRequest.findUnique({
       where: { id },
       include: { purchaseOrder: true },
@@ -371,6 +377,7 @@ export class EarlyPaymentsService {
         serviceFee: request.serviceFee,
         faceValue: request.faceValue,
       },
+      ...sig,
     });
 
     return this.formatEarlyPayment(result);

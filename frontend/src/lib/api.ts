@@ -158,7 +158,18 @@ export interface EventLogEntry {
   timestamp: string;
   eventHash: string;
   previousHash: string | null;
+  actorSignature: string;
+  authenticatorData: string | null;
+  actorPublicKey: string;
+  credentialId: string | null;
   createdAt: string;
+}
+
+export interface SignaturePayload {
+  signature: string;
+  authenticatorData: string;
+  publicKey: string;
+  credentialId: string;
 }
 
 export const poApi = {
@@ -170,17 +181,28 @@ export const poApi = {
     description?: string;
     lineItems: LineItem[];
   }) => api.post<PurchaseOrder>("/purchase-orders", data),
-  send: (id: string) => api.patch<PurchaseOrder>(`/purchase-orders/${id}/send`),
-  accept: (id: string) =>
-    api.patch<PurchaseOrder>(`/purchase-orders/${id}/accept`),
-  reject: (id: string) =>
-    api.patch<PurchaseOrder>(`/purchase-orders/${id}/reject`),
-  markDelivered: (id: string) =>
-    api.patch<PurchaseOrder>(`/purchase-orders/${id}/deliver`),
-  verifyDelivery: (id: string) =>
-    api.patch<PurchaseOrder>(`/purchase-orders/${id}/verify`),
-  dispute: (id: string) =>
-    api.patch<PurchaseOrder>(`/purchase-orders/${id}/dispute`),
+  send: (id: string, signatureData?: SignaturePayload) =>
+    api.patch<PurchaseOrder>(`/purchase-orders/${id}/send`, { signatureData }),
+  accept: (id: string, signatureData?: SignaturePayload) =>
+    api.patch<PurchaseOrder>(`/purchase-orders/${id}/accept`, {
+      signatureData,
+    }),
+  reject: (id: string, signatureData?: SignaturePayload) =>
+    api.patch<PurchaseOrder>(`/purchase-orders/${id}/reject`, {
+      signatureData,
+    }),
+  markDelivered: (id: string, signatureData?: SignaturePayload) =>
+    api.patch<PurchaseOrder>(`/purchase-orders/${id}/deliver`, {
+      signatureData,
+    }),
+  verifyDelivery: (id: string, signatureData?: SignaturePayload) =>
+    api.patch<PurchaseOrder>(`/purchase-orders/${id}/verify`, {
+      signatureData,
+    }),
+  dispute: (id: string, signatureData?: SignaturePayload) =>
+    api.patch<PurchaseOrder>(`/purchase-orders/${id}/dispute`, {
+      signatureData,
+    }),
 };
 
 export const earlyPayApi = {
@@ -188,10 +210,15 @@ export const earlyPayApi = {
   marketplace: () =>
     api.get<EarlyPaymentRequest[]>("/early-payments/marketplace"),
   get: (id: string) => api.get<EarlyPaymentRequest>(`/early-payments/${id}`),
-  request: (purchaseOrderId: string) =>
-    api.post<EarlyPaymentRequest>("/early-payments", { purchaseOrderId }),
-  fund: (id: string) =>
-    api.patch<EarlyPaymentRequest>(`/early-payments/${id}/fund`),
+  request: (purchaseOrderId: string, signatureData?: SignaturePayload) =>
+    api.post<EarlyPaymentRequest>("/early-payments", {
+      purchaseOrderId,
+      signatureData,
+    }),
+  fund: (id: string, signatureData?: SignaturePayload) =>
+    api.patch<EarlyPaymentRequest>(`/early-payments/${id}/fund`, {
+      signatureData,
+    }),
 };
 
 export const paymentLocksApi = {
@@ -204,7 +231,61 @@ export const ledgerApi = {
       params: entityId ? { entityId } : {},
     }),
   verify: (entityId: string) =>
-    api.get<{ valid: boolean; details: string }>(`/ledger/verify/${entityId}`),
+    api.get<{
+      valid: boolean;
+      eventCount?: number;
+      signedCount?: number;
+      details: string;
+    }>(`/ledger/verify/${entityId}`),
+  /** Step 1: Request a signing challenge for a specific action */
+  challenge: (entityId: string, eventType: string) =>
+    api.post<{ purpose: string; options: any }>("/ledger/challenge", {
+      entityId,
+      eventType,
+    }),
+  /** Step 2: Submit a signed event with the WebAuthn assertion */
+  submitSigned: (data: {
+    purpose: string;
+    assertion: any;
+    entityType: string;
+    entityId: string;
+    eventType: string;
+    payload: Record<string, unknown>;
+  }) => api.post("/ledger/events", data),
+};
+
+// ── Passkeys ──────────────────────────────────────────────────
+
+export const passkeysApi = {
+  status: () => api.get<{ hasPasskey: boolean }>("/passkeys/status"),
+  list: () =>
+    api.get<
+      {
+        id: string;
+        credentialId: string;
+        deviceType: string | null;
+        backedUp: boolean;
+        createdAt: string;
+        lastUsedAt: string | null;
+      }[]
+    >("/passkeys"),
+  registerOptions: () => api.post<any>("/passkeys/register/options"),
+  registerVerify: (response: any) =>
+    api.post<{ verified: boolean; credentialId: string }>(
+      "/passkeys/register/verify",
+      response,
+    ),
+  authOptions: (purpose: string) =>
+    api.post<any>("/passkeys/authenticate/options", { purpose }),
+  authVerify: (purpose: string, response: any) =>
+    api.post<{
+      verified: boolean;
+      credentialId: string;
+      signature: string;
+      authenticatorData: string;
+      publicKey: string;
+    }>("/passkeys/authenticate/verify", { purpose, response }),
+  delete: (id: string) => api.delete(`/passkeys/${id}`),
 };
 
 export const usersApi = {

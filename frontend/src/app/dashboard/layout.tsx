@@ -24,6 +24,7 @@ import {
   LogOut,
   ChevronDown,
 } from "lucide-react";
+import { PasskeyBanner } from "@/components/passkey-banner";
 
 const NAV_ITEMS = [
   {
@@ -169,7 +170,10 @@ export default function DashboardLayout({
           </Button>
         </header>
 
-        <div className="p-6">{children}</div>
+        <div className="p-6">
+          <PasskeyBanner />
+          {children}
+        </div>
       </main>
     </div>
   );

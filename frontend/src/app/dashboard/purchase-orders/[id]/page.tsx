@@ -2,8 +2,9 @@
 
 import { useParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { poApi, ledgerApi } from "@/lib/api";
+import { poApi, ledgerApi, type SignaturePayload } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { usePasskey } from "@/lib/use-passkey";
 import {
   formatCurrency,
   formatDate,
@@ -40,12 +41,14 @@ import {
   Truck,
   ShieldCheck,
   AlertTriangle,
+  Fingerprint,
 } from "lucide-react";
 
 export default function PurchaseOrderDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const { hasPasskey, signing, signAction } = usePasskey();
 
   const { data: po, isLoading } = useQuery({
     queryKey: ["purchase-order", id],
@@ -59,17 +62,46 @@ export default function PurchaseOrderDetailPage() {
     enabled: !!id,
   });
 
-  function makeAction(
-    action: (id: string) => Promise<unknown>,
+  /**
+   * Create a passkey-signing mutation.
+   * Before calling the API action, requests a WebAuthn signing challenge
+   * and triggers a biometric prompt. The resulting signature is sent
+   * alongside the action for immutable ledger recording.
+   */
+  function makeSignedAction(
+    eventType: string,
+    action: (id: string, sig?: SignaturePayload) => Promise<unknown>,
     successMsg: string,
   ) {
     return useMutation({
-      mutationFn: () => action(id),
+      mutationFn: async () => {
+        // Step 1: Get passkey signature (triggers biometric if passkey registered)
+        const sigResult = await signAction(eventType, id);
+
+        // Step 2: If signed, verify assertion on server and get sig data
+        let signatureData: SignaturePayload | undefined;
+        if (sigResult) {
+          const { data: verified } = await import("@/lib/api").then((m) =>
+            m.passkeysApi.authVerify(sigResult.purpose, sigResult.assertion),
+          );
+          signatureData = {
+            signature: verified.signature,
+            authenticatorData: verified.authenticatorData,
+            publicKey: verified.publicKey,
+            credentialId: verified.credentialId,
+          };
+        }
+
+        // Step 3: Perform the action with signature attached
+        return action(id, signatureData);
+      },
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: ["purchase-order", id] });
         queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
         queryClient.invalidateQueries({ queryKey: ["ledger", id] });
-        toast.success(successMsg);
+        toast.success(
+          hasPasskey ? `${successMsg} ✓ Passkey signed` : successMsg,
+        );
       },
       onError: (
         err: Error & { response?: { data?: { message?: string } } },
@@ -80,12 +112,36 @@ export default function PurchaseOrderDetailPage() {
   }
 
   /* eslint-disable react-hooks/rules-of-hooks */
-  const sendMutation = makeAction(poApi.send, "PO sent to supplier");
-  const acceptMutation = makeAction(poApi.accept, "PO accepted");
-  const rejectMutation = makeAction(poApi.reject, "PO rejected");
-  const deliverMutation = makeAction(poApi.markDelivered, "Delivery marked");
-  const verifyMutation = makeAction(poApi.verifyDelivery, "Delivery verified");
-  const disputeMutation = makeAction(poApi.dispute, "Delivery disputed");
+  const sendMutation = makeSignedAction(
+    "PO_SENT",
+    poApi.send,
+    "PO sent to supplier",
+  );
+  const acceptMutation = makeSignedAction(
+    "PO_ACCEPTED",
+    poApi.accept,
+    "PO accepted",
+  );
+  const rejectMutation = makeSignedAction(
+    "PO_CANCELLED",
+    poApi.reject,
+    "PO rejected",
+  );
+  const deliverMutation = makeSignedAction(
+    "DELIVERY_MARKED",
+    poApi.markDelivered,
+    "Delivery marked",
+  );
+  const verifyMutation = makeSignedAction(
+    "DELIVERY_VERIFIED",
+    poApi.verifyDelivery,
+    "Delivery verified",
+  );
+  const disputeMutation = makeSignedAction(
+    "DELIVERY_DISPUTED",
+    poApi.dispute,
+    "Delivery disputed",
+  );
   /* eslint-enable react-hooks/rules-of-hooks */
 
   if (isLoading) {
@@ -132,10 +188,16 @@ export default function PurchaseOrderDetailPage() {
 
       {/* Actions */}
       <div className="flex flex-wrap gap-2">
+        {signing && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Fingerprint className="h-4 w-4 animate-pulse" />
+            Waiting for biometric…
+          </div>
+        )}
         {isBuyer && po.status === "DRAFT" && (
           <Button
             onClick={() => sendMutation.mutate()}
-            disabled={sendMutation.isPending}
+            disabled={sendMutation.isPending || signing}
           >
             <Send className="mr-2 h-4 w-4" />
             Send to Supplier
@@ -145,7 +207,7 @@ export default function PurchaseOrderDetailPage() {
           <>
             <Button
               onClick={() => acceptMutation.mutate()}
-              disabled={acceptMutation.isPending}
+              disabled={acceptMutation.isPending || signing}
             >
               <Check className="mr-2 h-4 w-4" />
               Accept
@@ -153,7 +215,7 @@ export default function PurchaseOrderDetailPage() {
             <Button
               variant="destructive"
               onClick={() => rejectMutation.mutate()}
-              disabled={rejectMutation.isPending}
+              disabled={rejectMutation.isPending || signing}
             >
               <X className="mr-2 h-4 w-4" />
               Reject
@@ -164,7 +226,7 @@ export default function PurchaseOrderDetailPage() {
           (po.status === "ACCEPTED" || po.status === "IN_PROGRESS") && (
             <Button
               onClick={() => deliverMutation.mutate()}
-              disabled={deliverMutation.isPending}
+              disabled={deliverMutation.isPending || signing}
             >
               <Truck className="mr-2 h-4 w-4" />
               Mark Delivered
@@ -174,7 +236,7 @@ export default function PurchaseOrderDetailPage() {
           <>
             <Button
               onClick={() => verifyMutation.mutate()}
-              disabled={verifyMutation.isPending}
+              disabled={verifyMutation.isPending || signing}
             >
               <ShieldCheck className="mr-2 h-4 w-4" />
               Verify Delivery
@@ -182,7 +244,7 @@ export default function PurchaseOrderDetailPage() {
             <Button
               variant="destructive"
               onClick={() => disputeMutation.mutate()}
-              disabled={disputeMutation.isPending}
+              disabled={disputeMutation.isPending || signing}
             >
               <AlertTriangle className="mr-2 h-4 w-4" />
               Dispute
@@ -318,9 +380,21 @@ export default function PurchaseOrderDetailPage() {
                 >
                   <div className="mt-0.5 h-2 w-2 rounded-full bg-primary" />
                   <div className="flex-1">
-                    <p className="font-medium">
-                      {statusLabel(event.eventType)}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium">
+                        {statusLabel(event.eventType)}
+                      </p>
+                      {event.actorSignature &&
+                        event.actorSignature !== "SYSTEM" && (
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] gap-1"
+                          >
+                            <Fingerprint className="h-3 w-3" />
+                            Signed
+                          </Badge>
+                        )}
+                    </div>
                     <p className="text-xs text-muted-foreground">
                       {formatDateTime(event.createdAt)}
                     </p>

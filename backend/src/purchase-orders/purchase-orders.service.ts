@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
-import { LedgerService } from "../ledger/ledger.service";
+import { LedgerService, SignatureData } from "../ledger/ledger.service";
 import { UsersService } from "../users/users.service";
 
 // Simple PO reference generator
@@ -180,7 +180,7 @@ export class PurchaseOrdersService {
     return this.formatPO(po);
   }
 
-  async send(id: string, actorId: string) {
+  async send(id: string, actorId: string, sig?: SignatureData) {
     const po = await this.requireStatus(id, "DRAFT");
     if (po.buyerId !== actorId)
       throw new ForbiddenException("Only the buyer can send this PO");
@@ -218,12 +218,13 @@ export class PurchaseOrdersService {
       actorId,
       actorRole: "BUYER",
       payload: { supplierId: po.supplierId },
+      ...sig,
     });
 
     return this.formatPO(updated);
   }
 
-  async accept(id: string, actorId: string) {
+  async accept(id: string, actorId: string, sig?: SignatureData) {
     const po = await this.requireStatus(id, "SENT");
     if (po.supplierId !== actorId)
       throw new ForbiddenException("Only the supplier can accept");
@@ -296,6 +297,7 @@ export class PurchaseOrdersService {
       actorId,
       actorRole: "SUPPLIER",
       payload: { amount: po.amount },
+      ...sig,
     });
 
     await this.ledger.logEvent({
@@ -315,7 +317,7 @@ export class PurchaseOrdersService {
     return this.formatPO(result);
   }
 
-  async reject(id: string, actorId: string) {
+  async reject(id: string, actorId: string, sig?: SignatureData) {
     const po = await this.requireStatus(id, "SENT");
     if (po.supplierId !== actorId)
       throw new ForbiddenException("Only the supplier can reject");
@@ -353,12 +355,13 @@ export class PurchaseOrdersService {
       actorId,
       actorRole: "SUPPLIER",
       payload: { reason: "Rejected by supplier" },
+      ...sig,
     });
 
     return this.formatPO(updated);
   }
 
-  async markDelivered(id: string, actorId: string) {
+  async markDelivered(id: string, actorId: string, sig?: SignatureData) {
     const po = await this.prisma.purchaseOrder.findUnique({ where: { id } });
     if (!po) throw new NotFoundException("PO not found");
     if (po.status !== "ACCEPTED" && po.status !== "IN_PROGRESS") {
@@ -402,12 +405,13 @@ export class PurchaseOrdersService {
       actorId,
       actorRole: "SUPPLIER",
       payload: { deliveredAt: updated.deliveredAt },
+      ...sig,
     });
 
     return this.formatPO(updated);
   }
 
-  async verifyDelivery(id: string, actorId: string) {
+  async verifyDelivery(id: string, actorId: string, sig?: SignatureData) {
     const po = await this.requireStatus(id, "DELIVERED");
     if (po.buyerId !== actorId)
       throw new ForbiddenException("Only the buyer can verify delivery");
@@ -551,6 +555,7 @@ export class PurchaseOrdersService {
       actorId,
       actorRole: "BUYER",
       payload: { verifiedAt: new Date() },
+      ...sig,
     });
 
     await this.ledger.logEvent({
@@ -571,7 +576,7 @@ export class PurchaseOrdersService {
     return this.formatPO(result.settledPO);
   }
 
-  async dispute(id: string, actorId: string) {
+  async dispute(id: string, actorId: string, sig?: SignatureData) {
     const po = await this.requireStatus(id, "DELIVERED");
     if (po.buyerId !== actorId)
       throw new ForbiddenException("Only the buyer can dispute");
@@ -609,6 +614,7 @@ export class PurchaseOrdersService {
       actorId,
       actorRole: "BUYER",
       payload: {},
+      ...sig,
     });
 
     return this.formatPO(updated);

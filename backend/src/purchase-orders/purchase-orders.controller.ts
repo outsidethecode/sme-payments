@@ -84,42 +84,66 @@ export class PurchaseOrdersController {
   @Patch(":id/send")
   @Roles("BUYER")
   @ApiOperation({ summary: "Send PO to supplier (Buyer only)" })
-  async send(@Param("id") id: string, @Request() req: any) {
-    return this.poService.send(id, req.user.id);
+  async send(
+    @Param("id") id: string,
+    @Request() req: any,
+    @Body() body?: { signatureData?: any },
+  ) {
+    return this.poService.send(id, req.user.id, body?.signatureData);
   }
 
   @Patch(":id/accept")
   @Roles("SUPPLIER")
   @ApiOperation({ summary: "Accept a PO (Supplier only)" })
-  async accept(@Param("id") id: string, @Request() req: any) {
-    return this.poService.accept(id, req.user.id);
+  async accept(
+    @Param("id") id: string,
+    @Request() req: any,
+    @Body() body?: { signatureData?: any },
+  ) {
+    return this.poService.accept(id, req.user.id, body?.signatureData);
   }
 
   @Patch(":id/reject")
   @Roles("SUPPLIER")
   @ApiOperation({ summary: "Reject a PO (Supplier only)" })
-  async reject(@Param("id") id: string, @Request() req: any) {
-    return this.poService.reject(id, req.user.id);
+  async reject(
+    @Param("id") id: string,
+    @Request() req: any,
+    @Body() body?: { signatureData?: any },
+  ) {
+    return this.poService.reject(id, req.user.id, body?.signatureData);
   }
 
   @Patch(":id/deliver")
   @Roles("SUPPLIER")
   @ApiOperation({ summary: "Mark PO as delivered (Supplier only)" })
-  async deliver(@Param("id") id: string, @Request() req: any) {
-    return this.poService.markDelivered(id, req.user.id);
+  async deliver(
+    @Param("id") id: string,
+    @Request() req: any,
+    @Body() body?: { signatureData?: any },
+  ) {
+    return this.poService.markDelivered(id, req.user.id, body?.signatureData);
   }
 
   @Patch(":id/verify")
   @Roles("BUYER")
   @ApiOperation({ summary: "Verify delivery (Buyer only)" })
-  async verify(@Param("id") id: string, @Request() req: any) {
-    return this.poService.verifyDelivery(id, req.user.id);
+  async verify(
+    @Param("id") id: string,
+    @Request() req: any,
+    @Body() body?: { signatureData?: any },
+  ) {
+    return this.poService.verifyDelivery(id, req.user.id, body?.signatureData);
   }
 
   @Patch(":id/dispute")
   @Roles("BUYER")
   @ApiOperation({ summary: "Dispute delivery (Buyer only)" })
-  async dispute(@Param("id") id: string, @Request() req: any) {
-    return this.poService.dispute(id, req.user.id);
+  async dispute(
+    @Param("id") id: string,
+    @Request() req: any,
+    @Body() body?: { signatureData?: any },
+  ) {
+    return this.poService.dispute(id, req.user.id, body?.signatureData);
   }
 }
