@@ -189,3 +189,20 @@ The final trust anchor: proving that a public key belongs to a specific, verifie
 
 **If asked "Can you prove this works?"**
 > "Yes. Our MVP includes a working proof endpoint. For any signed event, we can produce a self-contained evidence bundle containing the original business intent, the cryptographic signature, the hash chain context, and step-by-step verification instructions. Any developer with access to standard WebAuthn libraries can independently verify it."
+
+
+---
+Merkle anchoring is production-ready, robust, secure, and scalable. RFC 3161 is used in legal proceedings. CT logs protect billions of connections. These are not experimental.
+But no single mechanism delivers full decentralised trust. What delivers trust is the composition:
+
+![alt text](image.png)
+
+Each layer eliminates a specific class of attack. Together they give you a system where:
+Users can't deny their actions (passkey)
+The platform can't rewrite history (hash chain + anchor)
+Omissions are detectable by any affected party (receipts)
+
+The only entity you're still trusting is the timestamping authority — but RFC 3161 TSAs are typically operated by Certificate Authorities under strict audit (e.g., DigiCert, GlobalSign), and their trustworthiness is the same foundation HTTPS relies on. If you trust HTTPS, you can trust this.
+What this architecture doesn't do is eliminate the platform entirely — but for a regulated fintech, that's actually appropriate. The FCA expects an accountable operator. The goal isn't to remove the platform; it's to make the platform cryptographically unable to cheat without detection.
+
+![alt text](image-1.png)
