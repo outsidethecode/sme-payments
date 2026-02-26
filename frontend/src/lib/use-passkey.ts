@@ -86,7 +86,11 @@ export function usePasskey() {
     async (
       eventType: string,
       entityId: string,
-    ): Promise<{ purpose: string; assertion: any } | null> => {
+    ): Promise<{
+      purpose: string;
+      assertion: any;
+      intentHash: string;
+    } | null> => {
       // If no passkey, skip signing (backend will use SYSTEM)
       if (!hasPasskey) {
         return null;
@@ -94,7 +98,7 @@ export function usePasskey() {
 
       setSigning(true);
       try {
-        // 1. Request signing challenge
+        // 1. Request signing challenge (challenge = SHA-256 of business intent)
         const { data: challengeData } = await ledgerApi.challenge(
           entityId,
           eventType,
@@ -105,6 +109,7 @@ export function usePasskey() {
 
         return {
           purpose: challengeData.purpose,
+          intentHash: challengeData.intentHash,
           assertion,
         };
       } catch (err: any) {

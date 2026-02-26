@@ -162,6 +162,8 @@ export interface EventLogEntry {
   authenticatorData: string | null;
   actorPublicKey: string;
   credentialId: string | null;
+  intentHash: string | null;
+  clientDataJSON: string | null;
   createdAt: string;
 }
 
@@ -170,6 +172,8 @@ export interface SignaturePayload {
   authenticatorData: string;
   publicKey: string;
   credentialId: string;
+  intentHash?: string;
+  clientDataJSON?: string;
 }
 
 export const poApi = {
@@ -239,10 +243,10 @@ export const ledgerApi = {
     }>(`/ledger/verify/${entityId}`),
   /** Step 1: Request a signing challenge for a specific action */
   challenge: (entityId: string, eventType: string) =>
-    api.post<{ purpose: string; options: any }>("/ledger/challenge", {
-      entityId,
-      eventType,
-    }),
+    api.post<{ purpose: string; intentHash: string; options: any }>(
+      "/ledger/challenge",
+      { entityId, eventType },
+    ),
   /** Step 2: Submit a signed event with the WebAuthn assertion */
   submitSigned: (data: {
     purpose: string;
@@ -251,7 +255,10 @@ export const ledgerApi = {
     entityId: string;
     eventType: string;
     payload: Record<string, unknown>;
+    intentHash?: string;
   }) => api.post("/ledger/events", data),
+  /** Get self-contained proof bundle for external verification */
+  proof: (eventId: string) => api.get(`/ledger/proof/${eventId}`),
 };
 
 // ── Passkeys ──────────────────────────────────────────────────
@@ -283,6 +290,7 @@ export const passkeysApi = {
       credentialId: string;
       signature: string;
       authenticatorData: string;
+      clientDataJSON: string;
       publicKey: string;
     }>("/passkeys/authenticate/verify", { purpose, response }),
   delete: (id: string) => api.delete(`/passkeys/${id}`),

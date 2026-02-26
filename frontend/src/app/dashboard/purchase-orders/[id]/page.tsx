@@ -89,6 +89,8 @@ export default function PurchaseOrderDetailPage() {
             authenticatorData: verified.authenticatorData,
             publicKey: verified.publicKey,
             credentialId: verified.credentialId,
+            intentHash: sigResult.intentHash,
+            clientDataJSON: verified.clientDataJSON,
           };
         }
 

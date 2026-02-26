@@ -8,6 +8,8 @@ export interface SignatureData {
   authenticatorData: string;
   publicKey: string;
   credentialId: string;
+  intentHash?: string;
+  clientDataJSON?: string;
 }
 
 /**
@@ -50,6 +52,10 @@ export interface LogEventInput {
   publicKey?: string;
   /** Credential ID that produced the signature. */
   credentialId?: string;
+  /** SHA-256 of the business intent, used as the WebAuthn challenge. */
+  intentHash?: string;
+  /** Raw WebAuthn clientDataJSON — contains the challenge + origin, needed for independent verification. */
+  clientDataJSON?: string;
 }
 
 @Injectable()
@@ -110,6 +116,8 @@ export class LedgerService {
         authenticatorData,
         actorPublicKey,
         credentialId,
+        intentHash: input.intentHash ?? null,
+        clientDataJSON: input.clientDataJSON ?? null,
       },
     });
   }

@@ -219,6 +219,9 @@ model EventLog {
   authenticatorData String? @map("authenticator_data")
   actorPublicKey  String   @map("actor_public_key")
   credentialId    String?  @map("credential_id")
+  // Self-contained cryptographic proof fields
+  intentHash      String?  @map("intent_hash")      // SHA-256 of business intent embedded in WebAuthn challenge
+  clientDataJSON  String?  @map("client_data_json")  // Raw WebAuthn clientDataJSON (contains challenge+origin)
   previousHash    String   @map("previous_hash")
   eventHash       String   @unique @map("event_hash")
   createdAt       DateTime @default(now()) @map("created_at")

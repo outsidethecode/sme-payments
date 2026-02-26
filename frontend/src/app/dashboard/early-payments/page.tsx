@@ -88,6 +88,8 @@ function SupplierView() {
           authenticatorData: verified.authenticatorData,
           publicKey: verified.publicKey,
           credentialId: verified.credentialId,
+          intentHash: sigResult.intentHash,
+          clientDataJSON: verified.clientDataJSON,
         };
       }
       return earlyPayApi.request(poId, signatureData);
@@ -315,6 +317,8 @@ function LPView() {
           authenticatorData: verified.authenticatorData,
           publicKey: verified.publicKey,
           credentialId: verified.credentialId,
+          intentHash: sigResult.intentHash,
+          clientDataJSON: verified.clientDataJSON,
         };
       }
       return earlyPayApi.fund(id, signatureData);

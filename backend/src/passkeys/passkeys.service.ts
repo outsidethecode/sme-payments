@@ -138,7 +138,11 @@ export class PasskeysService {
    * Generate a WebAuthn authentication challenge.
    * `purpose` allows different challenge scopes (e.g., "login", "sign:PO_SENT:uuid")
    */
-  async generateAuthOptions(userId: string, purpose: string = "login") {
+  async generateAuthOptions(
+    userId: string,
+    purpose: string = "login",
+    intentHash?: string,
+  ) {
     const passkeys = await this.prisma.userPasskey.findMany({
       where: { userId },
       select: { credentialId: true, transports: true },
@@ -153,6 +157,10 @@ export class PasskeysService {
     const options = await generateAuthenticationOptions({
       rpID: this.rpId,
       userVerification: "preferred",
+      // If an intentHash is provided, use it as the challenge so the
+      // authenticator's signature cryptographically binds to the
+      // business payload (self-contained proof).
+      ...(intentHash ? { challenge: intentHash } : {}),
       allowCredentials: passkeys.map((pk) => ({
         id: pk.credentialId,
         transports: pk.transports as AuthenticatorTransportFuture[],
@@ -226,6 +234,7 @@ export class PasskeysService {
       credentialId: passkey.credentialId,
       signature: response.response.signature,
       authenticatorData: response.response.authenticatorData,
+      clientDataJSON: response.response.clientDataJSON,
       publicKey: passkey.publicKey.toString("base64"),
     };
   }
