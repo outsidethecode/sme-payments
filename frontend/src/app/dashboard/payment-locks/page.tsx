@@ -159,7 +159,7 @@ export default function PaymentLocksPage() {
                           </Badge>
                         </TableCell>
                         <TableCell className="text-muted-foreground">
-                          {formatDate(lock.lockedAt)}
+                          {lock.lockedAt ? formatDate(lock.lockedAt) : "—"}
                         </TableCell>
                         <TableCell className="text-muted-foreground">
                           {lock.releasedAt ? formatDate(lock.releasedAt) : "—"}

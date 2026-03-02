@@ -22,24 +22,242 @@ model User {
   password      String
   name          String
   role          UserRole
-  companyName   String   @map("company_name")
-  companyNumber String?  @map("company_number")
-  balance       Int      @default(0) // simulated balance in pennies
+  companyName   String?  @map("company_name")   // @deprecated — use Organisation.name
+  companyNumber String?  @map("company_number") // @deprecated — use Organisation.registrationNo
+  balance       Int      @default(0) // simulated balance in smallest currency unit
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
   // Relations
-  passkeys             UserPasskey[]
-  purchaseOrdersBuyer  PurchaseOrder[]      @relation("BuyerOrders")
-  purchaseOrdersSupplier PurchaseOrder[]    @relation("SupplierOrders")
-  paymentLocks         PaymentLock[]
-  earlyPaymentsSupplier EarlyPaymentRequest[] @relation("SupplierEarlyPayments")
-  earlyPaymentsLP      EarlyPaymentRequest[] @relation("LPEarlyPayments")
-  settlementsFrom      Settlement[]         @relation("SettlementFrom")
-  settlementsTo        Settlement[]         @relation("SettlementTo")
-  eventLogs            EventLog[]
+  passkeys               UserPasskey[]
+  orgMemberships         OrgMembership[]
+  purchaseOrdersBuyer    PurchaseOrder[]        @relation("BuyerOrders")
+  purchaseOrdersSupplier PurchaseOrder[]        @relation("SupplierOrders")
+  paymentLocks           PaymentLock[]
+  earlyPaymentsSupplier  EarlyPaymentRequest[]  @relation("SupplierEarlyPayments")
+  earlyPaymentsLP        EarlyPaymentRequest[]  @relation("LPEarlyPayments")
+  settlementsFrom        Settlement[]           @relation("SettlementFrom")
+  settlementsTo          Settlement[]           @relation("SettlementTo")
+  eventLogs              EventLog[]
+  approvals              Approval[]
+  sentInvitations        Invitation[]
 
   @@map("users")
+}
+
+// ── Organisations ────────────────────────────────────────────
+
+enum OrgType {
+  BUYER
+  SUPPLIER
+  LIQUIDITY_PARTNER
+}
+
+enum OrgRole {
+  OWNER
+  APPROVER
+  FINANCE
+  MEMBER
+}
+
+enum Jurisdiction {
+  UK
+  KSA
+}
+
+enum Currency {
+  GBP
+  SAR
+}
+
+enum OrgStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+}
+
+enum OnboardingStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  KYB_PENDING
+  KYB_VERIFIED
+  KYB_FAILED
+  COMPLETED
+}
+
+enum SupplierTier {
+  BASIC               // Tier 1: can receive POs
+  LIQUIDITY_ELIGIBLE  // Tier 2: can request early payment
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  CANCELLED
+}
+
+model Organisation {
+  id              String       @id @default(uuid())
+  name            String
+  type            OrgType
+  registrationNo  String?      @map("registration_no")
+  jurisdiction    Jurisdiction @default(UK)
+  currency        Currency     @default(GBP)
+  shariaCompliant Boolean      @default(false) @map("sharia_compliant")
+  status          OrgStatus    @default(ACTIVE)
+  metadata        Json?
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  // ── Onboarding fields ──
+  onboardingStatus  OnboardingStatus @default(COMPLETED) @map("onboarding_status")
+  authorizedSignatory String?        @map("authorized_signatory")
+  bankIban            String?        @map("bank_iban")
+  termsAcceptedAt     DateTime?      @map("terms_accepted_at")
+
+  // ── KYB fields ──
+  kybProvider       String?    @map("kyb_provider")        // e.g. "WATHQ", "MOCK"
+  kybVerifiedAt     DateTime?  @map("kyb_verified_at")
+  kybData           Json?      @map("kyb_data")            // KYB provider response
+  uboDisclosure     Json?      @map("ubo_disclosure")      // Ultimate Beneficial Owner info
+  sanctionsCheckedAt DateTime? @map("sanctions_checked_at")
+
+  // ── Supplier-specific ──
+  supplierTier      SupplierTier? @map("supplier_tier")
+
+  // ── LP-specific ──
+  fundingLimitTotal Int?       @map("funding_limit_total") // in smallest currency unit
+  riskAppetiteConfig Json?     @map("risk_appetite_config")
+  participationAgreementAcceptedAt DateTime? @map("participation_agreement_accepted_at")
+  fundingAccountRef String?    @map("funding_account_ref")
+
+  members          OrgMembership[]
+  policyRules      PolicyRule[]
+  approvalRequests ApprovalRequest[]
+  sentInvitations  Invitation[]  @relation("InviterOrg")
+
+  @@map("organisations")
+}
+
+model Invitation {
+  id            String           @id @default(uuid())
+  token         String           @unique @default(uuid())
+  inviterOrgId  String           @map("inviter_org_id")
+  inviterUserId String           @map("inviter_user_id")
+  inviteeEmail  String           @map("invitee_email")
+  inviteeRole   OrgType          @map("invitee_role")    // SUPPLIER or LIQUIDITY_PARTNER
+  status        InvitationStatus @default(PENDING)
+  expiresAt     DateTime         @map("expires_at")
+  acceptedAt    DateTime?        @map("accepted_at")
+  metadata      Json?
+  createdAt     DateTime         @default(now()) @map("created_at")
+
+  inviterOrg  Organisation @relation("InviterOrg", fields: [inviterOrgId], references: [id])
+  inviterUser User         @relation(fields: [inviterUserId], references: [id])
+
+  @@index([token])
+  @@index([inviterOrgId])
+  @@index([inviteeEmail])
+  @@map("invitations")
+}
+
+model OrgMembership {
+  id             String   @id @default(uuid())
+  userId         String   @unique @map("user_id") // single org per user in v1
+  organisationId String   @map("organisation_id")
+  orgRole        OrgRole  @default(MEMBER) @map("org_role")
+  isDefault      Boolean  @default(true) @map("is_default")
+  joinedAt       DateTime @default(now()) @map("joined_at")
+
+  user         User         @relation(fields: [userId], references: [id])
+  organisation Organisation @relation(fields: [organisationId], references: [id])
+
+  @@unique([userId, organisationId])
+  @@index([organisationId])
+  @@map("org_memberships")
+}
+
+// ── Policies & Approvals ─────────────────────────────────────
+
+enum PolicyRuleType {
+  PO_APPROVAL
+  FUNDING_LIMIT
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+  ESCALATED
+}
+
+enum ApprovalDecision {
+  APPROVE
+  REJECT
+}
+
+model PolicyRule {
+  id               String         @id @default(uuid())
+  organisationId   String         @map("organisation_id")
+  ruleType         PolicyRuleType @map("rule_type")
+  name             String
+  conditions       Json           // { minAmount?, maxAmount?, ... }
+  requiredApprovals Int           @default(1) @map("required_approvals")
+  requiredRoles    String[]       @map("required_roles") // ["APPROVER", "FINANCE"]
+  autoApprove      Boolean        @default(false) @map("auto_approve")
+  priority         Int            @default(0) // higher = evaluated first
+  active           Boolean        @default(true)
+  metadata         Json?
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+
+  organisation     Organisation    @relation(fields: [organisationId], references: [id])
+  approvalRequests ApprovalRequest[]
+
+  @@index([organisationId, ruleType, active])
+  @@map("policy_rules")
+}
+
+model ApprovalRequest {
+  id                String         @id @default(uuid())
+  entityType        String         @map("entity_type")    // "PURCHASE_ORDER"
+  entityId          String         @map("entity_id")      // PO ID
+  organisationId    String         @map("organisation_id")
+  policyRuleId      String         @map("policy_rule_id")
+  status            ApprovalStatus @default(PENDING)
+  requiredApprovals Int            @map("required_approvals")
+  currentApprovals  Int            @default(0) @map("current_approvals")
+  expiresAt         DateTime?      @map("expires_at")
+  escalateAfter     DateTime?      @map("escalate_after")
+  resolvedAt        DateTime?      @map("resolved_at")
+  createdAt         DateTime       @default(now()) @map("created_at")
+
+  organisation  Organisation @relation(fields: [organisationId], references: [id])
+  policyRule    PolicyRule   @relation(fields: [policyRuleId], references: [id])
+  approvals     Approval[]
+
+  @@index([entityId, entityType])
+  @@index([organisationId, status])
+  @@map("approval_requests")
+}
+
+model Approval {
+  id                String           @id @default(uuid())
+  approvalRequestId String           @map("approval_request_id")
+  userId            String           @map("user_id")
+  orgRole           OrgRole          @map("org_role")
+  decision          ApprovalDecision
+  comment           String?
+  signature         String?          // passkey signature
+  createdAt         DateTime         @default(now()) @map("created_at")
+
+  approvalRequest ApprovalRequest @relation(fields: [approvalRequestId], references: [id])
+  user            User            @relation(fields: [userId], references: [id])
+
+  @@unique([approvalRequestId, userId])
+  @@map("approvals")
 }
 
 // ── Passkeys (WebAuthn) ──────────────────────────────────────
@@ -65,6 +283,7 @@ model UserPasskey {
 
 enum POStatus {
   DRAFT
+  PENDING_APPROVAL
   SENT
   ACCEPTED
   IN_PROGRESS
@@ -190,8 +409,13 @@ model Settlement {
   fromUserId      String           @map("from_user_id")
   toUserId        String           @map("to_user_id")
   amount          Int
+  currency        String           @default("GBP")      // GBP | SAR
   type            SettlementType
   status          SettlementStatus @default(PENDING)
+  settlementRail  String?          @map("settlement_rail") // SIMULATED | KSA_BANK
+  externalRef     String?          @map("external_ref")    // adapter reference
+  failureReason   String?          @map("failure_reason")
+  reconciledAt    DateTime?        @map("reconciled_at")
   completedAt     DateTime?        @map("completed_at")
   createdAt       DateTime         @default(now()) @map("created_at")
 
@@ -199,6 +423,8 @@ model Settlement {
   fromUser      User          @relation("SettlementFrom", fields: [fromUserId], references: [id])
   toUser        User          @relation("SettlementTo", fields: [toUserId], references: [id])
 
+  @@index([externalRef])
+  @@index([status])
   @@map("settlements")
 }
 

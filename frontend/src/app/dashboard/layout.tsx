@@ -23,6 +23,10 @@ import {
   Settings,
   LogOut,
   ChevronDown,
+  ShieldCheck,
+  UserPlus,
+  ClipboardCheck,
+  ArrowRightLeft,
 } from "lucide-react";
 import { PasskeyBanner } from "@/components/passkey-banner";
 
@@ -34,10 +38,28 @@ const NAV_ITEMS = [
     roles: ["BUYER", "SUPPLIER", "LIQUIDITY_PARTNER", "ADMIN"],
   },
   {
+    href: "/dashboard/onboarding",
+    label: "Onboarding",
+    icon: ClipboardCheck,
+    roles: ["BUYER", "SUPPLIER", "LIQUIDITY_PARTNER"],
+  },
+  {
     href: "/dashboard/purchase-orders",
     label: "Purchase Orders",
     icon: FileText,
     roles: ["BUYER", "SUPPLIER", "ADMIN"],
+  },
+  {
+    href: "/dashboard/approvals",
+    label: "Approvals",
+    icon: ShieldCheck,
+    roles: ["BUYER", "ADMIN"],
+  },
+  {
+    href: "/dashboard/invitations",
+    label: "Invitations",
+    icon: UserPlus,
+    roles: ["BUYER", "ADMIN"],
   },
   {
     href: "/dashboard/payment-locks",
@@ -50,6 +72,12 @@ const NAV_ITEMS = [
     label: "Early Payments",
     icon: Zap,
     roles: ["SUPPLIER", "LIQUIDITY_PARTNER", "ADMIN"],
+  },
+  {
+    href: "/dashboard/settlements",
+    label: "Settlements",
+    icon: ArrowRightLeft,
+    roles: ["BUYER", "SUPPLIER", "LIQUIDITY_PARTNER", "ADMIN"],
   },
   {
     href: "/dashboard/ledger",
@@ -145,6 +173,8 @@ export default function DashboardLayout({
                   <span className="font-medium">{user.name}</span>
                   <span className="text-muted-foreground">
                     {user.companyName}
+                    {user.jurisdiction &&
+                      ` · ${user.jurisdiction === "KSA" ? "🇸🇦" : "🇬🇧"}`}
                   </span>
                 </div>
                 <ChevronDown className="ml-auto h-3 w-3" />

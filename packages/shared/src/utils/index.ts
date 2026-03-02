@@ -1,10 +1,28 @@
-/** Format pennies to human-readable GBP string */
-export function formatCurrency(pennies: number): string {
-  return new Intl.NumberFormat("en-GB", {
+/** Format smallest-unit amount to a human-readable currency string */
+export function formatCurrency(
+  amount: number,
+  currency: "GBP" | "SAR" = "GBP",
+): string {
+  const locale = currency === "SAR" ? "ar-SA" : "en-GB";
+  return new Intl.NumberFormat(locale, {
     style: "currency",
-    currency: "GBP",
-  }).format(pennies / 100);
+    currency,
+  }).format(amount / 100);
 }
+
+/**
+ * Currency metadata
+ *   subUnit: name of the smallest unit (pence / halalah)
+ *   subUnitsPerUnit: 100 for both GBP and SAR
+ *   symbol: human-readable symbol
+ */
+export const CURRENCY_META: Record<
+  string,
+  { subUnit: string; subUnitsPerUnit: number; symbol: string }
+> = {
+  GBP: { subUnit: "pence", subUnitsPerUnit: 100, symbol: "£" },
+  SAR: { subUnit: "halalah", subUnitsPerUnit: 100, symbol: "SAR" },
+};
 
 /** Calculate early-pay service fee (flat fee based on BPS) */
 export function calculateServiceFee(amount: number, feeBps: number): number {

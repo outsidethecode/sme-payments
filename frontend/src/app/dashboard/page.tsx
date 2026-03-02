@@ -22,6 +22,7 @@ import {
   PoundSterling,
   Plus,
   ArrowRight,
+  Globe,
 } from "lucide-react";
 
 export default function DashboardPage() {
@@ -60,6 +61,16 @@ export default function DashboardPage() {
           <p className="text-sm text-muted-foreground">
             {user.companyName} ·{" "}
             <Badge variant="outline">{user.role.replace(/_/g, " ")}</Badge>
+            {user.jurisdiction && (
+              <>
+                {" · "}
+                <Badge variant="secondary">
+                  {user.jurisdiction === "KSA" ? "🇸🇦 KSA" : "🇬🇧 UK"}
+                  {" · "}
+                  {user.currency ?? "GBP"}
+                </Badge>
+              </>
+            )}
           </p>
         </div>
 
@@ -79,7 +90,11 @@ export default function DashboardPage() {
           title="Account Balance"
           icon={<PoundSterling className="h-4 w-4 text-muted-foreground" />}
           loading={balanceLoading}
-          value={balanceData ? formatCurrency(balanceData.balance) : "—"}
+          value={
+            balanceData
+              ? formatCurrency(balanceData.balance, user.currency ?? "GBP")
+              : "—"
+          }
           description="Available funds"
         />
         <StatCard
@@ -100,7 +115,7 @@ export default function DashboardPage() {
           title="Total Value"
           icon={<Zap className="h-4 w-4 text-muted-foreground" />}
           loading={posLoading}
-          value={formatCurrency(totalValuePennies)}
+          value={formatCurrency(totalValuePennies, user.currency ?? "GBP")}
           description="All purchase orders"
         />
       </div>

@@ -4,6 +4,9 @@ import { BullModule } from "@nestjs/bullmq";
 import { PrismaModule } from "./prisma/prisma.module";
 import { AuthModule } from "./auth/auth.module";
 import { UsersModule } from "./users/users.module";
+import { OrganisationsModule } from "./organisations/organisations.module";
+import { PoliciesModule } from "./policies/policies.module";
+import { ApprovalsModule } from "./approvals/approvals.module";
 import { PurchaseOrdersModule } from "./purchase-orders/purchase-orders.module";
 import { PaymentLocksModule } from "./payment-locks/payment-locks.module";
 import { EarlyPaymentsModule } from "./early-payments/early-payments.module";
@@ -12,6 +15,9 @@ import { BankModule } from "./bank/bank.module";
 import { LedgerModule } from "./ledger/ledger.module";
 import { AdminModule } from "./admin/admin.module";
 import { PasskeysModule } from "./passkeys/passkeys.module";
+import { KybModule } from "./kyb/kyb.module";
+import { InvitationsModule } from "./invitations/invitations.module";
+import { OnboardingModule } from "./onboarding/onboarding.module";
 
 @Module({
   imports: [
@@ -25,6 +31,9 @@ import { PasskeysModule } from "./passkeys/passkeys.module";
     PrismaModule,
     AuthModule,
     UsersModule,
+    OrganisationsModule,
+    PoliciesModule,
+    ApprovalsModule,
     PurchaseOrdersModule,
     PaymentLocksModule,
     EarlyPaymentsModule,
@@ -33,6 +42,9 @@ import { PasskeysModule } from "./passkeys/passkeys.module";
     LedgerModule,
     AdminModule,
     PasskeysModule,
+    KybModule,
+    InvitationsModule,
+    OnboardingModule,
   ],
 })
 export class AppModule {}

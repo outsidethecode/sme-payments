@@ -46,6 +46,10 @@ export interface User {
   name: string;
   role: "BUYER" | "SUPPLIER" | "LIQUIDITY_PARTNER" | "ADMIN";
   companyName: string;
+  organisationId?: string;
+  orgRole?: "OWNER" | "APPROVER" | "FINANCE" | "MEMBER";
+  jurisdiction?: "UK" | "KSA";
+  currency?: "GBP" | "SAR";
 }
 
 export interface LoginResponse {
@@ -63,6 +67,8 @@ export const authApi = {
     name: string;
     companyName: string;
     role: string;
+    jurisdiction?: "UK" | "KSA";
+    currency?: "GBP" | "SAR";
   }) => api.post<LoginResponse>("/auth/register", data),
 };
 
@@ -306,9 +312,233 @@ export const adminApi = {
   stats: () =>
     api.get<{
       totalPOs: number;
+      settledPOs: number;
       totalVolumePennies: number;
       activeLocks: number;
       earlyPayments: number;
       totalFeesPennies: number;
+      totalUsers: number;
     }>("/admin/stats"),
+};
+
+// ── Approvals ─────────────────────────────────────────────────
+
+export interface ApprovalRequest {
+  id: string;
+  entityType: string;
+  entityId: string;
+  organisationId: string;
+  policyRuleId: string;
+  requiredApprovals: number;
+  currentApprovals: number;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "EXPIRED" | "ESCALATED";
+  expiresAt: string | null;
+  resolvedAt: string | null;
+  createdAt: string;
+  policyRule?: { id: string; name: string; requiredRoles: string[] };
+  approvals?: {
+    id: string;
+    decision: "APPROVE" | "REJECT";
+    comment: string | null;
+    user: { id: string; name: string; email: string };
+    createdAt: string;
+  }[];
+}
+
+export interface PolicyRule {
+  id: string;
+  organisationId: string;
+  ruleType: "PO_APPROVAL" | "FUNDING_LIMIT";
+  name: string;
+  conditions: Record<string, unknown>;
+  requiredApprovals: number;
+  requiredRoles: string[];
+  autoApprove: boolean;
+  priority: number;
+  active: boolean;
+  createdAt: string;
+}
+
+export interface PolicyEvaluation {
+  requiresApproval: boolean;
+  autoApprove: boolean;
+  requiredApprovals: number;
+  requiredRoles: string[];
+  matchedRule: { id: string; name: string } | null;
+}
+
+export interface LPExposure {
+  total: number;
+  perBuyer: Record<string, number>;
+  perSupplier: Record<string, number>;
+  count: number;
+}
+
+export const approvalsApi = {
+  pending: () => api.get<ApprovalRequest[]>("/approvals/pending"),
+  byEntity: (entityType: string, entityId: string) =>
+    api.get<ApprovalRequest[]>(`/approvals/entity/${entityType}/${entityId}`),
+  get: (id: string) => api.get<ApprovalRequest>(`/approvals/${id}`),
+  decide: (id: string, decision: "APPROVE" | "REJECT", comment?: string) =>
+    api.post<{
+      approvalRequest: ApprovalRequest;
+      isComplete: boolean;
+      finalStatus: string;
+    }>(`/approvals/${id}/decide`, { decision, comment }),
+};
+
+export const policiesApi = {
+  byOrg: (orgId: string, ruleType?: string) =>
+    api.get<PolicyRule[]>(`/policies/org/${orgId}`, {
+      params: ruleType ? { ruleType } : {},
+    }),
+  evaluate: (amount: number) =>
+    api.get<PolicyEvaluation>("/policies/evaluate/po-approval", {
+      params: { amount: amount.toString() },
+    }),
+  exposure: (orgId: string) =>
+    api.get<LPExposure>(`/policies/exposure/${orgId}`),
+};
+
+// ── Onboarding ────────────────────────────────────────────────
+
+export interface OnboardingStep {
+  complete: boolean;
+  [key: string]: unknown;
+}
+
+export interface OnboardingStatus {
+  id: string;
+  name: string;
+  type: "BUYER" | "SUPPLIER" | "LIQUIDITY_PARTNER";
+  onboardingStatus:
+    | "NOT_STARTED"
+    | "IN_PROGRESS"
+    | "KYB_PENDING"
+    | "KYB_VERIFIED"
+    | "KYB_FAILED"
+    | "COMPLETED";
+  registrationNo: string | null;
+  jurisdiction: "UK" | "KSA";
+  authorizedSignatory: string | null;
+  bankIban: string | null;
+  termsAcceptedAt: string | null;
+  kybProvider: string | null;
+  kybVerifiedAt: string | null;
+  supplierTier: "BASIC" | "LIQUIDITY_ELIGIBLE" | null;
+  fundingLimitTotal: number | null;
+  fundingAccountRef: string | null;
+  participationAgreementAcceptedAt: string | null;
+  steps: Record<string, OnboardingStep>;
+}
+
+export interface KybResult {
+  verified: boolean;
+  onboardingStatus: string;
+  provider: string;
+  errorMessage?: string;
+}
+
+export const onboardingApi = {
+  status: () => api.get<OnboardingStatus>("/onboarding/status"),
+  buyerKyb: (data: { registrationNo: string; authorizedSignatory: string }) =>
+    api.post<KybResult>("/onboarding/buyer/kyb", data),
+  buyerPayment: (data: { bankIban: string }) =>
+    api.post("/onboarding/buyer/payment", data),
+  buyerComplete: () => api.post("/onboarding/buyer/complete"),
+  supplierTier1: (data: {
+    registrationNo: string;
+    bankIban: string;
+    termsAccepted: boolean;
+  }) => api.post("/onboarding/supplier/tier1", data),
+  supplierTier2: (data: { uboDisclosure?: Record<string, unknown> }) =>
+    api.post("/onboarding/supplier/tier2", data),
+  lpProfile: (data: {
+    fundingAccountRef: string;
+    fundingLimitTotal: number;
+    riskAppetiteConfig?: Record<string, unknown>;
+    participationAgreementAccepted: boolean;
+  }) => api.post("/onboarding/lp/profile", data),
+};
+
+// ── Invitations ───────────────────────────────────────────────
+
+export interface Invitation {
+  id: string;
+  token: string;
+  inviterOrgId: string;
+  inviterUserId: string;
+  inviteeEmail: string;
+  inviteeRole: "SUPPLIER" | "LIQUIDITY_PARTNER";
+  status: "PENDING" | "ACCEPTED" | "EXPIRED" | "CANCELLED";
+  expiresAt: string;
+  acceptedAt: string | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+  inviterOrg?: {
+    name: string;
+    type?: string;
+    jurisdiction?: string;
+    currency?: string;
+  };
+}
+
+export const invitationsApi = {
+  create: (data: {
+    inviteeEmail: string;
+    inviteeRole: "SUPPLIER" | "LIQUIDITY_PARTNER";
+    metadata?: Record<string, unknown>;
+  }) => api.post<Invitation>("/invitations", data),
+  list: () => api.get<Invitation[]>("/invitations"),
+  getByToken: (token: string) => api.get<Invitation>(`/invitations/${token}`),
+  cancel: (id: string) => api.delete(`/invitations/${id}`),
+  registerInvited: (data: {
+    invitationToken: string;
+    email: string;
+    password: string;
+    name: string;
+    companyName: string;
+    companyNumber?: string;
+  }) => api.post<LoginResponse>("/auth/register-invited", data),
+};
+
+// ── Settlements ───────────────────────────────────────────────
+
+export interface Settlement {
+  id: string;
+  purchaseOrderId: string;
+  fromUserId: string;
+  toUserId: string;
+  amount: number;
+  currency: "GBP" | "SAR";
+  type: "STANDARD" | "EARLY_PAY_ADVANCE" | "EARLY_PAY_SETTLEMENT";
+  status: "PENDING" | "COMPLETED" | "FAILED" | "REFUNDED";
+  settlementRail: string | null;
+  externalRef: string | null;
+  completedAt: string | null;
+  reconciledAt: string | null;
+  createdAt: string;
+  purchaseOrder?: {
+    id: string;
+    referenceNumber: string;
+    amount: number;
+    currency: string;
+    status: string;
+  };
+  fromUser?: { id: string; name: string; companyName: string };
+  toUser?: { id: string; name: string; companyName: string };
+}
+
+export const settlementsApi = {
+  list: () => api.get<Settlement[]>("/settlements"),
+  adapter: () => api.get<{ adapter: string }>("/settlements/adapter"),
+  pending: () => api.get<Settlement[]>("/settlements/pending"),
+  byPO: (poId: string) => api.get<Settlement[]>(`/settlements/po/${poId}`),
+  reconcile: (id: string, externalRef: string) =>
+    api.post<{
+      externalRef: string;
+      previousStatus: string;
+      currentStatus: string;
+      changed: boolean;
+    }>(`/settlements/${id}/reconcile`, { externalRef }),
 };

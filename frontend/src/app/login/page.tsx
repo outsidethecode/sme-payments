@@ -17,28 +17,46 @@ import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 
 const DEMO_ACCOUNTS = [
-  { email: "buyer@acme.co.uk", label: "Buyer – Acme Retail", role: "BUYER" },
+  // UK accounts
+  { email: "buyer@acme.co.uk", label: "🇬🇧 Buyer – Acme Retail", role: "BUYER" },
   {
     email: "buyer@greenfield.co.uk",
-    label: "Buyer – Greenfield Mfg",
+    label: "🇬🇧 Buyer – Greenfield Mfg",
     role: "BUYER",
   },
   {
     email: "supplier@swiftlogistics.co.uk",
-    label: "Supplier – Swift Logistics",
+    label: "🇬🇧 Supplier – Swift Logistics",
     role: "SUPPLIER",
   },
   {
     email: "supplier@brightworks.co.uk",
-    label: "Supplier – Brightworks Eng",
+    label: "🇬🇧 Supplier – Brightworks Eng",
     role: "SUPPLIER",
   },
   {
     email: "lp@capitalbridge.co.uk",
-    label: "Liquidity Partner – Capital Bridge",
+    label: "🇬🇧 LP – Capital Bridge",
     role: "LP",
   },
-  { email: "admin@platform.co.uk", label: "Platform Admin", role: "ADMIN" },
+  // KSA accounts (Sharia-compliant)
+  {
+    email: "buyer@alrajhi.sa",
+    label: "🇸🇦 Buyer – Al-Rajhi Trading",
+    role: "BUYER",
+  },
+  {
+    email: "supplier@noorsupply.sa",
+    label: "🇸🇦 Supplier – Noor Supply Chain",
+    role: "SUPPLIER",
+  },
+  {
+    email: "lp@tamweel.sa",
+    label: "🇸🇦 LP – Tamweel Capital",
+    role: "LP",
+  },
+  // Admin
+  { email: "admin@platform.co.uk", label: "⚙️ Platform Admin", role: "ADMIN" },
 ];
 
 export default function LoginPage() {

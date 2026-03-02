@@ -9,7 +9,7 @@ import {
 import { ApiTags, ApiBearerAuth, ApiOperation } from "@nestjs/swagger";
 import { AuthService } from "./auth.service";
 import { JwtAuthGuard } from "./jwt-auth.guard";
-import { RegisterDto, LoginDto } from "./dto/auth.dto";
+import { RegisterDto, LoginDto, RegisterInvitedDto } from "./dto/auth.dto";
 
 @ApiTags("Auth")
 @Controller("auth")
@@ -20,6 +20,12 @@ export class AuthController {
   @ApiOperation({ summary: "Register a new user (Buyer or Supplier)" })
   async register(@Body() dto: RegisterDto) {
     return this.authService.register(dto);
+  }
+
+  @Post("register-invited")
+  @ApiOperation({ summary: "Register via invitation token (Supplier or LP)" })
+  async registerInvited(@Body() dto: RegisterInvitedDto) {
+    return this.authService.registerInvited(dto);
   }
 
   @Post("login")

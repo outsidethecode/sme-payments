@@ -1,10 +1,17 @@
 /**
- * Format pennies to GBP string. e.g. 150000 → "£1,500.00"
+ * Format smallest-unit amount to currency string.
+ * Supports GBP (£) and SAR (﷼). Defaults to GBP.
+ * e.g. formatCurrency(150000) → "£1,500.00"
+ * e.g. formatCurrency(150000, "SAR") → "SAR 1,500.00"
  */
-export function formatCurrency(pennies: number): string {
-  return new Intl.NumberFormat("en-GB", {
+export function formatCurrency(
+  pennies: number,
+  currency: "GBP" | "SAR" = "GBP",
+): string {
+  const locale = currency === "SAR" ? "en-SA" : "en-GB";
+  return new Intl.NumberFormat(locale, {
     style: "currency",
-    currency: "GBP",
+    currency,
   }).format(pennies / 100);
 }
 
@@ -43,12 +50,15 @@ export function statusVariant(
       return "secondary";
     case "SENT":
       return "outline";
+    case "PENDING_APPROVAL":
+      return "outline";
     case "ACCEPTED":
     case "VERIFIED":
     case "SETTLED":
       return "default";
     case "CANCELLED":
     case "DISPUTED":
+    case "REJECTED":
       return "destructive";
     default:
       return "secondary";

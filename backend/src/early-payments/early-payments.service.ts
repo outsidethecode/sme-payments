@@ -6,12 +6,22 @@ import {
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { LedgerService, SignatureData } from "../ledger/ledger.service";
+import { PoliciesService } from "../policies/policies.service";
+import { OrganisationsService } from "../organisations/organisations.service";
+import { SettlementService } from "../settlements/settlement.service";
+import { SettlementCurrency } from "../settlements/settlement-adapter.interface";
+
+/** Default ujrah fee if no policy rule specifies a custom feeBps */
+const DEFAULT_FEE_BPS = 250;
 
 @Injectable()
 export class EarlyPaymentsService {
   constructor(
     private prisma: PrismaService,
     private ledger: LedgerService,
+    private policies: PoliciesService,
+    private orgs: OrganisationsService,
+    private settlement: SettlementService,
   ) {}
 
   /**
@@ -56,8 +66,9 @@ export class EarlyPaymentsService {
       );
     }
 
-    // Calculate service fee: flat 2.5% (250 BPS) — ujrah model
-    const feeAmount = Math.round((po.amount * 250) / 10_000);
+    // Determine fee BPS from LP funding policies (use highest feeBps from any active FUNDING_LIMIT rule)
+    // At request time we don't know the LP yet, so use DEFAULT_FEE_BPS as baseline
+    const feeAmount = Math.round((po.amount * DEFAULT_FEE_BPS) / 10_000);
     const netAdvance = po.amount - feeAmount;
 
     const request = await this.prisma.earlyPaymentRequest.create({
@@ -274,21 +285,67 @@ export class EarlyPaymentsService {
       );
     }
 
-    // Execute the funding in a transaction
+    // ── LP Funding Policy Evaluation ─────────────────────────
+    const lpOrg = await this.orgs.getOrgByUserId(lpId);
+    if (lpOrg) {
+      // Resolve buyer & supplier org IDs for concentration checks
+      const buyerOrg = await this.orgs.getOrgByUserId(
+        request.purchaseOrder.buyerId,
+      );
+      const supplierOrg = await this.orgs.getOrgByUserId(
+        request.purchaseOrder.supplierId,
+      );
+
+      const fundingCheck = await this.policies.evaluateLPFunding(
+        lpOrg.id,
+        buyerOrg?.id || null,
+        supplierOrg?.id || null,
+        request.netAdvance,
+      );
+
+      if (!fundingCheck.allowed) {
+        await this.ledger.logEvent({
+          entityType: "EARLY_PAYMENT",
+          entityId: id,
+          eventType: "EARLY_PAY_BLOCKED",
+          actorId: lpId,
+          actorRole: "LIQUIDITY_PARTNER",
+          payload: {
+            reason: fundingCheck.reason,
+            currentExposure: fundingCheck.currentExposure,
+            limits: fundingCheck.limits,
+            requestedAmount: request.netAdvance,
+          },
+        });
+        throw new BadRequestException(
+          `Funding blocked by policy: ${fundingCheck.reason}`,
+        );
+      }
+    }
+    // ── End LP Funding Policy Evaluation ─────────────────────
+
+    // Resolve currency and account refs
+    const currency = (request.purchaseOrder.currency ||
+      "GBP") as SettlementCurrency;
+    const lpOrg2 = lpOrg || (await this.orgs.getOrgByUserId(lpId));
+    const supplierOrg2 = await this.orgs.getOrgByUserId(request.supplierId);
+    const lpAccountRef = lpOrg2?.bankIban || undefined;
+    const supplierAccountRef = supplierOrg2?.bankIban || undefined;
+
+    // Transfer advance via settlement adapter
+    const transferResult = await this.settlement.transferAdvance({
+      purchaseOrderId: request.purchaseOrderId,
+      earlyPaymentRequestId: id,
+      lpId,
+      lpAccountRef,
+      supplierId: request.supplierId,
+      supplierAccountRef,
+      amount: request.netAdvance,
+      currency,
+    });
+
+    // Update request status and record fee
     const result = await this.prisma.$transaction(async (tx) => {
-      // Debit LP balance
-      await tx.user.update({
-        where: { id: lpId },
-        data: { balance: { decrement: request.netAdvance } },
-      });
-
-      // Credit supplier with net advance
-      await tx.user.update({
-        where: { id: request.supplierId },
-        data: { balance: { increment: request.netAdvance } },
-      });
-
-      // Update request status
       const updated = await tx.earlyPaymentRequest.update({
         where: { id },
         data: {
@@ -341,19 +398,6 @@ export class EarlyPaymentsService {
         },
       });
 
-      // Record the advance settlement
-      await tx.settlement.create({
-        data: {
-          purchaseOrderId: request.purchaseOrderId,
-          fromUserId: lpId,
-          toUserId: request.supplierId,
-          amount: request.netAdvance,
-          type: "EARLY_PAY_ADVANCE",
-          status: "COMPLETED",
-          completedAt: new Date(),
-        },
-      });
-
       // Record the facilitation fee
       await tx.platformFee.create({
         data: {
@@ -376,6 +420,8 @@ export class EarlyPaymentsService {
         netAdvance: request.netAdvance,
         serviceFee: request.serviceFee,
         faceValue: request.faceValue,
+        settlementRail: this.settlement.getAdapterName(),
+        externalRef: transferResult.externalRef,
       },
       ...sig,
     });
