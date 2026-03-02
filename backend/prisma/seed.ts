@@ -90,7 +90,7 @@ async function main() {
       password,
       name: "Platform Admin",
       role: UserRole.ADMIN,
-      companyName: "SME Payments Platform",
+      companyName: "Programmable SME Settlement",
       balance: 0,
     },
   });

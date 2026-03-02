@@ -139,9 +139,9 @@ function SupplierView() {
             1. Your PO must be <strong>accepted</strong> with payment locked by
             the buyer.
           </p>
-          <p>2. Request early payment — a flat 2.5% service fee applies.</p>
+          <p>2. Request early payment, a flat 2.5% service fee applies.</p>
           <p>
-            3. A liquidity partner funds the advance — you receive the net
+            3. A liquidity partner funds the advance, you receive the net
             amount immediately.
           </p>
           <p>
@@ -378,7 +378,7 @@ function LPView() {
             you.
           </p>
           <p>
-            4. You bear genuine delivery risk — if the buyer disputes,
+            4. You bear genuine delivery risk, if the buyer disputes,
             settlement is delayed.
           </p>
         </CardContent>

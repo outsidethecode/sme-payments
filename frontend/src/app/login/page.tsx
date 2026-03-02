@@ -80,9 +80,12 @@ export default function LoginPage() {
       <div className="w-full max-w-md space-y-6">
         {/* Header */}
         <div className="text-center">
-          <h1 className="text-3xl font-bold tracking-tight">SME Payments</h1>
+          <h1 className="text-3xl font-bold tracking-tight">
+            Programmable SME Settlement
+          </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Procurement-to-pay platform for UK SMEs
+            Event-Driven B2B Payments with Embedded Liquidity and Verifiable
+            Digital Trust
           </p>
         </div>
 

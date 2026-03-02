@@ -36,7 +36,10 @@ export class PasskeysService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
   ) {
-    this.rpName = this.config.get<string>("WEBAUTHN_RP_NAME", "SME Payments");
+    this.rpName = this.config.get<string>(
+      "WEBAUTHN_RP_NAME",
+      "Programmable SME Settlement",
+    );
     this.rpId = this.config.get<string>("WEBAUTHN_RP_ID", "localhost");
     this.origin = this.config.get<string>(
       "WEBAUTHN_ORIGIN",

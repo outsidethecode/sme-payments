@@ -26,8 +26,10 @@ async function bootstrap() {
 
   // Swagger
   const config = new DocumentBuilder()
-    .setTitle("SME Payments API")
-    .setDescription("Procurement-to-Pay platform for SMEs")
+    .setTitle("Programmable SME Settlement API")
+    .setDescription(
+      "Event-Driven B2B Payments with Embedded Liquidity and Verifiable Digital Trust",
+    )
     .setVersion("0.1.0")
     .addBearerAuth()
     .build();

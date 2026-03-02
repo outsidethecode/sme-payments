@@ -32,6 +32,14 @@ class SignatureDataDto {
   @IsOptional()
   @IsString()
   credentialId?: string;
+
+  @IsOptional()
+  @IsString()
+  intentHash?: string;
+
+  @IsOptional()
+  @IsString()
+  clientDataJSON?: string;
 }
 
 class RequestEarlyPaymentDto {

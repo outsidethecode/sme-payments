@@ -14,8 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SME Payments Platform",
-  description: "Procurement-to-pay platform for UK SMEs",
+  title: "Programmable SME Settlement",
+  description:
+    "Event-Driven B2B Payments with Embedded Liquidity and Verifiable Digital Trust",
 };
 
 export default function RootLayout({

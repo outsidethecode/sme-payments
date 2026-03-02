@@ -103,7 +103,7 @@ export default function DashboardLayout({
       <aside className="hidden w-64 flex-col border-r bg-muted/30 md:flex">
         <div className="flex h-14 items-center border-b px-4">
           <Link href="/dashboard" className="text-lg font-bold tracking-tight">
-            SME Payments
+            Programmable SME Settlement
           </Link>
         </div>
 
@@ -164,7 +164,7 @@ export default function DashboardLayout({
       <main className="flex-1 overflow-y-auto">
         {/* Mobile header */}
         <header className="flex h-14 items-center justify-between border-b px-4 md:hidden">
-          <span className="text-lg font-bold">SME Payments</span>
+          <span className="text-lg font-bold">Programmable SME Settlement</span>
           <Button variant="ghost" size="sm" onClick={logout}>
             <LogOut className="h-4 w-4" />
           </Button>
