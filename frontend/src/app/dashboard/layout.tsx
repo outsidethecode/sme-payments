@@ -27,8 +27,11 @@ import {
   UserPlus,
   ClipboardCheck,
   ArrowRightLeft,
+  Scale,
+  AlertTriangle,
 } from "lucide-react";
 import { PasskeyBanner } from "@/components/passkey-banner";
+import { HealthIndicator } from "@/components/health-indicator";
 
 const NAV_ITEMS = [
   {
@@ -78,6 +81,18 @@ const NAV_ITEMS = [
     label: "Settlements",
     icon: ArrowRightLeft,
     roles: ["BUYER", "SUPPLIER", "LIQUIDITY_PARTNER", "ADMIN"],
+  },
+  {
+    href: "/dashboard/disputes",
+    label: "Disputes",
+    icon: Scale,
+    roles: ["BUYER", "SUPPLIER", "ADMIN"],
+  },
+  {
+    href: "/dashboard/risk",
+    label: "Risk Controls",
+    icon: AlertTriangle,
+    roles: ["ADMIN", "LIQUIDITY_PARTNER"],
   },
   {
     href: "/dashboard/ledger",
@@ -133,6 +148,9 @@ export default function DashboardLayout({
           <Link href="/dashboard" className="text-lg font-bold tracking-tight">
             Programmable SME Settlement
           </Link>
+          <div className="ml-auto">
+            <HealthIndicator />
+          </div>
         </div>
 
         <nav className="flex-1 space-y-1 p-3">

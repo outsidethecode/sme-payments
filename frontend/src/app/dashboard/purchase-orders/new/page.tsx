@@ -34,6 +34,12 @@ export default function NewPurchaseOrderPage() {
 
   const [supplierId, setSupplierId] = useState("");
   const [description, setDescription] = useState("");
+  const [externalPoNumber, setExternalPoNumber] = useState("");
+  const [paymentTerms, setPaymentTerms] = useState("IMMEDIATE");
+  const [deliveryTerms, setDeliveryTerms] = useState("EX_WORKS");
+  const [deliveryAddress, setDeliveryAddress] = useState("");
+  const [taxRate, setTaxRate] = useState(0); // percentage, converted to BPS
+  const [disputeWindowHours, setDisputeWindowHours] = useState(72);
   const [lineItems, setLineItems] = useState<LineItem[]>([
     { description: "", quantity: 1, unitPricePennies: 0 },
   ]);
@@ -44,11 +50,8 @@ export default function NewPurchaseOrderPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: (data: {
-      supplierId: string;
-      description?: string;
-      lineItems: LineItem[];
-    }) => poApi.create(data),
+    mutationFn: (data: Parameters<typeof poApi.create>[0]) =>
+      poApi.create(data),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
       toast.success("Purchase order created");
@@ -112,6 +115,12 @@ export default function NewPurchaseOrderPage() {
       supplierId,
       description: description || undefined,
       lineItems: validItems,
+      externalPoNumber: externalPoNumber || undefined,
+      paymentTerms,
+      deliveryTerms,
+      deliveryAddress: deliveryAddress || undefined,
+      taxRate: Math.round(taxRate * 100), // percentage to BPS
+      disputeWindowHours,
     });
   }
 
@@ -162,6 +171,80 @@ export default function NewPurchaseOrderPage() {
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
               />
+            </div>
+            <div className="space-y-2">
+              <Label>External PO Number (optional)</Label>
+              <Input
+                placeholder="e.g. EXT-PO-2025-001"
+                value={externalPoNumber}
+                onChange={(e) => setExternalPoNumber(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Payment Terms</Label>
+                <Select value={paymentTerms} onValueChange={setPaymentTerms}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="IMMEDIATE">Immediate</SelectItem>
+                    <SelectItem value="NET_15">Net 15</SelectItem>
+                    <SelectItem value="NET_30">Net 30</SelectItem>
+                    <SelectItem value="NET_45">Net 45</SelectItem>
+                    <SelectItem value="NET_60">Net 60</SelectItem>
+                    <SelectItem value="NET_90">Net 90</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Delivery Terms</Label>
+                <Select value={deliveryTerms} onValueChange={setDeliveryTerms}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="EX_WORKS">Ex Works</SelectItem>
+                    <SelectItem value="FOB">FOB</SelectItem>
+                    <SelectItem value="CIF">CIF</SelectItem>
+                    <SelectItem value="DDP">DDP</SelectItem>
+                    <SelectItem value="CUSTOM">Custom</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Delivery Address (optional)</Label>
+              <Input
+                placeholder="Warehouse or delivery location"
+                value={deliveryAddress}
+                onChange={(e) => setDeliveryAddress(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Tax Rate (%)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={0.1}
+                  value={taxRate || ""}
+                  onChange={(e) => setTaxRate(Number(e.target.value))}
+                  placeholder="e.g. 15 for 15% VAT"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Dispute Window (hours)</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={disputeWindowHours}
+                  onChange={(e) =>
+                    setDisputeWindowHours(Number(e.target.value))
+                  }
+                />
+              </div>
             </div>
           </CardContent>
         </Card>

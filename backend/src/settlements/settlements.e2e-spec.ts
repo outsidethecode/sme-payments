@@ -64,12 +64,21 @@ describe("Settlements E2E", () => {
           where: { purchaseOrderId: { in: poIds } },
         });
         await prisma.eventLog.deleteMany({
-          where: { entityId: { in: poIds } },
+          where: {
+            OR: [
+              { entityId: { in: poIds } },
+              { actorId: { in: existingUserIds } },
+            ],
+          },
         });
         await prisma.purchaseOrder.deleteMany({
           where: { id: { in: poIds } },
         });
       }
+      // Also delete any remaining event logs referencing these users
+      await prisma.eventLog.deleteMany({
+        where: { actorId: { in: existingUserIds } },
+      });
       // Clean memberships + orgs
       const memberships = await prisma.orgMembership.findMany({
         where: { userId: { in: existingUserIds } },

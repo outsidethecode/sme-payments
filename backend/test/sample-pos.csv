@@ -1,0 +1,9 @@
+supplierId,description,lineDescription,quantity,unitPricePennies,externalPoNumber,paymentTerms,deliveryTerms,deliveryAddress,taxRate
+511592f6-a3fa-483a-af54-7f82869f6d6e,Office Supplies Q1,A4 Paper Reams (Box of 5),50,12500,PO-2026-001,NET_30,EX_WORKS,123 King Fahd Road Riyadh,1500
+511592f6-a3fa-483a-af54-7f82869f6d6e,Office Supplies Q1,Ink Cartridges (Black),30,22500,PO-2026-001,NET_30,EX_WORKS,123 King Fahd Road Riyadh,1500
+511592f6-a3fa-483a-af54-7f82869f6d6e,Office Supplies Q1,Desk Organiser Set,20,37500,PO-2026-001,NET_30,EX_WORKS,123 King Fahd Road Riyadh,1500
+511592f6-a3fa-483a-af54-7f82869f6d6e,IT Equipment Refresh,Laptop Stand (Adjustable),8,120000,PO-2026-002,NET_60,DDP,456 Olaya Street Riyadh,1500
+511592f6-a3fa-483a-af54-7f82869f6d6e,IT Equipment Refresh,USB-C Hub 7-port,8,85000,PO-2026-002,NET_60,DDP,456 Olaya Street Riyadh,1500
+511592f6-a3fa-483a-af54-7f82869f6d6e,IT Equipment Refresh,Wireless Mouse,8,32000,PO-2026-002,NET_60,DDP,456 Olaya Street Riyadh,1500
+511592f6-a3fa-483a-af54-7f82869f6d6e,Warehouse Maintenance,Industrial Cleaning Supplies,5,450000,PO-2026-003,IMMEDIATE,EX_WORKS,789 Industrial City Dammam,1500
+511592f6-a3fa-483a-af54-7f82869f6d6e,Warehouse Maintenance,Safety Equipment Set,10,220000,PO-2026-003,IMMEDIATE,EX_WORKS,789 Industrial City Dammam,1500

@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { poApi, ledgerApi, type SignaturePayload } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { usePasskey } from "@/lib/use-passkey";
+import { EvidencePanel, EvidencePackButton } from "@/components/evidence-panel";
 import {
   formatCurrency,
   formatDate,
@@ -363,6 +364,88 @@ export default function PurchaseOrderDetailPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Extended PO Fields */}
+      {(po.externalPoNumber ||
+        po.paymentTerms !== "IMMEDIATE" ||
+        po.deliveryTerms !== "EX_WORKS" ||
+        (po.taxRate ?? 0) > 0) && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Order Terms</CardTitle>
+            <CardDescription>
+              Payment, delivery, and tax details
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            {po.externalPoNumber && (
+              <div className="flex justify-between">
+                <span>External PO #</span>
+                <span className="font-mono font-medium">
+                  {po.externalPoNumber}
+                </span>
+              </div>
+            )}
+            <div className="flex justify-between">
+              <span>Payment Terms</span>
+              <Badge variant="outline">
+                {po.paymentTerms?.replace("_", " ") || "IMMEDIATE"}
+              </Badge>
+            </div>
+            <div className="flex justify-between">
+              <span>Delivery Terms</span>
+              <Badge variant="outline">
+                {po.deliveryTerms?.replace("_", " ") || "EX WORKS"}
+              </Badge>
+            </div>
+            {po.deliveryAddress && (
+              <div className="flex justify-between">
+                <span>Delivery Address</span>
+                <span className="text-muted-foreground text-right max-w-[60%]">
+                  {po.deliveryAddress}
+                </span>
+              </div>
+            )}
+            {(po.taxRate ?? 0) > 0 && (
+              <>
+                <Separator />
+                <div className="flex justify-between">
+                  <span>Tax Rate</span>
+                  <span>{((po.taxRate ?? 0) / 100).toFixed(1)}%</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Tax Amount</span>
+                  <span>{formatCurrency(po.taxAmount ?? 0)}</span>
+                </div>
+                <div className="flex justify-between font-medium">
+                  <span>Gross Amount</span>
+                  <span>
+                    {formatCurrency(po.grossAmount ?? po.totalAmountPennies)}
+                  </span>
+                </div>
+              </>
+            )}
+            <div className="flex justify-between">
+              <span>Dispute Window</span>
+              <span>{po.disputeWindowHours ?? 72}h</span>
+            </div>
+            {po.partialAcceptanceAllowed && (
+              <div className="flex justify-between">
+                <span>Partial Acceptance</span>
+                <Badge variant="secondary">Allowed</Badge>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Evidence & Attachments */}
+      <EvidencePanel purchaseOrderId={id} />
+
+      {/* Evidence Pack Download */}
+      <div className="flex justify-end">
+        <EvidencePackButton purchaseOrderId={id} />
+      </div>
 
       {/* Event Timeline */}
       {events && events.length > 0 && (

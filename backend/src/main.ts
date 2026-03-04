@@ -1,17 +1,27 @@
 import { NestFactory } from "@nestjs/core";
 import { ValidationPipe } from "@nestjs/common";
 import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
+import helmet from "helmet";
 import { AppModule } from "./app.module";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  // Security headers
+  app.use(helmet());
+
   // Global prefix
   app.setGlobalPrefix("api");
 
   // CORS
+  const allowedOrigins = (
+    process.env.WEBAUTHN_ORIGIN || "http://localhost:3000"
+  )
+    .split(",")
+    .map((o) => o.trim());
+  allowedOrigins.push("http://localhost:3002");
   app.enableCors({
-    origin: process.env.WEBAUTHN_ORIGIN || "http://localhost:3000",
+    origin: allowedOrigins,
     credentials: true,
   });
 

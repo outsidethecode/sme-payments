@@ -1,6 +1,7 @@
-import { Module } from "@nestjs/common";
+import { MiddlewareConsumer, Module, NestModule } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { BullModule } from "@nestjs/bullmq";
+import { ThrottlerModule } from "@nestjs/throttler";
 import { PrismaModule } from "./prisma/prisma.module";
 import { AuthModule } from "./auth/auth.module";
 import { UsersModule } from "./users/users.module";
@@ -18,6 +19,13 @@ import { PasskeysModule } from "./passkeys/passkeys.module";
 import { KybModule } from "./kyb/kyb.module";
 import { InvitationsModule } from "./invitations/invitations.module";
 import { OnboardingModule } from "./onboarding/onboarding.module";
+import { EvidenceModule } from "./evidence/evidence.module";
+import { DisputesModule } from "./disputes/disputes.module";
+import { RiskModule } from "./risk/risk.module";
+import { HealthModule } from "./health/health.module";
+import { PdpaModule } from "./pdpa/pdpa.module";
+import { ProofsModule } from "./proofs/proofs.module";
+import { CorrelationIdMiddleware } from "./common/correlation-id.middleware";
 
 @Module({
   imports: [
@@ -27,6 +35,12 @@ import { OnboardingModule } from "./onboarding/onboarding.module";
         host: process.env.REDIS_HOST || "localhost",
         port: parseInt(process.env.REDIS_PORT || "6379", 10),
       },
+    }),
+    ThrottlerModule.forRoot({
+      throttlers: [
+        { name: "short", ttl: 1000, limit: 20 },
+        { name: "medium", ttl: 60000, limit: 100 },
+      ],
     }),
     PrismaModule,
     AuthModule,
@@ -45,6 +59,16 @@ import { OnboardingModule } from "./onboarding/onboarding.module";
     KybModule,
     InvitationsModule,
     OnboardingModule,
+    EvidenceModule,
+    DisputesModule,
+    RiskModule,
+    HealthModule,
+    PdpaModule,
+    ProofsModule,
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(CorrelationIdMiddleware).forRoutes("*");
+  }
+}

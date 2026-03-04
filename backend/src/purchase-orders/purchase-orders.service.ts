@@ -20,6 +20,15 @@ function generateReference(): string {
   return `PO-${timestamp}-${random}`;
 }
 
+export type PaymentTermsValue =
+  | "IMMEDIATE"
+  | "NET_15"
+  | "NET_30"
+  | "NET_45"
+  | "NET_60"
+  | "NET_90";
+export type DeliveryTermsValue = "EX_WORKS" | "FOB" | "CIF" | "DDP" | "CUSTOM";
+
 export interface CreatePOInput {
   buyerId: string;
   supplierId: string;
@@ -29,6 +38,20 @@ export interface CreatePOInput {
     quantity: number;
     unitPricePennies: number;
   }>;
+  // Phase 4 extended fields
+  externalPoNumber?: string;
+  paymentTerms?: PaymentTermsValue;
+  deliveryTerms?: DeliveryTermsValue;
+  deliveryTermsNote?: string;
+  deliveryAddress?: string;
+  taxRate?: number; // basis points
+  disputeWindowHours?: number;
+  partialAcceptanceAllowed?: boolean;
+  acceptedLineItems?: number[];
+  // Import fields
+  importSource?: string;
+  importBatchId?: string;
+  attachmentUrl?: string;
 }
 
 @Injectable()
@@ -76,6 +99,11 @@ export class PurchaseOrdersService {
       );
     }
 
+    // Compute tax & gross amounts
+    const taxRate = input.taxRate ?? 0; // BPS
+    const taxAmount = Math.round((amount * taxRate) / 10000);
+    const grossAmount = amount + taxAmount;
+
     const po = await this.prisma.purchaseOrder.create({
       data: {
         referenceNumber: generateReference(),
@@ -85,6 +113,22 @@ export class PurchaseOrdersService {
         lineItems: input.lineItems,
         amount,
         currency,
+        // Phase 4 extended fields
+        externalPoNumber: input.externalPoNumber,
+        paymentTerms: (input.paymentTerms as any) || "IMMEDIATE",
+        deliveryTerms: (input.deliveryTerms as any) || "EX_WORKS",
+        deliveryTermsNote: input.deliveryTermsNote,
+        deliveryAddress: input.deliveryAddress,
+        taxRate,
+        taxAmount,
+        grossAmount,
+        disputeWindowHours: input.disputeWindowHours ?? 72,
+        partialAcceptanceAllowed: input.partialAcceptanceAllowed ?? false,
+        acceptedLineItems: input.acceptedLineItems ?? [],
+        importSource: input.importSource,
+        importBatchId: input.importBatchId,
+        importedAt: input.importSource ? new Date() : null,
+        attachmentUrl: input.attachmentUrl,
       },
       include: {
         buyer: {
@@ -715,6 +759,91 @@ export class PurchaseOrdersService {
     return this.formatPO(updated);
   }
 
+  // ── CSV Import ────────────────────────────────────────────
+
+  /**
+   * Import POs from a CSV buffer.
+   * Expected CSV columns: supplierId, description, lineDescription, quantity, unitPricePennies
+   *                        externalPoNumber, paymentTerms, deliveryTerms, deliveryAddress, taxRate
+   * Multiple rows with the same externalPoNumber are merged into one PO with multiple line items.
+   */
+  async importFromCSV(
+    csvBuffer: Buffer,
+    buyerId: string,
+  ): Promise<{ imported: number; errors: string[] }> {
+    const text = csvBuffer.toString("utf-8");
+    const lines = text.split(/\r?\n/).filter((l) => l.trim());
+    if (lines.length < 2) {
+      throw new BadRequestException(
+        "CSV must have a header row and at least one data row",
+      );
+    }
+
+    const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
+    const requiredHeaders = [
+      "supplierid",
+      "linedescription",
+      "quantity",
+      "unitpricepennies",
+    ];
+    for (const rh of requiredHeaders) {
+      if (!headers.includes(rh)) {
+        throw new BadRequestException(`Missing required CSV column: ${rh}`);
+      }
+    }
+
+    // Group rows by externalPoNumber (or by row index if not provided)
+    const groups: Record<string, Record<string, string>[]> = {};
+    const errors: string[] = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const values = lines[i].split(",").map((v) => v.trim());
+      const row: Record<string, string> = {};
+      headers.forEach((h, idx) => {
+        row[h] = values[idx] || "";
+      });
+
+      const groupKey = row["externalponumber"] || `__row_${i}`;
+      if (!groups[groupKey]) groups[groupKey] = [];
+      groups[groupKey].push(row);
+    }
+
+    const batchId = `import-${Date.now().toString(36)}`;
+    let imported = 0;
+
+    for (const [key, rows] of Object.entries(groups)) {
+      try {
+        const firstRow = rows[0];
+        const lineItems = rows.map((r) => ({
+          description: r["linedescription"] || "Imported item",
+          quantity: parseInt(r["quantity"]) || 1,
+          unitPricePennies: parseInt(r["unitpricepennies"]) || 0,
+        }));
+
+        await this.create({
+          buyerId,
+          supplierId: firstRow["supplierid"],
+          description: firstRow["description"] || `Imported PO: ${key}`,
+          lineItems,
+          externalPoNumber: key.startsWith("__row_") ? undefined : key,
+          paymentTerms: (firstRow["paymentterms"] as any) || undefined,
+          deliveryTerms: (firstRow["deliveryterms"] as any) || undefined,
+          deliveryAddress: firstRow["deliveryaddress"] || undefined,
+          taxRate: firstRow["taxrate"]
+            ? parseInt(firstRow["taxrate"])
+            : undefined,
+          importSource: "CSV",
+          importBatchId: batchId,
+        });
+        imported++;
+      } catch (err: any) {
+        errors.push(`Group "${key}": ${err.message}`);
+      }
+    }
+
+    return { imported, errors };
+  }
+
   // ── Helpers ──────────────────────────────────────────────────
 
   private async requireStatus(id: string, expectedStatus: string) {
@@ -736,6 +865,7 @@ export class PurchaseOrdersService {
       supplierId: po.supplierId,
       status: po.status,
       totalAmountPennies: po.amount,
+      currency: po.currency,
       lineItems: po.lineItems,
       description: po.description || null,
       acceptanceDeadline: po.acceptedAt
@@ -747,6 +877,23 @@ export class PurchaseOrdersService {
             ).toISOString()
           : null,
       paymentLocked: po.paymentLocked,
+      // Phase 4 extended fields
+      externalPoNumber: po.externalPoNumber || null,
+      paymentTerms: po.paymentTerms || "IMMEDIATE",
+      deliveryTerms: po.deliveryTerms || "EX_WORKS",
+      deliveryTermsNote: po.deliveryTermsNote || null,
+      deliveryAddress: po.deliveryAddress || null,
+      taxRate: po.taxRate ?? 0,
+      taxAmount: po.taxAmount ?? 0,
+      grossAmount: po.grossAmount ?? po.amount,
+      disputeWindowHours: po.disputeWindowHours ?? 72,
+      partialAcceptanceAllowed: po.partialAcceptanceAllowed ?? false,
+      acceptedLineItems: po.acceptedLineItems ?? [],
+      importSource: po.importSource || null,
+      importBatchId: po.importBatchId || null,
+      importedAt: po.importedAt || null,
+      attachmentUrl: po.attachmentUrl || null,
+      // Timestamps
       acceptedAt: po.acceptedAt,
       deliveredAt: po.deliveredAt,
       verifiedAt: po.verifiedAt,

@@ -28,7 +28,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import Link from "next/link";
-import { Plus, Eye } from "lucide-react";
+import { Plus, Eye, FileSpreadsheet } from "lucide-react";
 
 export default function PurchaseOrdersPage() {
   const { user } = useAuth();
@@ -49,12 +49,20 @@ export default function PurchaseOrdersPage() {
           </p>
         </div>
         {user?.role === "BUYER" && (
-          <Link href="/dashboard/purchase-orders/new">
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              New PO
-            </Button>
-          </Link>
+          <div className="flex gap-2">
+            <Link href="/dashboard/purchase-orders/import">
+              <Button variant="outline">
+                <FileSpreadsheet className="mr-2 h-4 w-4" />
+                Import CSV
+              </Button>
+            </Link>
+            <Link href="/dashboard/purchase-orders/new">
+              <Button>
+                <Plus className="mr-2 h-4 w-4" />
+                New PO
+              </Button>
+            </Link>
+          </div>
         )}
       </div>
 

@@ -5,6 +5,7 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../prisma/prisma.service";
+import { RedisChallengeStore } from "./redis-challenge-store";
 import {
   generateRegistrationOptions,
   verifyRegistrationResponse,
@@ -17,15 +18,6 @@ import type {
   AuthenticatorTransportFuture,
 } from "@simplewebauthn/types";
 
-// In-memory challenge store (keyed by `${userId}:${purpose}`)
-// In production you'd use Redis with a TTL.
-const challengeStore = new Map<
-  string,
-  { challenge: string; expiresAt: number }
->();
-
-const CHALLENGE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-
 @Injectable()
 export class PasskeysService {
   private readonly rpName: string;
@@ -35,6 +27,7 @@ export class PasskeysService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly challengeStore: RedisChallengeStore,
   ) {
     this.rpName = this.config.get<string>(
       "WEBAUTHN_RP_NAME",
@@ -76,28 +69,23 @@ export class PasskeysService {
       })),
     });
 
-    // Store challenge
+    // Store challenge in Redis (or in-memory fallback)
     const key = `${userId}:registration`;
-    challengeStore.set(key, {
-      challenge: options.challenge,
-      expiresAt: Date.now() + CHALLENGE_TTL_MS,
-    });
+    await this.challengeStore.set(key, options.challenge);
 
     return options;
   }
 
   async verifyRegResponse(userId: string, response: RegistrationResponseJSON) {
     const key = `${userId}:registration`;
-    const stored = challengeStore.get(key);
-    if (!stored || Date.now() > stored.expiresAt) {
-      challengeStore.delete(key);
+    const challenge = await this.challengeStore.getAndDelete(key);
+    if (!challenge) {
       throw new BadRequestException("Challenge expired or not found");
     }
-    challengeStore.delete(key);
 
     const verification = await verifyRegistrationResponse({
       response,
-      expectedChallenge: stored.challenge,
+      expectedChallenge: challenge,
       expectedOrigin: this.origin,
       expectedRPID: this.rpId,
       requireUserVerification: false,
@@ -170,12 +158,9 @@ export class PasskeysService {
       })),
     });
 
-    // Store challenge keyed by purpose
+    // Store challenge keyed by purpose in Redis
     const key = `${userId}:${purpose}`;
-    challengeStore.set(key, {
-      challenge: options.challenge,
-      expiresAt: Date.now() + CHALLENGE_TTL_MS,
-    });
+    await this.challengeStore.set(key, options.challenge);
 
     return options;
   }
@@ -190,12 +175,10 @@ export class PasskeysService {
     response: AuthenticationResponseJSON,
   ) {
     const key = `${userId}:${purpose}`;
-    const stored = challengeStore.get(key);
-    if (!stored || Date.now() > stored.expiresAt) {
-      challengeStore.delete(key);
+    const challenge = await this.challengeStore.getAndDelete(key);
+    if (!challenge) {
       throw new BadRequestException("Challenge expired or not found");
     }
-    challengeStore.delete(key);
 
     // Look up the credential
     const passkey = await this.prisma.userPasskey.findUnique({
@@ -207,7 +190,7 @@ export class PasskeysService {
 
     const verification = await verifyAuthenticationResponse({
       response,
-      expectedChallenge: stored.challenge,
+      expectedChallenge: challenge,
       expectedOrigin: this.origin,
       expectedRPID: this.rpId,
       requireUserVerification: false,

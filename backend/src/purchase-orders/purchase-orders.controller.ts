@@ -6,13 +6,18 @@ import {
   Param,
   Body,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
   Request,
 } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 import { ApiTags, ApiBearerAuth, ApiOperation } from "@nestjs/swagger";
 import {
   IsString,
   IsOptional,
   IsArray,
+  IsBoolean,
+  IsEnum,
   ValidateNested,
   IsNumber,
   Min,
@@ -48,6 +53,40 @@ class CreatePODto {
   @ValidateNested({ each: true })
   @Type(() => LineItemDto)
   lineItems!: LineItemDto[];
+
+  @IsOptional()
+  @IsString()
+  externalPoNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  paymentTerms?: string;
+
+  @IsOptional()
+  @IsString()
+  deliveryTerms?: string;
+
+  @IsOptional()
+  @IsString()
+  deliveryTermsNote?: string;
+
+  @IsOptional()
+  @IsString()
+  deliveryAddress?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  taxRate?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  disputeWindowHours?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  partialAcceptanceAllowed?: boolean;
 }
 
 @ApiTags("Purchase Orders")
@@ -66,7 +105,31 @@ export class PurchaseOrdersController {
       supplierId: dto.supplierId,
       description: dto.description,
       lineItems: dto.lineItems,
+      externalPoNumber: dto.externalPoNumber,
+      paymentTerms: dto.paymentTerms as any,
+      deliveryTerms: dto.deliveryTerms as any,
+      deliveryTermsNote: dto.deliveryTermsNote,
+      deliveryAddress: dto.deliveryAddress,
+      taxRate: dto.taxRate,
+      disputeWindowHours: dto.disputeWindowHours,
+      partialAcceptanceAllowed: dto.partialAcceptanceAllowed,
     });
+  }
+
+  @Post("import/csv")
+  @Roles("BUYER")
+  @UseInterceptors(
+    FileInterceptor("file", { limits: { fileSize: 5 * 1024 * 1024 } }),
+  )
+  @ApiOperation({ summary: "Import POs from CSV file (Buyer only)" })
+  async importCSV(
+    @UploadedFile() file: Express.Multer.File,
+    @Request() req: any,
+  ) {
+    if (!file) {
+      return { statusCode: 400, message: "No CSV file provided" };
+    }
+    return this.poService.importFromCSV(file.buffer, req.user.id);
   }
 
   @Get()

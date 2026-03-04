@@ -1,4 +1,6 @@
 import { Module, forwardRef } from "@nestjs/common";
+import { MulterModule } from "@nestjs/platform-express";
+import { memoryStorage } from "multer";
 import { PurchaseOrdersService } from "./purchase-orders.service";
 import { PurchaseOrdersController } from "./purchase-orders.controller";
 import { LedgerModule } from "../ledger/ledger.module";
@@ -16,6 +18,7 @@ import { SettlementsModule } from "../settlements/settlements.module";
     forwardRef(() => ApprovalsModule),
     OrganisationsModule,
     SettlementsModule,
+    MulterModule.register({ storage: memoryStorage() }),
   ],
   providers: [PurchaseOrdersService],
   controllers: [PurchaseOrdersController],

@@ -86,6 +86,7 @@ export interface PurchaseOrder {
   supplierId: string;
   status: string;
   totalAmountPennies: number;
+  currency?: string;
   lineItems: LineItem[];
   description: string | null;
   acceptanceDeadline: string | null;
@@ -94,6 +95,22 @@ export interface PurchaseOrder {
   buyer?: User;
   supplier?: User;
   paymentLock?: PaymentLock | null;
+  // Phase 4 extended fields
+  externalPoNumber?: string | null;
+  paymentTerms?: string;
+  deliveryTerms?: string;
+  deliveryTermsNote?: string | null;
+  deliveryAddress?: string | null;
+  taxRate?: number;
+  taxAmount?: number;
+  grossAmount?: number;
+  disputeWindowHours?: number;
+  partialAcceptanceAllowed?: boolean;
+  acceptedLineItems?: number[];
+  importSource?: string | null;
+  importBatchId?: string | null;
+  importedAt?: string | null;
+  attachmentUrl?: string | null;
 }
 
 export interface PaymentLock {
@@ -190,7 +207,24 @@ export const poApi = {
     supplierId: string;
     description?: string;
     lineItems: LineItem[];
+    externalPoNumber?: string;
+    paymentTerms?: string;
+    deliveryTerms?: string;
+    deliveryTermsNote?: string;
+    deliveryAddress?: string;
+    taxRate?: number;
+    disputeWindowHours?: number;
+    partialAcceptanceAllowed?: boolean;
   }) => api.post<PurchaseOrder>("/purchase-orders", data),
+  importCSV: (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return api.post<{ imported: number; errors: string[] }>(
+      "/purchase-orders/import/csv",
+      formData,
+      { headers: { "Content-Type": "multipart/form-data" } },
+    );
+  },
   send: (id: string, signatureData?: SignaturePayload) =>
     api.patch<PurchaseOrder>(`/purchase-orders/${id}/send`, { signatureData }),
   accept: (id: string, signatureData?: SignaturePayload) =>
@@ -265,6 +299,62 @@ export const ledgerApi = {
   }) => api.post("/ledger/events", data),
   /** Get self-contained proof bundle for external verification */
   proof: (eventId: string) => api.get(`/ledger/proof/${eventId}`),
+};
+
+// ── Evidence ──────────────────────────────────────────────────
+export interface EvidenceAttachment {
+  id: string;
+  purchaseOrderId: string;
+  uploaderId: string;
+  type: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  sha256Hash: string;
+  eventLogId: string | null;
+  description: string | null;
+  createdAt: string;
+  uploader?: { id: string; name: string; companyName: string; role: string };
+}
+
+export interface EvidencePack {
+  purchaseOrder: any;
+  attachments: any[];
+  ledgerEvents: any[];
+  integrity: {
+    attachmentId: string;
+    filename: string;
+    valid: boolean;
+    sha256: string;
+  }[];
+  generatedAt: string;
+}
+
+export const evidenceApi = {
+  upload: (data: {
+    purchaseOrderId: string;
+    type: string;
+    description?: string;
+    file: File;
+  }) => {
+    const formData = new FormData();
+    formData.append("purchaseOrderId", data.purchaseOrderId);
+    formData.append("type", data.type);
+    if (data.description) formData.append("description", data.description);
+    formData.append("file", data.file);
+    return api.post<EvidenceAttachment>("/evidence/upload", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+  },
+  listByPO: (poId: string) =>
+    api.get<EvidenceAttachment[]>(`/evidence/po/${poId}`),
+  download: (id: string) =>
+    api.get(`/evidence/${id}/download`, { responseType: "blob" }),
+  verify: (id: string) =>
+    api.get<{ valid: boolean; storedHash: string; computedHash: string }>(
+      `/evidence/${id}/verify`,
+    ),
+  pack: (poId: string) => api.get<EvidencePack>(`/evidence/po/${poId}/pack`),
 };
 
 // ── Passkeys ──────────────────────────────────────────────────
@@ -541,4 +631,133 @@ export const settlementsApi = {
       currentStatus: string;
       changed: boolean;
     }>(`/settlements/${id}/reconcile`, { externalRef }),
+};
+
+// ── Disputes ──────────────────────────────────────────────────
+
+export interface Dispute {
+  id: string;
+  purchaseOrderId: string;
+  raisedById: string;
+  reason: string;
+  status: "OPEN" | "EVIDENCE_SUBMITTED" | "UNDER_REVIEW" | "RESOLVED";
+  outcome:
+    | "FULL_REFUND"
+    | "PARTIAL_REFUND"
+    | "RELEASE_TO_SUPPLIER"
+    | "REWORK"
+    | null;
+  resolvedById: string | null;
+  refundAmount: number | null;
+  resolutionNotes: string | null;
+  buyerEvidence: string[] | null;
+  supplierEvidence: string[] | null;
+  resolvedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  purchaseOrder?: {
+    id: string;
+    referenceNumber: string;
+    amount: number;
+    currency: string;
+    status: string;
+    buyerId?: string;
+    supplierId?: string;
+  };
+  raisedBy?: { id: string; name: string; email: string; companyName: string };
+  resolvedBy?: { id: string; name: string; email: string } | null;
+}
+
+export const disputesApi = {
+  raise: (data: {
+    purchaseOrderId: string;
+    reason: string;
+    evidenceIds?: string[];
+  }) => api.post<Dispute>("/disputes", data),
+  submitEvidence: (id: string, evidenceIds: string[]) =>
+    api.post<Dispute>(`/disputes/${id}/evidence`, { evidenceIds }),
+  markUnderReview: (id: string) => api.patch<Dispute>(`/disputes/${id}/review`),
+  resolve: (
+    id: string,
+    data: {
+      outcome:
+        | "FULL_REFUND"
+        | "PARTIAL_REFUND"
+        | "RELEASE_TO_SUPPLIER"
+        | "REWORK";
+      refundAmount?: number;
+      resolutionNotes?: string;
+    },
+  ) => api.patch<Dispute>(`/disputes/${id}/resolve`, data),
+  list: (params?: { purchaseOrderId?: string; status?: string }) =>
+    api.get<Dispute[]>("/disputes", { params }),
+  getById: (id: string) => api.get<Dispute>(`/disputes/${id}`),
+};
+
+// ── Risk / Fraud Controls ─────────────────────────────────────
+
+export interface FraudConfig {
+  maxPOsPerBuyerPerDay: number;
+  maxDailyValuePerBuyer: number;
+  mandatoryEvidenceThreshold: number;
+  supplierWhitelist: string[];
+  maxPOsPerSupplierPerDay: number;
+}
+
+export interface FraudFlag {
+  id: string;
+  userId: string;
+  ruleCode: string;
+  severity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  details: Record<string, unknown>;
+  acknowledged: boolean;
+  acknowledgedBy: string | null;
+  acknowledgedAt: string | null;
+  createdAt: string;
+  user?: {
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+    companyName: string;
+  };
+}
+
+export interface ExposureReport {
+  liquidityPartnerId: string;
+  totalExposure: number;
+  fundingLimit: number | null;
+  utilisationPct: number | null;
+  buyerConcentration: Record<string, number>;
+  supplierConcentration: Record<string, number>;
+  fundingSuspended: boolean;
+  suspensionReason: string | null;
+  alerts: string[];
+}
+
+export const riskApi = {
+  // Fraud controls
+  getFraudConfig: () => api.get<FraudConfig>("/risk/fraud/config"),
+  updateFraudConfig: (data: Partial<FraudConfig>) =>
+    api.patch<FraudConfig>("/risk/fraud/config", data),
+  getUnacknowledgedFlags: () => api.get<FraudFlag[]>("/risk/fraud/flags"),
+  acknowledgeFlag: (id: string) =>
+    api.patch<FraudFlag>(`/risk/fraud/flags/${id}/acknowledge`),
+  getUserFlags: (userId: string) =>
+    api.get<FraudFlag[]>(`/risk/fraud/flags/user/${userId}`),
+
+  // LP risk
+  getLpRiskConfig: () => api.get("/risk/lp/config"),
+  updateLpRiskConfig: (data: Record<string, unknown>) =>
+    api.patch("/risk/lp/config", data),
+  getLpExposure: (lpId: string) =>
+    api.get<ExposureReport>(`/risk/lp/exposure/${lpId}`),
+  takeSnapshot: (lpId: string) =>
+    api.post(`/risk/lp/exposure/${lpId}/snapshot`),
+  getSnapshotHistory: (lpId: string, limit?: number) =>
+    api.get(`/risk/lp/exposure/${lpId}/history`, {
+      params: limit ? { limit } : undefined,
+    }),
+  checkFunding: (lpId: string, amount: number) =>
+    api.post("/risk/lp/check-funding", { lpId, amount }),
 };

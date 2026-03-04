@@ -41,6 +41,11 @@ model User {
   eventLogs              EventLog[]
   approvals              Approval[]
   sentInvitations        Invitation[]
+  evidenceUploads        EvidenceAttachment[]
+  disputesRaised         Dispute[]              @relation("DisputeRaiser")
+  disputesResolved       Dispute[]              @relation("DisputeResolver")
+  fraudFlags             FraudFlag[]
+  lpExposureSnapshots    LpExposureSnapshot[]   @relation("LPExposure")
 
   @@map("users")
 }
@@ -299,17 +304,60 @@ enum AcceptanceType {
   AUTO_ACCEPT
 }
 
+enum PaymentTerms {
+  IMMEDIATE
+  NET_15
+  NET_30
+  NET_45
+  NET_60
+  NET_90
+}
+
+enum DeliveryTerms {
+  EX_WORKS        // Buyer arranges collection
+  FOB             // Supplier loads; buyer bears transit risk
+  CIF             // Supplier insures + ships to port
+  DDP             // Supplier delivers to buyer door
+  CUSTOM
+}
+
 model PurchaseOrder {
   id                    String         @id @default(uuid())
   referenceNumber       String         @unique @map("reference_number")
+  externalPoNumber      String?        @map("external_po_number")   // buyer's native ERP PO number
   buyerId               String         @map("buyer_id")
   supplierId            String         @map("supplier_id")
   description           String
   lineItems             Json           @map("line_items")
-  amount                Int            // in pennies
+  amount                Int            // in smallest currency unit
   currency              String         @default("GBP")
+
+  // ── Payment & delivery terms ──
+  paymentTerms          PaymentTerms   @default(IMMEDIATE) @map("payment_terms")
+  deliveryTerms         DeliveryTerms  @default(EX_WORKS)  @map("delivery_terms")
+  deliveryTermsNote     String?        @map("delivery_terms_note")  // free text for CUSTOM
+  deliveryAddress       String?        @map("delivery_address")
+
+  // ── Tax ──
+  taxRate               Int            @default(0) @map("tax_rate")        // BPS (e.g. 1500 = 15% VAT)
+  taxAmount             Int            @default(0) @map("tax_amount")      // computed amount in smallest unit
+  grossAmount           Int?           @map("gross_amount")                // amount + taxAmount
+
+  // ── Windows ──
   acceptanceType        AcceptanceType @default(BUYER_CONFIRMATION) @map("acceptance_type")
   acceptanceWindowHours Int            @default(48) @map("acceptance_window_hours")
+  disputeWindowHours    Int            @default(72) @map("dispute_window_hours")  // hours after delivery to dispute
+
+  // ── Partial acceptance ──
+  partialAcceptanceAllowed Boolean     @default(false) @map("partial_acceptance_allowed")
+  acceptedLineItems        Json?       @map("accepted_line_items") // subset of lineItems accepted (if partial)
+
+  // ── Import metadata ──
+  importSource          String?        @map("import_source")       // "CSV" | "PDF" | "MANUAL"
+  importedAt            DateTime?      @map("imported_at")
+  importBatchId         String?        @map("import_batch_id")     // groups POs from same upload
+  attachmentUrl         String?        @map("attachment_url")      // original PDF/document URL
+
   status                POStatus       @default(DRAFT)
   paymentLocked         Boolean        @default(false) @map("payment_locked")
   lockedAt              DateTime?      @map("locked_at")
@@ -327,8 +375,134 @@ model PurchaseOrder {
   earlyPaymentRequest EarlyPaymentRequest?
   settlements         Settlement[]
   platformFees        PlatformFee[]
+  evidenceAttachments EvidenceAttachment[]
+  disputes            Dispute[]
 
+  @@index([externalPoNumber])
+  @@index([importBatchId])
   @@map("purchase_orders")
+}
+
+// ── Evidence Attachments ─────────────────────────────────────
+
+enum EvidenceType {
+  DELIVERY_NOTE
+  SIGNED_RECEIPT
+  PHOTO_PROOF
+  INVOICE
+  INSPECTION_REPORT
+  SHIPPING_DOCUMENT
+  PO_DOCUMENT         // Original PDF of PO
+  OTHER
+}
+
+model EvidenceAttachment {
+  id              String       @id @default(uuid())
+  purchaseOrderId String       @map("purchase_order_id")
+  uploaderId      String       @map("uploader_id")
+  type            EvidenceType
+  filename        String
+  mimeType        String       @map("mime_type")
+  sizeBytes       Int          @map("size_bytes")
+  storagePath     String       @map("storage_path")    // local path or S3 key
+  sha256Hash      String       @map("sha256_hash")     // content hash for tamper detection
+  eventLogId      String?      @map("event_log_id")    // linked ledger event (if any)
+  description     String?
+  metadata        Json?
+  createdAt       DateTime     @default(now()) @map("created_at")
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  uploader      User          @relation(fields: [uploaderId], references: [id])
+
+  @@index([purchaseOrderId])
+  @@index([sha256Hash])
+  @@map("evidence_attachments")
+}
+
+// ── Disputes ─────────────────────────────────────────────────
+
+enum DisputeStatus {
+  OPEN                 // dispute raised by buyer
+  EVIDENCE_SUBMITTED   // both parties have submitted evidence
+  UNDER_REVIEW         // admin is reviewing
+  RESOLVED             // admin has made a final decision
+}
+
+enum DisputeOutcome {
+  FULL_REFUND          // buyer gets 100% back
+  PARTIAL_REFUND       // buyer gets partial, rest to supplier
+  RELEASE_TO_SUPPLIER  // supplier keeps all funds
+  REWORK               // PO reverts to IN_PROGRESS for supplier to rework
+}
+
+model Dispute {
+  id              String         @id @default(uuid())
+  purchaseOrderId String         @map("purchase_order_id")
+  raisedById      String         @map("raised_by_id")          // buyer who raised the dispute
+  reason          String
+  status          DisputeStatus  @default(OPEN)
+  outcome         DisputeOutcome?
+  resolvedById    String?        @map("resolved_by_id")        // admin who resolved
+  refundAmount    Int?           @map("refund_amount")          // amount refunded (for partial refund)
+  resolutionNotes String?        @map("resolution_notes")
+  buyerEvidence   Json?          @map("buyer_evidence")         // array of evidence attachment IDs
+  supplierEvidence Json?         @map("supplier_evidence")      // array of evidence attachment IDs
+  resolvedAt      DateTime?      @map("resolved_at")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  raisedBy      User          @relation("DisputeRaiser", fields: [raisedById], references: [id])
+  resolvedBy    User?         @relation("DisputeResolver", fields: [resolvedById], references: [id])
+
+  @@index([purchaseOrderId])
+  @@index([status])
+  @@map("disputes")
+}
+
+// ── Fraud Flags ──────────────────────────────────────────────
+
+enum FraudFlagSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model FraudFlag {
+  id              String            @id @default(uuid())
+  userId          String            @map("user_id")
+  ruleCode        String            @map("rule_code")          // e.g. "VELOCITY_DAILY_PO_COUNT"
+  severity        FraudFlagSeverity
+  details         Json                                          // { limit, actual, window, etc. }
+  acknowledged    Boolean           @default(false)
+  acknowledgedBy  String?           @map("acknowledged_by")
+  acknowledgedAt  DateTime?         @map("acknowledged_at")
+  createdAt       DateTime          @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, ruleCode])
+  @@index([severity, acknowledged])
+  @@map("fraud_flags")
+}
+
+// ── LP Exposure Tracking ─────────────────────────────────────
+
+model LpExposureSnapshot {
+  id                  String   @id @default(uuid())
+  liquidityPartnerId  String   @map("liquidity_partner_id")
+  totalExposure       Int      @map("total_exposure")          // outstanding funded amount
+  buyerConcentration  Json     @map("buyer_concentration")     // { buyerId: amount }
+  supplierConcentration Json   @map("supplier_concentration")  // { supplierId: amount }
+  fundingSuspended    Boolean  @default(false) @map("funding_suspended")
+  suspensionReason    String?  @map("suspension_reason")
+  snapshotAt          DateTime @default(now()) @map("snapshot_at")
+
+  liquidityPartner User @relation("LPExposure", fields: [liquidityPartnerId], references: [id])
+
+  @@index([liquidityPartnerId, snapshotAt])
+  @@map("lp_exposure_snapshots")
 }
 
 // ── Payment Locks (Simulated Open Banking) ───────────────────
