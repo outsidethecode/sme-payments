@@ -1,6 +1,10 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
-import { createHash } from "crypto";
+import {
+  CRYPTO_SERVICE,
+  type ICryptoService,
+} from "../crypto/crypto.interface";
+import { canonicalStringify } from "../crypto/canonical-stringify";
 
 /** Optional passkey signature data to attach to a ledger event. */
 export interface SignatureData {
@@ -10,31 +14,6 @@ export interface SignatureData {
   credentialId: string;
   intentHash?: string;
   clientDataJSON?: string;
-}
-
-/**
- * Canonical JSON serialization with sorted keys.
- * PostgreSQL JSONB does not preserve key order, so we must sort
- * keys deterministically before hashing to ensure verify-after-read works.
- * Also handles Date objects which JSONB stores as ISO strings.
- */
-function canonicalStringify(obj: unknown): string {
-  if (obj === null || obj === undefined) return JSON.stringify(obj);
-  if (obj instanceof Date) return JSON.stringify(obj.toISOString());
-  if (typeof obj !== "object") return JSON.stringify(obj);
-  if (Array.isArray(obj)) {
-    return "[" + obj.map(canonicalStringify).join(",") + "]";
-  }
-  const sorted = Object.keys(obj as Record<string, unknown>)
-    .sort()
-    .map(
-      (key) =>
-        JSON.stringify(key) +
-        ":" +
-        canonicalStringify((obj as Record<string, unknown>)[key]),
-    )
-    .join(",");
-  return "{" + sorted + "}";
 }
 
 export interface LogEventInput {
@@ -60,7 +39,23 @@ export interface LogEventInput {
 
 @Injectable()
 export class LedgerService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(CRYPTO_SERVICE) private readonly crypto: ICryptoService,
+  ) {}
+
+  /**
+   * Compute the deterministic intent hash for a business action.
+   * This becomes the WebAuthn challenge, binding the biometric
+   * signature to this exact intent.
+   */
+  computeIntentHash(
+    eventType: string,
+    entityId: string,
+    actorId: string,
+  ): string {
+    return this.crypto.sha256Base64Url(`${eventType}|${entityId}|${actorId}`);
+  }
 
   /**
    * Append a new event to the immutable ledger with SHA-256 hash chaining.
@@ -92,7 +87,7 @@ export class LedgerService {
       timestamp.toISOString(),
     ].join("|");
 
-    const eventHash = createHash("sha256").update(hashInput).digest("hex");
+    const eventHash = this.crypto.sha256Hex(hashInput);
 
     // Use real passkey signature if provided, otherwise mark as SYSTEM
     const actorSignature = input.signature ?? "SYSTEM";
@@ -194,7 +189,7 @@ export class LedgerService {
         event.timestamp.toISOString(),
       ].join("|");
 
-      const expectedHash = createHash("sha256").update(hashInput).digest("hex");
+      const expectedHash = this.crypto.sha256Hex(hashInput);
 
       if (expectedHash !== event.eventHash) {
         return {

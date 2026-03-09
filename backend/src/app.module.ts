@@ -25,6 +25,7 @@ import { RiskModule } from "./risk/risk.module";
 import { HealthModule } from "./health/health.module";
 import { PdpaModule } from "./pdpa/pdpa.module";
 import { ProofsModule } from "./proofs/proofs.module";
+import { CryptoModule } from "./crypto/crypto.module";
 import { CorrelationIdMiddleware } from "./common/correlation-id.middleware";
 
 @Module({
@@ -43,6 +44,7 @@ import { CorrelationIdMiddleware } from "./common/correlation-id.middleware";
       ],
     }),
     PrismaModule,
+    CryptoModule,
     AuthModule,
     UsersModule,
     OrganisationsModule,

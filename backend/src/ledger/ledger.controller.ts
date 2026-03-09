@@ -15,7 +15,6 @@ import {
   ApiOperation,
   ApiQuery,
 } from "@nestjs/swagger";
-import { createHash } from "crypto";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { LedgerService } from "./ledger.service";
 import { PasskeysService } from "../passkeys/passkeys.service";
@@ -156,9 +155,11 @@ export class LedgerController {
     // Compute a deterministic intent hash from the business action.
     // This becomes the WebAuthn challenge, binding the biometric
     // signature to this exact intent.
-    const intentHash = createHash("sha256")
-      .update(`${body.eventType}|${body.entityId}|${req.user.id}`)
-      .digest("base64url");
+    const intentHash = this.ledgerService.computeIntentHash(
+      body.eventType,
+      body.entityId,
+      req.user.id,
+    );
 
     const options = await this.passkeysService.generateAuthOptions(
       req.user.id,

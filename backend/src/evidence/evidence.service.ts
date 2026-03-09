@@ -1,4 +1,5 @@
 import {
+  Inject,
   Injectable,
   BadRequestException,
   NotFoundException,
@@ -7,7 +8,10 @@ import {
 import { PrismaService } from "../prisma/prisma.service";
 import { LedgerService } from "../ledger/ledger.service";
 import { ProofGeneratorService } from "../proofs/proof-generator.service";
-import * as crypto from "crypto";
+import {
+  CRYPTO_SERVICE,
+  type ICryptoService,
+} from "../crypto/crypto.interface";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -44,6 +48,7 @@ export class EvidenceService {
     private readonly prisma: PrismaService,
     private readonly ledger: LedgerService,
     private readonly proofGenerator: ProofGeneratorService,
+    @Inject(CRYPTO_SERVICE) private readonly crypto: ICryptoService,
   ) {
     // Ensure upload directory exists
     if (!fs.existsSync(UPLOAD_DIR)) {
@@ -102,14 +107,11 @@ export class EvidenceService {
     }
 
     // Compute SHA-256 hash
-    const sha256Hash = crypto
-      .createHash("sha256")
-      .update(file.buffer)
-      .digest("hex");
+    const sha256Hash = this.crypto.sha256Hex(file.buffer);
 
     // Store file locally
     const ext = path.extname(file.originalname) || "";
-    const storageName = `${crypto.randomUUID()}${ext}`;
+    const storageName = `${this.crypto.randomUUID()}${ext}`;
     const storagePath = path.join(UPLOAD_DIR, storageName);
     fs.writeFileSync(storagePath, file.buffer);
 
@@ -238,10 +240,7 @@ export class EvidenceService {
     }
 
     const fileBuffer = fs.readFileSync(filePath);
-    const computedHash = crypto
-      .createHash("sha256")
-      .update(fileBuffer)
-      .digest("hex");
+    const computedHash = this.crypto.sha256Hex(fileBuffer);
 
     return {
       valid: computedHash === attachment.sha256Hash,

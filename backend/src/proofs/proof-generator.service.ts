@@ -1,7 +1,11 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../prisma/prisma.service";
-import { createHash } from "crypto";
+import {
+  CRYPTO_SERVICE,
+  type ICryptoService,
+} from "../crypto/crypto.interface";
+import { canonicalStringify } from "../crypto/canonical-stringify";
 import type {
   ProofBundle,
   ProofSigner,
@@ -9,30 +13,6 @@ import type {
   ProofAssertion,
   ProofEvidenceRef,
 } from "./proof-bundle.schema";
-
-/**
- * Canonical JSON serialization with sorted keys.
- * (Duplicated from ledger.service.ts — we need it standalone so the proof
- * module can operate independently, including in a verification-only deploy.)
- */
-function canonicalStringify(obj: unknown): string {
-  if (obj === null || obj === undefined) return JSON.stringify(obj);
-  if (obj instanceof Date) return JSON.stringify(obj.toISOString());
-  if (typeof obj !== "object") return JSON.stringify(obj);
-  if (Array.isArray(obj)) {
-    return "[" + obj.map(canonicalStringify).join(",") + "]";
-  }
-  const sorted = Object.keys(obj as Record<string, unknown>)
-    .sort()
-    .map(
-      (key) =>
-        JSON.stringify(key) +
-        ":" +
-        canonicalStringify((obj as Record<string, unknown>)[key]),
-    )
-    .join(",");
-  return "{" + sorted + "}";
-}
 
 @Injectable()
 export class ProofGeneratorService {
@@ -44,6 +24,7 @@ export class ProofGeneratorService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    @Inject(CRYPTO_SERVICE) private readonly crypto: ICryptoService,
   ) {
     this.baseUrl = this.config.get<string>(
       "BASE_URL",
@@ -95,9 +76,9 @@ export class ProofGeneratorService {
     const evidence = await this.resolveEvidence(event.entityId, event.id);
 
     // ── Compute payload hash ───────────────────────────────
-    const payloadHash = createHash("sha256")
-      .update(canonicalStringify(event.payload))
-      .digest("hex");
+    const payloadHash = this.crypto.sha256Hex(
+      canonicalStringify(event.payload),
+    );
 
     return {
       version: "1.0",
