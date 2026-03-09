@@ -40,8 +40,18 @@ export default function NewPurchaseOrderPage() {
   const [deliveryAddress, setDeliveryAddress] = useState("");
   const [taxRate, setTaxRate] = useState(0); // percentage, converted to BPS
   const [disputeWindowHours, setDisputeWindowHours] = useState(72);
+  const [expectedDeliveryDate, setExpectedDeliveryDate] = useState("");
+  const [notes, setNotes] = useState("");
+  const [buyerContactName, setBuyerContactName] = useState("");
+  const [buyerContactEmail, setBuyerContactEmail] = useState("");
   const [lineItems, setLineItems] = useState<LineItem[]>([
-    { description: "", quantity: 1, unitPricePennies: 0 },
+    {
+      description: "",
+      quantity: 1,
+      unitPricePennies: 0,
+      sku: "",
+      unitOfMeasure: "EACH",
+    },
   ]);
 
   const { data: suppliers } = useQuery({
@@ -57,15 +67,32 @@ export default function NewPurchaseOrderPage() {
       toast.success("Purchase order created");
       router.push(`/dashboard/purchase-orders/${res.data.id}`);
     },
-    onError: () => {
-      toast.error("Failed to create purchase order");
+    onError: (
+      err: Error & {
+        response?: { data?: { message?: string | string[] }; status?: number };
+      },
+    ) => {
+      console.error(
+        "PO create failed:",
+        err.response?.status,
+        JSON.stringify(err.response?.data),
+      );
+      const msg = err.response?.data?.message;
+      const detail = Array.isArray(msg) ? msg.join(", ") : msg;
+      toast.error(detail || "Failed to create purchase order");
     },
   });
 
   function addLineItem() {
     setLineItems([
       ...lineItems,
-      { description: "", quantity: 1, unitPricePennies: 0 },
+      {
+        description: "",
+        quantity: 1,
+        unitPricePennies: 0,
+        sku: "",
+        unitOfMeasure: "EACH",
+      },
     ]);
   }
 
@@ -86,6 +113,10 @@ export default function NewPurchaseOrderPage() {
     } else if (field === "unitPricePennies") {
       // Input is in pounds, convert to pennies
       updated[index].unitPricePennies = Math.round(Number(value) * 100);
+    } else if (field === "sku") {
+      updated[index].sku = value as string;
+    } else if (field === "unitOfMeasure") {
+      updated[index].unitOfMeasure = value as string;
     }
     setLineItems(updated);
   }
@@ -111,6 +142,15 @@ export default function NewPurchaseOrderPage() {
       return;
     }
 
+    const itemTotal = validItems.reduce(
+      (sum, item) => sum + item.quantity * item.unitPricePennies,
+      0,
+    );
+    if (itemTotal < 500_00) {
+      toast.error("Minimum order amount is £500");
+      return;
+    }
+
     createMutation.mutate({
       supplierId,
       description: description || undefined,
@@ -121,6 +161,10 @@ export default function NewPurchaseOrderPage() {
       deliveryAddress: deliveryAddress || undefined,
       taxRate: Math.round(taxRate * 100), // percentage to BPS
       disputeWindowHours,
+      expectedDeliveryDate: expectedDeliveryDate || undefined,
+      notes: notes || undefined,
+      buyerContactName: buyerContactName || undefined,
+      buyerContactEmail: buyerContactEmail || undefined,
     });
   }
 
@@ -246,6 +290,45 @@ export default function NewPurchaseOrderPage() {
                 />
               </div>
             </div>
+            <div className="space-y-2">
+              <Label>Expected Delivery Date (optional)</Label>
+              <Input
+                type="date"
+                value={expectedDeliveryDate}
+                onChange={(e) => setExpectedDeliveryDate(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Special Instructions / Notes (optional)</Label>
+              <Textarea
+                placeholder="Packaging requirements, handling instructions, etc."
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+              />
+            </div>
+            <Separator />
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Buyer Contact
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Contact Name (optional)</Label>
+                <Input
+                  placeholder="e.g. John Smith"
+                  value={buyerContactName}
+                  onChange={(e) => setBuyerContactName(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Contact Email (optional)</Label>
+                <Input
+                  type="email"
+                  placeholder="e.g. john@company.com"
+                  value={buyerContactEmail}
+                  onChange={(e) => setBuyerContactEmail(e.target.value)}
+                />
+              </div>
+            </div>
           </CardContent>
         </Card>
 
@@ -272,7 +355,17 @@ export default function NewPurchaseOrderPage() {
             {lineItems.map((item, index) => (
               <div key={index}>
                 {index > 0 && <Separator className="mb-4" />}
-                <div className="grid gap-3 sm:grid-cols-[1fr_80px_120px_40px]">
+                <div className="grid gap-3 sm:grid-cols-[100px_1fr_80px_100px_120px_40px]">
+                  <div className="space-y-1">
+                    <Label className="text-xs">SKU</Label>
+                    <Input
+                      placeholder="SKU / Part #"
+                      value={item.sku || ""}
+                      onChange={(e) =>
+                        updateLineItem(index, "sku", e.target.value)
+                      }
+                    />
+                  </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Description</Label>
                     <Input
@@ -293,6 +386,31 @@ export default function NewPurchaseOrderPage() {
                         updateLineItem(index, "quantity", e.target.value)
                       }
                     />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">UOM</Label>
+                    <Select
+                      value={item.unitOfMeasure || "EACH"}
+                      onValueChange={(v) =>
+                        updateLineItem(index, "unitOfMeasure", v)
+                      }
+                    >
+                      <SelectTrigger className="h-9 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="EACH">Each</SelectItem>
+                        <SelectItem value="KG">Kg</SelectItem>
+                        <SelectItem value="LITRE">Litre</SelectItem>
+                        <SelectItem value="METRE">Metre</SelectItem>
+                        <SelectItem value="BOX">Box</SelectItem>
+                        <SelectItem value="PALLET">Pallet</SelectItem>
+                        <SelectItem value="HOUR">Hour</SelectItem>
+                        <SelectItem value="DAY">Day</SelectItem>
+                        <SelectItem value="SET">Set</SelectItem>
+                        <SelectItem value="LOT">Lot</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Unit Price (£)</Label>

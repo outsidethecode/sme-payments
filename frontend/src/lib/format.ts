@@ -51,6 +51,7 @@ export function statusVariant(
     case "SENT":
       return "outline";
     case "PENDING_APPROVAL":
+    case "NEGOTIATION":
       return "outline";
     case "ACCEPTED":
     case "IN_PROGRESS":

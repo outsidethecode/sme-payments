@@ -39,6 +39,14 @@ class LineItemDto {
   @IsNumber()
   @Min(1)
   unitPricePennies!: number;
+
+  @IsOptional()
+  @IsString()
+  sku?: string;
+
+  @IsOptional()
+  @IsString()
+  unitOfMeasure?: string;
 }
 
 class CreatePODto {
@@ -87,6 +95,48 @@ class CreatePODto {
   @IsOptional()
   @IsBoolean()
   partialAcceptanceAllowed?: boolean;
+
+  @IsOptional()
+  @IsString()
+  expectedDeliveryDate?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+
+  @IsOptional()
+  @IsString()
+  buyerContactName?: string;
+
+  @IsOptional()
+  @IsString()
+  buyerContactEmail?: string;
+}
+
+class CounterProposeDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => LineItemDto)
+  lineItems!: LineItemDto[];
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+
+  @IsOptional()
+  @IsString()
+  expectedDeliveryDate?: string;
+
+  @IsOptional()
+  @IsString()
+  paymentTerms?: string;
+
+  @IsOptional()
+  @IsString()
+  deliveryTerms?: string;
+
+  @IsOptional()
+  signatureData?: any;
 }
 
 @ApiTags("Purchase Orders")
@@ -113,6 +163,10 @@ export class PurchaseOrdersController {
       taxRate: dto.taxRate,
       disputeWindowHours: dto.disputeWindowHours,
       partialAcceptanceAllowed: dto.partialAcceptanceAllowed,
+      expectedDeliveryDate: dto.expectedDeliveryDate,
+      notes: dto.notes,
+      buyerContactName: dto.buyerContactName,
+      buyerContactEmail: dto.buyerContactEmail,
     });
   }
 
@@ -175,6 +229,52 @@ export class PurchaseOrdersController {
     @Body() body?: { signatureData?: any },
   ) {
     return this.poService.reject(id, req.user.id, body?.signatureData);
+  }
+
+  @Patch(":id/counter")
+  @ApiOperation({
+    summary:
+      "Counter-propose modified terms (Supplier from SENT, or either party from NEGOTIATION)",
+  })
+  async counterPropose(
+    @Param("id") id: string,
+    @Request() req: any,
+    @Body() dto: CounterProposeDto,
+  ) {
+    return this.poService.counterPropose(
+      id,
+      req.user.id,
+      {
+        lineItems: dto.lineItems,
+        notes: dto.notes,
+        expectedDeliveryDate: dto.expectedDeliveryDate,
+        paymentTerms: dto.paymentTerms as any,
+        deliveryTerms: dto.deliveryTerms as any,
+      },
+      dto.signatureData,
+    );
+  }
+
+  @Patch(":id/accept-counter")
+  @ApiOperation({
+    summary: "Accept the latest counter-proposal (the other party)",
+  })
+  async acceptCounter(
+    @Param("id") id: string,
+    @Request() req: any,
+    @Body() body?: { signatureData?: any },
+  ) {
+    return this.poService.acceptCounter(id, req.user.id, body?.signatureData);
+  }
+
+  @Patch(":id/reject-counter")
+  @ApiOperation({ summary: "Reject the latest counter-proposal (cancels PO)" })
+  async rejectCounter(
+    @Param("id") id: string,
+    @Request() req: any,
+    @Body() body?: { signatureData?: any },
+  ) {
+    return this.poService.rejectCounter(id, req.user.id, body?.signatureData);
   }
 
   @Patch(":id/ship")

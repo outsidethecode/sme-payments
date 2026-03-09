@@ -1,8 +1,14 @@
 "use client";
 
+import { useState } from "react";
 import { useParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { poApi, ledgerApi, type SignaturePayload } from "@/lib/api";
+import {
+  poApi,
+  ledgerApi,
+  type SignaturePayload,
+  type LineItem,
+} from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { usePasskey } from "@/lib/use-passkey";
 import { EvidencePanel, EvidencePackButton } from "@/components/evidence-panel";
@@ -22,6 +28,9 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -45,6 +54,8 @@ import {
   HandCoins,
   AlertTriangle,
   Fingerprint,
+  MessageSquare,
+  RotateCcw,
 } from "lucide-react";
 
 export default function PurchaseOrderDetailPage() {
@@ -157,6 +168,62 @@ export default function PurchaseOrderDetailPage() {
     poApi.dispute,
     "Delivery disputed",
   );
+  const acceptCounterMutation = makeSignedAction(
+    "PO_COUNTER_ACCEPTED",
+    poApi.acceptCounter,
+    "Counter-proposal accepted — PO updated",
+  );
+  const rejectCounterMutation = makeSignedAction(
+    "PO_COUNTER_REJECTED",
+    poApi.rejectCounter,
+    "Counter-proposal rejected — PO cancelled",
+  );
+  /* eslint-enable react-hooks-rules-of-hooks */
+
+  // Counter-proposal form state
+  const [showCounterForm, setShowCounterForm] = useState(false);
+  const [counterItems, setCounterItems] = useState<LineItem[]>([]);
+  const [counterNotes, setCounterNotes] = useState("");
+
+  const counterMutation = useMutation({
+    mutationFn: async () => {
+      const sigResult = await signAction("PO_COUNTER_PROPOSED", id);
+      let signatureData: SignaturePayload | undefined;
+      if (sigResult) {
+        const { data: verified } = await import("@/lib/api").then((m) =>
+          m.passkeysApi.authVerify(sigResult.purpose, sigResult.assertion),
+        );
+        signatureData = {
+          signature: verified.signature,
+          authenticatorData: verified.authenticatorData,
+          publicKey: verified.publicKey,
+          credentialId: verified.credentialId,
+          intentHash: sigResult.intentHash,
+          clientDataJSON: verified.clientDataJSON,
+        };
+      }
+      return poApi.counterPropose(id, {
+        lineItems: counterItems,
+        notes: counterNotes || undefined,
+        signatureData,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["purchase-order", id] });
+      queryClient.invalidateQueries({ queryKey: ["ledger", id] });
+      setShowCounterForm(false);
+      toast.success(
+        hasPasskey
+          ? "Counter-proposal sent ✓ Passkey signed"
+          : "Counter-proposal sent",
+      );
+    },
+    onError: (err: Error & { response?: { data?: { message?: string } } }) => {
+      toast.error(
+        err.response?.data?.message || "Failed to send counter-proposal",
+      );
+    },
+  });
   /* eslint-enable react-hooks/rules-of-hooks */
 
   if (isLoading) {
@@ -176,6 +243,12 @@ export default function PurchaseOrderDetailPage() {
 
   const isBuyer = user?.role === "BUYER";
   const isSupplier = user?.role === "SUPPLIER";
+  const latestRevision = po.revisions?.[0];
+  const canRespondToCounter =
+    po.status === "NEGOTIATION" &&
+    latestRevision &&
+    ((isBuyer && latestRevision.proposedByRole === "SUPPLIER") ||
+      (isSupplier && latestRevision.proposedByRole === "BUYER"));
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -227,6 +300,20 @@ export default function PurchaseOrderDetailPage() {
               <Check className="mr-2 h-4 w-4" />
               Accept
             </Button>
+            {(po.currentRevision ?? 0) === 0 && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setCounterItems(po.lineItems.map((li) => ({ ...li })));
+                  setCounterNotes("");
+                  setShowCounterForm(true);
+                }}
+                disabled={counterMutation.isPending || signing}
+              >
+                <MessageSquare className="mr-2 h-4 w-4" />
+                Counter-Propose
+              </Button>
+            )}
             <Button
               variant="destructive"
               onClick={() => rejectMutation.mutate()}
@@ -294,7 +381,179 @@ export default function PurchaseOrderDetailPage() {
             Acknowledge &amp; Settle
           </Button>
         )}
+        {canRespondToCounter && (
+          <>
+            <Button
+              onClick={() => acceptCounterMutation.mutate()}
+              disabled={acceptCounterMutation.isPending || signing}
+            >
+              <Check className="mr-2 h-4 w-4" />
+              Accept Counter
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                const rev = latestRevision;
+                setCounterItems(
+                  (rev?.lineItems as LineItem[])?.map((li) => ({ ...li })) ??
+                    po.lineItems.map((li) => ({ ...li })),
+                );
+                setCounterNotes("");
+                setShowCounterForm(true);
+              }}
+              disabled={counterMutation.isPending || signing}
+            >
+              <RotateCcw className="mr-2 h-4 w-4" />
+              Counter Again
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => rejectCounterMutation.mutate()}
+              disabled={rejectCounterMutation.isPending || signing}
+            >
+              <X className="mr-2 h-4 w-4" />
+              Reject Counter
+            </Button>
+          </>
+        )}
       </div>
+
+      {/* Counter-Proposal Form */}
+      {showCounterForm && (
+        <Card className="border-primary">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <MessageSquare className="h-4 w-4" />
+              Counter-Proposal
+            </CardTitle>
+            <CardDescription>
+              Edit line items and submit your counter-proposal
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Description</TableHead>
+                  <TableHead className="w-[80px] text-right">Qty</TableHead>
+                  <TableHead className="w-[120px] text-right">
+                    Unit Price (pennies)
+                  </TableHead>
+                  <TableHead className="w-[40px]" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {counterItems.map((item, i) => (
+                  <TableRow key={i}>
+                    <TableCell>
+                      <Input
+                        value={item.description}
+                        onChange={(e) => {
+                          const next = [...counterItems];
+                          next[i] = { ...next[i], description: e.target.value };
+                          setCounterItems(next);
+                        }}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Input
+                        type="number"
+                        min={1}
+                        className="text-right"
+                        value={item.quantity}
+                        onChange={(e) => {
+                          const next = [...counterItems];
+                          next[i] = {
+                            ...next[i],
+                            quantity: Number(e.target.value),
+                          };
+                          setCounterItems(next);
+                        }}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Input
+                        type="number"
+                        min={0}
+                        className="text-right"
+                        value={item.unitPricePennies}
+                        onChange={(e) => {
+                          const next = [...counterItems];
+                          next[i] = {
+                            ...next[i],
+                            unitPricePennies: Number(e.target.value),
+                          };
+                          setCounterItems(next);
+                        }}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() =>
+                          setCounterItems(
+                            counterItems.filter((_, j) => j !== i),
+                          )
+                        }
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                setCounterItems([
+                  ...counterItems,
+                  { description: "", quantity: 1, unitPricePennies: 0 },
+                ])
+              }
+            >
+              + Add Line Item
+            </Button>
+            <div className="flex justify-between text-sm font-medium">
+              <span>Counter Total</span>
+              <span>
+                {formatCurrency(
+                  counterItems.reduce(
+                    (sum, li) => sum + li.quantity * li.unitPricePennies,
+                    0,
+                  ),
+                )}
+              </span>
+            </div>
+            <div className="space-y-2">
+              <Label>Notes (optional)</Label>
+              <Textarea
+                placeholder="Explain your proposed changes…"
+                value={counterNotes}
+                onChange={(e) => setCounterNotes(e.target.value)}
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => counterMutation.mutate()}
+                disabled={
+                  counterMutation.isPending ||
+                  signing ||
+                  counterItems.length === 0
+                }
+              >
+                <Send className="mr-2 h-4 w-4" />
+                Submit Counter-Proposal
+              </Button>
+              <Button variant="ghost" onClick={() => setShowCounterForm(false)}>
+                Cancel
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Details */}
       <div className="grid gap-4 md:grid-cols-2">
@@ -331,6 +590,17 @@ export default function PurchaseOrderDetailPage() {
         </Card>
       )}
 
+      {po.notes && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Special Instructions</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm whitespace-pre-wrap">{po.notes}</p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Line Items */}
       <Card>
         <CardHeader>
@@ -340,8 +610,10 @@ export default function PurchaseOrderDetailPage() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead>SKU</TableHead>
                 <TableHead>Description</TableHead>
                 <TableHead className="text-right">Qty</TableHead>
+                <TableHead>UOM</TableHead>
                 <TableHead className="text-right">Unit Price</TableHead>
                 <TableHead className="text-right">Total</TableHead>
               </TableRow>
@@ -349,8 +621,14 @@ export default function PurchaseOrderDetailPage() {
             <TableBody>
               {po.lineItems.map((item, i) => (
                 <TableRow key={i}>
+                  <TableCell className="font-mono text-xs text-muted-foreground">
+                    {item.sku || "—"}
+                  </TableCell>
                   <TableCell>{item.description}</TableCell>
                   <TableCell className="text-right">{item.quantity}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {item.unitOfMeasure || "EACH"}
+                  </TableCell>
                   <TableCell className="text-right">
                     {formatCurrency(item.unitPricePennies)}
                   </TableCell>
@@ -409,7 +687,10 @@ export default function PurchaseOrderDetailPage() {
       {(po.externalPoNumber ||
         po.paymentTerms !== "IMMEDIATE" ||
         po.deliveryTerms !== "EX_WORKS" ||
-        (po.taxRate ?? 0) > 0) && (
+        (po.taxRate ?? 0) > 0 ||
+        po.expectedDeliveryDate ||
+        po.buyerContactName ||
+        po.shippedAt) && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Order Terms</CardTitle>
@@ -423,6 +704,31 @@ export default function PurchaseOrderDetailPage() {
                 <span>External PO #</span>
                 <span className="font-mono font-medium">
                   {po.externalPoNumber}
+                </span>
+              </div>
+            )}
+            {po.expectedDeliveryDate && (
+              <div className="flex justify-between">
+                <span>Expected Delivery</span>
+                <span>{formatDate(po.expectedDeliveryDate)}</span>
+              </div>
+            )}
+            {po.shippedAt && (
+              <div className="flex justify-between">
+                <span>Shipped At</span>
+                <span>{formatDateTime(po.shippedAt)}</span>
+              </div>
+            )}
+            {po.buyerContactName && (
+              <div className="flex justify-between">
+                <span>Buyer Contact</span>
+                <span>
+                  {po.buyerContactName}
+                  {po.buyerContactEmail && (
+                    <span className="text-muted-foreground ml-2">
+                      ({po.buyerContactEmail})
+                    </span>
+                  )}
                 </span>
               </div>
             )}
@@ -486,6 +792,62 @@ export default function PurchaseOrderDetailPage() {
       <div className="flex justify-end">
         <EvidencePackButton purchaseOrderId={id} />
       </div>
+
+      {/* Negotiation History */}
+      {po.revisions && po.revisions.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <RotateCcw className="h-4 w-4" />
+              Negotiation History
+            </CardTitle>
+            <CardDescription>
+              Revision {po.currentRevision ?? po.revisions.length} —{" "}
+              {po.revisions.length} counter-proposal
+              {po.revisions.length !== 1 ? "s" : ""}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {po.revisions.map((rev) => (
+              <div
+                key={rev.id}
+                className="rounded-md border p-3 text-sm space-y-2"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">Rev #{rev.revision}</span>
+                    <Badge variant="outline" className="text-xs">
+                      {rev.proposedByRole}
+                    </Badge>
+                  </div>
+                  <Badge
+                    variant={
+                      rev.status === "ACCEPTED"
+                        ? "default"
+                        : rev.status === "REJECTED"
+                          ? "destructive"
+                          : rev.status === "PENDING"
+                            ? "secondary"
+                            : "outline"
+                    }
+                  >
+                    {rev.status}
+                  </Badge>
+                </div>
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Amount: {formatCurrency(rev.amount)}</span>
+                  <span>{formatDateTime(rev.createdAt)}</span>
+                </div>
+                {rev.notes && (
+                  <p className="text-xs text-muted-foreground italic">
+                    &ldquo;{rev.notes}&rdquo;
+                  </p>
+                )}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Event Timeline */}
       {events && events.length > 0 && (

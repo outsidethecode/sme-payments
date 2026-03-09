@@ -77,6 +77,23 @@ export interface LineItem {
   description: string;
   quantity: number;
   unitPricePennies: number;
+  sku?: string;
+  unitOfMeasure?: string;
+}
+
+export interface PORevision {
+  id: string;
+  revision: number;
+  proposedBy: string;
+  proposedByRole: string;
+  lineItems: LineItem[];
+  amount: number;
+  notes?: string | null;
+  expectedDeliveryDate?: string | null;
+  paymentTerms?: string | null;
+  deliveryTerms?: string | null;
+  status: string; // PENDING | ACCEPTED | REJECTED | SUPERSEDED
+  createdAt: string;
 }
 
 export interface PurchaseOrder {
@@ -111,6 +128,15 @@ export interface PurchaseOrder {
   importBatchId?: string | null;
   importedAt?: string | null;
   attachmentUrl?: string | null;
+  // Standard PO header fields
+  expectedDeliveryDate?: string | null;
+  notes?: string | null;
+  buyerContactName?: string | null;
+  buyerContactEmail?: string | null;
+  currentRevision?: number;
+  shippedAt?: string | null;
+  // Revisions
+  revisions?: PORevision[];
 }
 
 export interface PaymentLock {
@@ -215,6 +241,10 @@ export const poApi = {
     taxRate?: number;
     disputeWindowHours?: number;
     partialAcceptanceAllowed?: boolean;
+    expectedDeliveryDate?: string;
+    notes?: string;
+    buyerContactName?: string;
+    buyerContactEmail?: string;
   }) => api.post<PurchaseOrder>("/purchase-orders", data),
   importCSV: (file: File) => {
     const formData = new FormData();
@@ -253,6 +283,25 @@ export const poApi = {
     }),
   dispute: (id: string, signatureData?: SignaturePayload) =>
     api.patch<PurchaseOrder>(`/purchase-orders/${id}/dispute`, {
+      signatureData,
+    }),
+  counterPropose: (
+    id: string,
+    data: {
+      lineItems: LineItem[];
+      notes?: string;
+      expectedDeliveryDate?: string;
+      paymentTerms?: string;
+      deliveryTerms?: string;
+      signatureData?: SignaturePayload;
+    },
+  ) => api.patch<PurchaseOrder>(`/purchase-orders/${id}/counter`, data),
+  acceptCounter: (id: string, signatureData?: SignaturePayload) =>
+    api.patch<PurchaseOrder>(`/purchase-orders/${id}/accept-counter`, {
+      signatureData,
+    }),
+  rejectCounter: (id: string, signatureData?: SignaturePayload) =>
+    api.patch<PurchaseOrder>(`/purchase-orders/${id}/reject-counter`, {
       signatureData,
     }),
 };

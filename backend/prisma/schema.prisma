@@ -290,6 +290,7 @@ enum POStatus {
   DRAFT
   PENDING_APPROVAL
   SENT
+  NEGOTIATION          // Supplier counter-proposed; awaiting buyer review
   ACCEPTED
   IN_PROGRESS
   SHIPPED
@@ -333,6 +334,15 @@ model PurchaseOrder {
   amount                Int            // in smallest currency unit
   currency              String         @default("GBP")
 
+  // ── Standard PO header fields ──
+  expectedDeliveryDate  DateTime?      @map("expected_delivery_date")
+  notes                 String?                                       // buyer special instructions
+  buyerContactName      String?        @map("buyer_contact_name")
+  buyerContactEmail     String?        @map("buyer_contact_email")
+
+  // ── Negotiation / revision tracking ──
+  currentRevision       Int            @default(0) @map("current_revision")  // 0 = original, incremented on each counter
+
   // ── Payment & delivery terms ──
   paymentTerms          PaymentTerms   @default(IMMEDIATE) @map("payment_terms")
   deliveryTerms         DeliveryTerms  @default(EX_WORKS)  @map("delivery_terms")
@@ -363,6 +373,7 @@ model PurchaseOrder {
   paymentLocked         Boolean        @default(false) @map("payment_locked")
   lockedAt              DateTime?      @map("locked_at")
   acceptedAt            DateTime?      @map("accepted_at")
+  shippedAt             DateTime?      @map("shipped_at")
   deliveredAt           DateTime?      @map("delivered_at")
   verifiedAt            DateTime?      @map("verified_at")
   settledAt             DateTime?      @map("settled_at")
@@ -378,10 +389,35 @@ model PurchaseOrder {
   platformFees        PlatformFee[]
   evidenceAttachments EvidenceAttachment[]
   disputes            Dispute[]
+  revisions           PORevision[]
 
   @@index([externalPoNumber])
   @@index([importBatchId])
   @@map("purchase_orders")
+}
+
+// ── PO Revisions (counter-proposals) ─────────────────────────
+
+model PORevision {
+  id                String    @id @default(uuid())
+  purchaseOrderId   String    @map("purchase_order_id")
+  revision          Int                                     // 1-based revision number
+  proposedBy        String    @map("proposed_by")           // userId
+  proposedByRole    String    @map("proposed_by_role")       // BUYER | SUPPLIER
+  lineItems         Json      @map("line_items")            // proposed line items
+  amount            Int                                     // proposed total (smallest unit)
+  notes             String?                                 // reason / explanation for changes
+  expectedDeliveryDate DateTime? @map("expected_delivery_date")
+  paymentTerms      PaymentTerms? @map("payment_terms")
+  deliveryTerms     DeliveryTerms? @map("delivery_terms")
+  status            String    @default("PENDING")           // PENDING | ACCEPTED | REJECTED | SUPERSEDED
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  purchaseOrder     PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+
+  @@unique([purchaseOrderId, revision])
+  @@index([purchaseOrderId])
+  @@map("po_revisions")
 }
 
 // ── Evidence Attachments ─────────────────────────────────────
