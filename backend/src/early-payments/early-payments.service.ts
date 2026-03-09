@@ -44,10 +44,15 @@ export class EarlyPaymentsService {
         "Only the supplier of this PO can request early payment",
       );
     }
-    const eligibleStatuses = ["ACCEPTED", "IN_PROGRESS", "DELIVERED"];
+    const eligibleStatuses = [
+      "ACCEPTED",
+      "IN_PROGRESS",
+      "SHIPPED",
+      "DELIVERED",
+    ];
     if (!eligibleStatuses.includes(po.status)) {
       throw new BadRequestException(
-        `PO must be in ACCEPTED, IN_PROGRESS, or DELIVERED status to request early payment (currently ${po.status})`,
+        `PO must be in ACCEPTED, IN_PROGRESS, SHIPPED, or DELIVERED status to request early payment (currently ${po.status})`,
       );
     }
     if (!po.paymentLock || po.paymentLock.status !== "LOCKED") {

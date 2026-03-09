@@ -53,6 +53,8 @@ export function statusVariant(
     case "PENDING_APPROVAL":
       return "outline";
     case "ACCEPTED":
+    case "IN_PROGRESS":
+    case "SHIPPED":
     case "VERIFIED":
     case "SETTLED":
       return "default";

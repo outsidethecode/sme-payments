@@ -239,8 +239,16 @@ export const poApi = {
     api.patch<PurchaseOrder>(`/purchase-orders/${id}/deliver`, {
       signatureData,
     }),
+  markShipped: (id: string, signatureData?: SignaturePayload) =>
+    api.patch<PurchaseOrder>(`/purchase-orders/${id}/ship`, {
+      signatureData,
+    }),
   verifyDelivery: (id: string, signatureData?: SignaturePayload) =>
     api.patch<PurchaseOrder>(`/purchase-orders/${id}/verify`, {
+      signatureData,
+    }),
+  acknowledgeObligation: (id: string, signatureData?: SignaturePayload) =>
+    api.patch<PurchaseOrder>(`/purchase-orders/${id}/acknowledge`, {
       signatureData,
     }),
   dispute: (id: string, signatureData?: SignaturePayload) =>
@@ -393,7 +401,7 @@ export const passkeysApi = {
 };
 
 export const usersApi = {
-  suppliers: () => api.get<User[]>("/users?role=SUPPLIER"),
+  suppliers: () => api.get<User[]>("/users/suppliers"),
   buyers: () => api.get<User[]>("/users?role=BUYER"),
   balance: () => api.get<{ balance: number }>("/users/balance"),
 };

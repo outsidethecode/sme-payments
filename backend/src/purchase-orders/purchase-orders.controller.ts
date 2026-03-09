@@ -177,6 +177,17 @@ export class PurchaseOrdersController {
     return this.poService.reject(id, req.user.id, body?.signatureData);
   }
 
+  @Patch(":id/ship")
+  @Roles("SUPPLIER")
+  @ApiOperation({ summary: "Mark PO as shipped (Supplier only)" })
+  async ship(
+    @Param("id") id: string,
+    @Request() req: any,
+    @Body() body?: { signatureData?: any },
+  ) {
+    return this.poService.markShipped(id, req.user.id, body?.signatureData);
+  }
+
   @Patch(":id/deliver")
   @Roles("SUPPLIER")
   @ApiOperation({ summary: "Mark PO as delivered (Supplier only)" })
@@ -197,6 +208,23 @@ export class PurchaseOrdersController {
     @Body() body?: { signatureData?: any },
   ) {
     return this.poService.verifyDelivery(id, req.user.id, body?.signatureData);
+  }
+
+  @Patch(":id/acknowledge")
+  @Roles("BUYER")
+  @ApiOperation({
+    summary: "Acknowledge obligation & trigger settlement (Buyer only)",
+  })
+  async acknowledge(
+    @Param("id") id: string,
+    @Request() req: any,
+    @Body() body?: { signatureData?: any },
+  ) {
+    return this.poService.acknowledgeObligation(
+      id,
+      req.user.id,
+      body?.signatureData,
+    );
   }
 
   @Patch(":id/dispute")

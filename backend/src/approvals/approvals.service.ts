@@ -240,12 +240,13 @@ export class ApprovalsService {
     await this.ledger.logEvent({
       entityType: request.entityType,
       entityId: request.entityId,
-      eventType: "PO_APPROVAL_GRANTED",
+      eventType: "PO_APPROVAL_VOTE",
       actorId: input.userId,
       actorRole: input.orgRole,
       payload: {
         approvalRequestId: request.id,
         policyRuleName: request.policyRule.name,
+        decision: "APPROVE",
         approvalCount: `${newCount}/${request.requiredApprovals}`,
         comment: input.comment,
       },

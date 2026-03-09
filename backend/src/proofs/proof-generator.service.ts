@@ -230,23 +230,37 @@ export class ProofGeneratorService {
       events.map((e) => this.generateProof(e.id)),
     );
 
-    // Verify chain linkage within the bundle
+    // Verify each event's hash is recomputable (integrity check).
+    // Full global chain verification is handled by GET /ledger/verify.
     let chainValid = true;
     let chainSummary = "";
-    for (let i = 0; i < proofs.length; i++) {
-      const p = proofs[i];
-      if (i === 0) {
-        if (p.chain.previousHash !== "GENESIS") {
-          chainValid = false;
-          chainSummary = `First event should have GENESIS as previousHash`;
-          break;
-        }
-      } else {
-        if (p.chain.previousHash !== proofs[i - 1].chain.eventHash) {
-          chainValid = false;
-          chainSummary = `Chain broken at sequence ${p.chain.entitySequence}`;
-          break;
-        }
+
+    for (const p of proofs) {
+      const ev = events.find((e) => e.id === p.proofId);
+      if (!ev) {
+        chainValid = false;
+        chainSummary = `Event ${p.proofId} not found`;
+        break;
+      }
+
+      // Recompute the hash the same way logEvent does
+      const hashInput = [
+        ev.previousHash,
+        ev.entityType,
+        ev.entityId,
+        String(ev.entitySequence),
+        ev.eventType,
+        ev.actorId,
+        ev.actorRole,
+        canonicalStringify(ev.payload),
+        ev.timestamp.toISOString(),
+      ].join("|");
+
+      const expected = this.crypto.sha256Hex(hashInput);
+      if (expected !== ev.eventHash) {
+        chainValid = false;
+        chainSummary = `Hash mismatch at entity sequence ${ev.entitySequence}: computed ${expected}, stored ${ev.eventHash}`;
+        break;
       }
     }
 
@@ -254,7 +268,7 @@ export class ProofGeneratorService {
       (p) => p.verification.isCryptographicallySigned,
     ).length;
     if (chainValid) {
-      chainSummary = `All ${proofs.length} events chain-linked (${signedCount} passkey-signed, ${proofs.length - signedCount} system)`;
+      chainSummary = `All ${proofs.length} events verified (${signedCount} passkey-signed, ${proofs.length - signedCount} system). Use GET /ledger/verify for full global chain check.`;
     }
 
     return {

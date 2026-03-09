@@ -104,7 +104,7 @@ describe("ApprovalsService", () => {
       expect(result.isComplete).toBe(false);
       expect(result.finalStatus).toBe("PENDING");
       expect(ledger.logEvent).toHaveBeenCalledWith(
-        expect.objectContaining({ eventType: "PO_APPROVAL_GRANTED" }),
+        expect.objectContaining({ eventType: "PO_APPROVAL_VOTE" }),
       );
     });
 

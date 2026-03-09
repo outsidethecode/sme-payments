@@ -38,8 +38,14 @@ export class LedgerController {
     return this.ledgerService.getEvents(entityId);
   }
 
+  @Get("verify")
+  @ApiOperation({ summary: "Verify the entire global hash chain" })
+  async verifyAll() {
+    return this.ledgerService.verifyChain();
+  }
+
   @Get("verify/:entityId")
-  @ApiOperation({ summary: "Verify hash chain for an entity" })
+  @ApiOperation({ summary: "Verify hash chain for a specific entity" })
   async verify(@Param("entityId") entityId: string) {
     return this.ledgerService.verifyChain(entityId);
   }

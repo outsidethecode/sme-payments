@@ -158,7 +158,7 @@ export default function NewPurchaseOrderPage() {
                 <SelectContent>
                   {suppliers?.map((s) => (
                     <SelectItem key={s.id} value={s.id}>
-                      {s.companyName} ({s.name})
+                      {(s as any).organisationName || s.companyName} ({s.name})
                     </SelectItem>
                   ))}
                 </SelectContent>

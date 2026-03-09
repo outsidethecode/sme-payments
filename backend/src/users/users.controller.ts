@@ -26,6 +26,14 @@ export class UsersController {
     return this.usersService.findByRole("BUYER");
   }
 
+  @Get("suppliers")
+  @ApiOperation({
+    summary: "List supplier contacts (one per organisation, deduplicated)",
+  })
+  async suppliers() {
+    return this.usersService.getSupplierContacts();
+  }
+
   @Get("balance")
   @ApiOperation({ summary: "Get current user balance" })
   async getBalance(@Request() req: any) {

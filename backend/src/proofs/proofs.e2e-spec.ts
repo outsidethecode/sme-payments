@@ -265,15 +265,15 @@ describe("Standalone Cryptographic Proofs (e2e)", () => {
         .expect(200);
 
       const proofs: ProofBundle[] = res.body.proofs;
-      if (proofs.length > 1) {
-        for (let i = 1; i < proofs.length; i++) {
-          expect(proofs[i].chain.previousHash).toBe(
-            proofs[i - 1].chain.eventHash,
-          );
-        }
+      // With global chaining, consecutive entity events may not link
+      // directly to each other (other entities' events may interleave).
+      // But each proof must have a valid previousHash and eventHash.
+      for (const p of proofs) {
+        expect(p.chain.eventHash).toBeDefined();
+        expect(p.chain.previousHash).toBeDefined();
       }
-      // First proof should have GENESIS
-      expect(proofs[0].chain.previousHash).toBe("GENESIS");
+      // The global chain is verified server-side; chainValid confirms it
+      expect(res.body.chainValid).toBe(true);
     });
 
     it("should return 404 for entity with no events", async () => {

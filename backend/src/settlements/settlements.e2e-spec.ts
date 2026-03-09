@@ -302,8 +302,17 @@ describe("Settlements E2E", () => {
     });
 
     it("should verify delivery and settle via adapter", async () => {
-      const res = await request(app.getHttpServer())
+      // Step 1: Verify delivery (DELIVERED → VERIFIED)
+      const verifyRes = await request(app.getHttpServer())
         .patch(`/purchase-orders/${poId}/verify`)
+        .set("Authorization", `Bearer ${buyerToken}`);
+
+      expect(verifyRes.status).toBe(200);
+      expect(verifyRes.body.status).toBe("VERIFIED");
+
+      // Step 2: Acknowledge obligation & settle (VERIFIED → SETTLED)
+      const res = await request(app.getHttpServer())
+        .patch(`/purchase-orders/${poId}/acknowledge`)
         .set("Authorization", `Bearer ${buyerToken}`);
 
       expect(res.status).toBe(200);
@@ -382,8 +391,14 @@ describe("Settlements E2E", () => {
         .patch(`/purchase-orders/${poId}/deliver`)
         .set("Authorization", `Bearer ${supplierToken}`);
 
-      const res = await request(app.getHttpServer())
+      // Verify delivery
+      await request(app.getHttpServer())
         .patch(`/purchase-orders/${poId}/verify`)
+        .set("Authorization", `Bearer ${buyerToken}`);
+
+      // Acknowledge obligation & settle
+      const res = await request(app.getHttpServer())
+        .patch(`/purchase-orders/${poId}/acknowledge`)
         .set("Authorization", `Bearer ${buyerToken}`);
 
       expect(res.status).toBe(200);
@@ -400,6 +415,59 @@ describe("Settlements E2E", () => {
 
       const types = res.body.map((s: any) => s.type).sort();
       expect(types).toEqual(["EARLY_PAY_ADVANCE", "EARLY_PAY_SETTLEMENT"]);
+    });
+  });
+
+  describe("Early payment on SHIPPED PO", () => {
+    let poId: string;
+    let epId: string;
+
+    it("should create, accept, and ship PO", async () => {
+      poId = await createAndAcceptPO();
+
+      const shipRes = await request(app.getHttpServer())
+        .patch(`/purchase-orders/${poId}/ship`)
+        .set("Authorization", `Bearer ${supplierToken}`);
+
+      expect(shipRes.status).toBe(200);
+      expect(shipRes.body.status).toBe("SHIPPED");
+    });
+
+    it("should allow supplier to request early payment on SHIPPED PO", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/early-payments")
+        .set("Authorization", `Bearer ${supplierToken}`)
+        .send({ purchaseOrderId: poId });
+
+      expect(res.status).toBe(201);
+      expect(res.body.status).toBe("REQUESTED");
+      epId = res.body.id;
+    });
+
+    it("should fund early payment on SHIPPED PO", async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/early-payments/${epId}/fund`)
+        .set("Authorization", `Bearer ${lpToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("FUNDED");
+    });
+
+    it("should complete full flow: deliver → verify → acknowledge", async () => {
+      await request(app.getHttpServer())
+        .patch(`/purchase-orders/${poId}/deliver`)
+        .set("Authorization", `Bearer ${supplierToken}`);
+
+      await request(app.getHttpServer())
+        .patch(`/purchase-orders/${poId}/verify`)
+        .set("Authorization", `Bearer ${buyerToken}`);
+
+      const res = await request(app.getHttpServer())
+        .patch(`/purchase-orders/${poId}/acknowledge`)
+        .set("Authorization", `Bearer ${buyerToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("SETTLED");
     });
   });
 

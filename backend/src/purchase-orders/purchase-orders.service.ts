@@ -494,23 +494,12 @@ export class PurchaseOrdersService {
       eventType: "PO_ACCEPTED",
       actorId,
       actorRole: "SUPPLIER",
-      payload: { amount: po.amount },
-      ...sig,
-    });
-
-    await this.ledger.logEvent({
-      entityType: "PAYMENT_LOCK",
-      entityId: reservation.paymentLockId,
-      eventType: "PAYMENT_LOCK_CONFIRMED",
-      actorId: actorId,
-      actorRole: "SUPPLIER",
       payload: {
-        purchaseOrderId: id,
-        buyerId: po.buyerId,
         amount: po.amount,
         externalRef: reservation.externalRef,
         settlementRail: this.settlement.getAdapterName(),
       },
+      ...sig,
     });
 
     return this.formatPO(updated);
@@ -560,10 +549,64 @@ export class PurchaseOrdersService {
     return this.formatPO(updated);
   }
 
-  async markDelivered(id: string, actorId: string, sig?: SignatureData) {
+  async markShipped(id: string, actorId: string, sig?: SignatureData) {
     const po = await this.prisma.purchaseOrder.findUnique({ where: { id } });
     if (!po) throw new NotFoundException("PO not found");
     if (po.status !== "ACCEPTED" && po.status !== "IN_PROGRESS") {
+      throw new BadRequestException(
+        `Cannot mark as shipped from status ${po.status}`,
+      );
+    }
+    if (po.supplierId !== actorId)
+      throw new ForbiddenException("Only the supplier can mark shipment");
+
+    const updated = await this.prisma.purchaseOrder.update({
+      where: { id },
+      data: { status: "SHIPPED" },
+      include: {
+        buyer: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            companyName: true,
+          },
+        },
+        supplier: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            companyName: true,
+          },
+        },
+        paymentLock: true,
+      },
+    });
+
+    await this.ledger.logEvent({
+      entityType: "PURCHASE_ORDER",
+      entityId: id,
+      eventType: "GOODS_SHIPPED",
+      actorId,
+      actorRole: "SUPPLIER",
+      payload: { shippedAt: new Date().toISOString() },
+      ...sig,
+    });
+
+    return this.formatPO(updated);
+  }
+
+  async markDelivered(id: string, actorId: string, sig?: SignatureData) {
+    const po = await this.prisma.purchaseOrder.findUnique({ where: { id } });
+    if (!po) throw new NotFoundException("PO not found");
+    if (
+      po.status !== "ACCEPTED" &&
+      po.status !== "IN_PROGRESS" &&
+      po.status !== "SHIPPED"
+    ) {
       throw new BadRequestException(
         `Cannot mark as delivered from status ${po.status}`,
       );
@@ -615,6 +658,56 @@ export class PurchaseOrdersService {
     if (po.buyerId !== actorId)
       throw new ForbiddenException("Only the buyer can verify delivery");
 
+    const updated = await this.prisma.purchaseOrder.update({
+      where: { id },
+      data: { status: "VERIFIED", verifiedAt: new Date() },
+      include: {
+        buyer: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            companyName: true,
+          },
+        },
+        supplier: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            companyName: true,
+          },
+        },
+        paymentLock: true,
+      },
+    });
+
+    await this.ledger.logEvent({
+      entityType: "PURCHASE_ORDER",
+      entityId: id,
+      eventType: "DELIVERY_VERIFIED",
+      actorId,
+      actorRole: "BUYER",
+      payload: { verifiedAt: updated.verifiedAt },
+      ...sig,
+    });
+
+    return this.formatPO(updated);
+  }
+
+  async acknowledgeObligation(
+    id: string,
+    actorId: string,
+    sig?: SignatureData,
+  ) {
+    const po = await this.requireStatus(id, "VERIFIED");
+    if (po.buyerId !== actorId)
+      throw new ForbiddenException(
+        "Only the buyer can acknowledge the obligation",
+      );
+
     // Check if there's a funded early payment request
     const earlyPay = await this.prisma.earlyPaymentRequest.findUnique({
       where: { purchaseOrderId: id },
@@ -633,6 +726,22 @@ export class PurchaseOrdersService {
     // Platform fee: 0.5% = 50 BPS
     const FEE_BPS = 50;
 
+    // Log obligation acknowledgment before settlement
+    await this.ledger.logEvent({
+      entityType: "PURCHASE_ORDER",
+      entityId: id,
+      eventType: "OBLIGATION_ACKNOWLEDGED",
+      actorId,
+      actorRole: "BUYER",
+      payload: {
+        totalAmount: po.amount,
+        currency,
+        recipientId,
+        acknowledgedAt: new Date().toISOString(),
+      },
+      ...sig,
+    });
+
     // Settle via settlement adapter
     const result = await this.settlement.settlePO({
       purchaseOrderId: id,
@@ -646,11 +755,6 @@ export class PurchaseOrdersService {
 
     // Update PO status and early payment in a transaction
     const settledPO = await this.prisma.$transaction(async (tx) => {
-      await tx.purchaseOrder.update({
-        where: { id },
-        data: { status: "VERIFIED", verifiedAt: new Date() },
-      });
-
       if (hasEarlyPay) {
         await tx.earlyPaymentRequest.update({
           where: { id: earlyPay!.id },
@@ -688,18 +792,8 @@ export class PurchaseOrdersService {
     await this.ledger.logEvent({
       entityType: "PURCHASE_ORDER",
       entityId: id,
-      eventType: "DELIVERY_VERIFIED",
-      actorId,
-      actorRole: "BUYER",
-      payload: { verifiedAt: new Date() },
-      ...sig,
-    });
-
-    await this.ledger.logEvent({
-      entityType: "PURCHASE_ORDER",
-      entityId: id,
       eventType: "SETTLEMENT_COMPLETED",
-      actorId: actorId,
+      actorId,
       actorRole: "BUYER",
       payload: {
         totalAmount: po.amount,

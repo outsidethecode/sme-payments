@@ -118,6 +118,22 @@ export class SettlementService {
       },
     });
 
+    // Log payment lock event
+    await this.ledger.logEvent({
+      entityType: "PAYMENT_LOCK",
+      entityId: lock.id,
+      eventType: "PAYMENT_LOCK_CONFIRMED",
+      actorId: input.buyerId,
+      actorRole: "BUYER",
+      payload: {
+        purchaseOrderId: input.purchaseOrderId,
+        amount: input.amount,
+        currency: input.currency,
+        externalRef: result.externalRef,
+        settlementRail: this.adapter.name,
+      },
+    });
+
     this.logger.log(
       `Reserved ${input.amount} ${input.currency} for PO ${input.purchaseOrderId} → lock ${lock.id} ref ${result.externalRef}`,
     );
@@ -207,6 +223,39 @@ export class SettlementService {
       return s;
     });
 
+    // Log settlement events
+    await this.ledger.logEvent({
+      entityType: "PAYMENT_LOCK",
+      entityId: lock.id,
+      eventType: "PAYMENT_LOCK_RELEASED",
+      actorId: input.recipientId,
+      actorRole: "SYSTEM",
+      payload: {
+        purchaseOrderId: input.purchaseOrderId,
+        amount: input.totalAmount,
+        currency: input.currency,
+      },
+    });
+
+    await this.ledger.logEvent({
+      entityType: "SETTLEMENT",
+      entityId: settlement.id,
+      eventType: "SETTLEMENT_INITIATED",
+      actorId: input.recipientId,
+      actorRole: "SYSTEM",
+      payload: {
+        purchaseOrderId: input.purchaseOrderId,
+        recipientId: input.recipientId,
+        totalAmount: input.totalAmount,
+        feeAmount,
+        netAmount,
+        currency: input.currency,
+        settlementRail: this.adapter.name,
+        externalRef: result.externalRef,
+        type: input.earlyPaymentRequestId ? "EARLY_PAY_SETTLEMENT" : "STANDARD",
+      },
+    });
+
     this.logger.log(
       `Settled PO ${input.purchaseOrderId}: ${netAmount} ${input.currency} → ${input.recipientId} (fee ${feeAmount})`,
     );
@@ -262,6 +311,25 @@ export class SettlementService {
       },
     });
 
+    // Log advance transfer event
+    await this.ledger.logEvent({
+      entityType: "SETTLEMENT",
+      entityId: settlement.id,
+      eventType: "EARLY_PAY_FUNDED",
+      actorId: input.lpId,
+      actorRole: "LIQUIDITY_PARTNER",
+      payload: {
+        purchaseOrderId: input.purchaseOrderId,
+        earlyPaymentRequestId: input.earlyPaymentRequestId,
+        lpId: input.lpId,
+        supplierId: input.supplierId,
+        amount: input.amount,
+        currency: input.currency,
+        settlementRail: this.adapter.name,
+        externalRef: result.externalRef,
+      },
+    });
+
     this.logger.log(
       `Advanced ${input.amount} ${input.currency} LP→Supplier for PO ${input.purchaseOrderId}`,
     );
@@ -300,6 +368,22 @@ export class SettlementService {
     await this.prisma.paymentLock.update({
       where: { purchaseOrderId: input.purchaseOrderId },
       data: { status: "REFUNDED", releasedAt: new Date() },
+    });
+
+    // Log refund event
+    await this.ledger.logEvent({
+      entityType: "PAYMENT_LOCK",
+      entityId: input.purchaseOrderId,
+      eventType: "PAYMENT_LOCK_REFUNDED",
+      actorId: input.buyerId,
+      actorRole: "SYSTEM",
+      payload: {
+        purchaseOrderId: input.purchaseOrderId,
+        amount: input.amount,
+        currency: input.currency,
+        reason: input.reason,
+        externalRef: result.externalRef,
+      },
     });
 
     this.logger.log(

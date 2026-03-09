@@ -40,7 +40,9 @@ import {
   Check,
   X,
   Truck,
+  Package,
   ShieldCheck,
+  HandCoins,
   AlertTriangle,
   Fingerprint,
 } from "lucide-react";
@@ -135,10 +137,20 @@ export default function PurchaseOrderDetailPage() {
     poApi.markDelivered,
     "Delivery marked",
   );
+  const shipMutation = makeSignedAction(
+    "GOODS_SHIPPED",
+    poApi.markShipped,
+    "Goods shipped",
+  );
   const verifyMutation = makeSignedAction(
     "DELIVERY_VERIFIED",
     poApi.verifyDelivery,
     "Delivery verified",
+  );
+  const acknowledgeMutation = makeSignedAction(
+    "OBLIGATION_ACKNOWLEDGED",
+    poApi.acknowledgeObligation,
+    "Obligation acknowledged — settlement triggered",
   );
   const disputeMutation = makeSignedAction(
     "DELIVERY_DISPUTED",
@@ -227,14 +239,33 @@ export default function PurchaseOrderDetailPage() {
         )}
         {isSupplier &&
           (po.status === "ACCEPTED" || po.status === "IN_PROGRESS") && (
-            <Button
-              onClick={() => deliverMutation.mutate()}
-              disabled={deliverMutation.isPending || signing}
-            >
-              <Truck className="mr-2 h-4 w-4" />
-              Mark Delivered
-            </Button>
+            <>
+              <Button
+                onClick={() => shipMutation.mutate()}
+                disabled={shipMutation.isPending || signing}
+              >
+                <Package className="mr-2 h-4 w-4" />
+                Mark Shipped
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => deliverMutation.mutate()}
+                disabled={deliverMutation.isPending || signing}
+              >
+                <Truck className="mr-2 h-4 w-4" />
+                Mark Delivered
+              </Button>
+            </>
           )}
+        {isSupplier && po.status === "SHIPPED" && (
+          <Button
+            onClick={() => deliverMutation.mutate()}
+            disabled={deliverMutation.isPending || signing}
+          >
+            <Truck className="mr-2 h-4 w-4" />
+            Mark Delivered
+          </Button>
+        )}
         {isBuyer && po.status === "DELIVERED" && (
           <>
             <Button
@@ -253,6 +284,15 @@ export default function PurchaseOrderDetailPage() {
               Dispute
             </Button>
           </>
+        )}
+        {isBuyer && po.status === "VERIFIED" && (
+          <Button
+            onClick={() => acknowledgeMutation.mutate()}
+            disabled={acknowledgeMutation.isPending || signing}
+          >
+            <HandCoins className="mr-2 h-4 w-4" />
+            Acknowledge &amp; Settle
+          </Button>
         )}
       </div>
 

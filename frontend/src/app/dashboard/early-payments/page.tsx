@@ -114,6 +114,7 @@ function SupplierView() {
     (po) =>
       (po.status === "ACCEPTED" ||
         po.status === "IN_PROGRESS" ||
+        po.status === "SHIPPED" ||
         po.status === "DELIVERED") &&
       !earlyPayments?.find((ep) => ep.purchaseOrderId === po.id),
   );
@@ -141,8 +142,8 @@ function SupplierView() {
           </p>
           <p>2. Request early payment, a flat 2.5% service fee applies.</p>
           <p>
-            3. A liquidity partner funds the advance, you receive the net
-            amount immediately.
+            3. A liquidity partner funds the advance, you receive the net amount
+            immediately.
           </p>
           <p>
             4. When the buyer verifies delivery, the locked funds settle to the
@@ -378,8 +379,8 @@ function LPView() {
             you.
           </p>
           <p>
-            4. You bear genuine delivery risk, if the buyer disputes,
-            settlement is delayed.
+            4. You bear genuine delivery risk, if the buyer disputes, settlement
+            is delayed.
           </p>
         </CardContent>
       </Card>
