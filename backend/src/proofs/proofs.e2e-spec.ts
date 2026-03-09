@@ -518,7 +518,7 @@ describe("Standalone Cryptographic Proofs (e2e)", () => {
         issuer: {
           name: "Test RP",
           rpId: "localhost",
-          origin: "http://localhost:3000",
+          origin: process.env.WEBAUTHN_ORIGIN || "http://localhost:3002",
           registryUri: "http://localhost:3001/api/proofs/registry",
           identityUri: "http://localhost:3001/api/proofs/identity",
         },

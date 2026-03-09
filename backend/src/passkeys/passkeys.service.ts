@@ -34,10 +34,7 @@ export class PasskeysService {
       "Programmable SME Settlement",
     );
     this.rpId = this.config.get<string>("WEBAUTHN_RP_ID", "localhost");
-    this.origin = this.config.get<string>(
-      "WEBAUTHN_ORIGIN",
-      "http://localhost:3000",
-    );
+    this.origin = this.config.get<string>("WEBAUTHN_ORIGIN", "");
   }
 
   // ── Registration ────────────────────────────────────────────

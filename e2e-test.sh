@@ -152,7 +152,7 @@ print(f'   Total Users:     {d[\"totalUsers\"]}')
 echo ""
 echo "=== STEP 18: Frontend page check ==="
 for page in login dashboard dashboard/purchase-orders dashboard/early-payments dashboard/payment-locks dashboard/ledger dashboard/admin; do
-  STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/$page)
+  STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3002/$page)
   if [ "$STATUS" = "200" ]; then
     echo "✅ /$page → $STATUS"
   else

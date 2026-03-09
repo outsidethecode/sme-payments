@@ -62,13 +62,13 @@ cd frontend
 npm run dev
 ```
 
-The frontend runs on **http://localhost:3000**.
+The frontend runs on **http://localhost:3002**.
 
 ## Accessing the App
 
 | URL | Description |
 |-----|-------------|
-| http://localhost:3000 | Frontend (Next.js) |
+| http://localhost:3002 | Frontend (Next.js) |
 | http://localhost:3001/api/docs | Swagger API docs |
 
 ### Demo Accounts

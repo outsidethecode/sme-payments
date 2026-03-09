@@ -13,13 +13,11 @@ async function bootstrap() {
   // Global prefix
   app.setGlobalPrefix("api");
 
-  // CORS
-  const allowedOrigins = (
-    process.env.WEBAUTHN_ORIGIN || "http://localhost:3000"
-  )
+  // CORS — origins from env, no hardcoded values
+  const allowedOrigins = (process.env.WEBAUTHN_ORIGIN || "")
     .split(",")
-    .map((o) => o.trim());
-  allowedOrigins.push("http://localhost:3002");
+    .map((o) => o.trim())
+    .filter(Boolean);
   app.enableCors({
     origin: allowedOrigins,
     credentials: true,
