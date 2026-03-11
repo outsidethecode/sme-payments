@@ -9,6 +9,7 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { usePasskey } from "@/lib/use-passkey";
+import { storeReceipt } from "@/lib/receipt-store";
 import {
   formatCurrency,
   formatDate,
@@ -94,7 +95,9 @@ function SupplierView() {
       }
       return earlyPayApi.request(poId, signatureData);
     },
-    onSuccess: () => {
+    onSuccess: (result: unknown) => {
+      const axiosData = (result as { data?: Record<string, unknown> })?.data;
+      if (axiosData) storeReceipt(axiosData).catch(() => {});
       queryClient.invalidateQueries({ queryKey: ["early-payments"] });
       queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
       toast.success(
@@ -324,7 +327,9 @@ function LPView() {
       }
       return earlyPayApi.fund(id, signatureData);
     },
-    onSuccess: () => {
+    onSuccess: (result: unknown) => {
+      const axiosData = (result as { data?: Record<string, unknown> })?.data;
+      if (axiosData) storeReceipt(axiosData).catch(() => {});
       queryClient.invalidateQueries({
         queryKey: ["early-payments-marketplace"],
       });

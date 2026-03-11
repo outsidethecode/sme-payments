@@ -356,6 +356,28 @@ export const ledgerApi = {
   }) => api.post("/ledger/events", data),
   /** Get self-contained proof bundle for external verification */
   proof: (eventId: string) => api.get(`/ledger/proof/${eventId}`),
+  /** Verify local receipts against the ledger */
+  verifyReceipts: (
+    receipts: Array<{
+      eventId: string;
+      eventHash: string;
+      entityId: string;
+      entitySequence: number;
+    }>,
+  ) =>
+    api.post<{
+      total: number;
+      verified: number;
+      missing: number;
+      mismatched: number;
+      allVerified: boolean;
+      results: Array<{
+        eventId: string;
+        entityId: string;
+        status: "VERIFIED" | "MISSING" | "HASH_MISMATCH" | "SEQUENCE_MISMATCH";
+        detail: string;
+      }>;
+    }>("/ledger/receipts/verify", { receipts }),
 };
 
 // ── Evidence ──────────────────────────────────────────────────

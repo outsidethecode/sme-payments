@@ -120,7 +120,7 @@ export class EarlyPaymentsService {
       },
     });
 
-    await this.ledger.logEvent({
+    const event = await this.ledger.logEvent({
       entityType: "EARLY_PAYMENT",
       entityId: request.id,
       eventType: "EARLY_PAY_REQUESTED",
@@ -135,7 +135,8 @@ export class EarlyPaymentsService {
       ...sig,
     });
 
-    return this.formatEarlyPayment(request);
+    const result = this.formatEarlyPayment(request);
+    return { ...result, _receipt: this.ledger.buildReceipt(event) };
   }
 
   /**
@@ -444,7 +445,7 @@ export class EarlyPaymentsService {
       return updated;
     });
 
-    await this.ledger.logEvent({
+    const event = await this.ledger.logEvent({
       entityType: "EARLY_PAYMENT",
       entityId: id,
       eventType: "EARLY_PAY_FUNDED",
@@ -460,7 +461,8 @@ export class EarlyPaymentsService {
       ...sig,
     });
 
-    return this.formatEarlyPayment(result);
+    const formatted = this.formatEarlyPayment(result);
+    return { ...formatted, _receipt: this.ledger.buildReceipt(event) };
   }
 
   /**

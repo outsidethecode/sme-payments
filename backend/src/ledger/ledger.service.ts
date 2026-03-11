@@ -6,6 +6,51 @@ import {
 } from "../crypto/crypto.interface";
 import { canonicalStringify } from "../crypto/canonical-stringify";
 
+/**
+ * A platform-signed receipt proving an event was recorded in the ledger.
+ * Clients store these locally as tamper-evident proof the platform committed
+ * to this event — if the platform later omits the event, the receipt is evidence.
+ */
+export interface EventReceipt {
+  /** Receipt format version */
+  version: "1.0";
+  /** The event's unique ID */
+  eventId: string;
+  /** Entity this event belongs to */
+  entityId: string;
+  /** Entity type (PURCHASE_ORDER, EARLY_PAYMENT, etc.) */
+  entityType: string;
+  /** Event type (PO_ACCEPTED, etc.) */
+  eventType: string;
+  /** Per-entity sequence number */
+  entitySequence: number;
+  /** SHA-256 hash of the event (the hash chain link) */
+  eventHash: string;
+  /** Previous event hash in entity chain (or "GENESIS") */
+  previousHash: string;
+  /** Actor who triggered the event */
+  actorId: string;
+  /** ISO-8601 timestamp of the event */
+  timestamp: string;
+  /** SHA-256 hash of the canonical payload */
+  payloadHash: string;
+  /** Whether the event was signed with a passkey */
+  signed: boolean;
+  /** Intent hash (if passkey-signed) */
+  intentHash: string | null;
+  /** Platform attestation — proves the platform acknowledged this event */
+  platformAttestation: {
+    /** SHA-256 of receipt fields (excluding this attestation block) */
+    receiptHash: string;
+    /** ECDSA P-256 signature over receiptHash */
+    signature: string;
+    /** Platform's public key (base64 SPKI DER) for independent verification */
+    publicKey: string;
+    /** When the platform signed this receipt */
+    signedAt: string;
+  };
+}
+
 /** Optional passkey signature data to attach to a ledger event. */
 export interface SignatureData {
   signature: string;
@@ -133,6 +178,73 @@ export class LedgerService {
       }
       throw err;
     }
+  }
+
+  /**
+   * Build a platform-signed receipt from a raw event record.
+   *
+   * The receipt is a compact, self-contained proof that this event was:
+   *   1. Recorded in the ledger (eventHash, previousHash, sequence)
+   *   2. Acknowledged by the platform (ECDSA signature over receipt fields)
+   *
+   * Clients store these locally. If the platform later omits an event,
+   * the receipt is cryptographic evidence of the platform's commitment.
+   */
+  buildReceipt(event: any): EventReceipt {
+    const payloadHash = this.crypto.sha256Hex(
+      canonicalStringify(event.payload ?? {}),
+    );
+    const signed =
+      event.actorSignature !== "SYSTEM" &&
+      event.actorSignature !== "MVP_PLACEHOLDER";
+
+    // Deterministic hash of receipt fields (excluding the attestation itself)
+    const receiptHash = this.crypto.sha256Hex(
+      [
+        event.id,
+        event.entityId,
+        event.entityType,
+        event.eventType,
+        String(event.entitySequence),
+        event.eventHash,
+        event.previousHash,
+        event.actorId,
+        event.timestamp instanceof Date
+          ? event.timestamp.toISOString()
+          : event.timestamp,
+        payloadHash,
+        String(signed),
+        event.intentHash ?? "",
+      ].join("|"),
+    );
+
+    const { signature, publicKey } =
+      this.crypto.signWithPlatformKey(receiptHash);
+
+    return {
+      version: "1.0",
+      eventId: event.id,
+      entityId: event.entityId,
+      entityType: event.entityType,
+      eventType: event.eventType,
+      entitySequence: event.entitySequence,
+      eventHash: event.eventHash,
+      previousHash: event.previousHash,
+      actorId: event.actorId,
+      timestamp:
+        event.timestamp instanceof Date
+          ? event.timestamp.toISOString()
+          : event.timestamp,
+      payloadHash,
+      signed,
+      intentHash: event.intentHash ?? null,
+      platformAttestation: {
+        receiptHash,
+        signature,
+        publicKey,
+        signedAt: new Date().toISOString(),
+      },
+    };
   }
 
   /**

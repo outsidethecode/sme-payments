@@ -264,4 +264,92 @@ export class LedgerController {
     }
     return result;
   }
+
+  // ── Receipt Verification ──────────────────────────────────
+
+  @Post("receipts/verify")
+  @ApiOperation({
+    summary: "Verify local receipts against the ledger",
+    description:
+      "Accepts an array of receipt stubs (eventId + eventHash) and returns " +
+      "which ones match the ledger, which are missing, and which have mismatched hashes. " +
+      "This allows clients to detect if the platform has omitted or altered any events.",
+  })
+  async verifyReceipts(
+    @Body()
+    body: {
+      receipts: Array<{
+        eventId: string;
+        eventHash: string;
+        entityId: string;
+        entitySequence: number;
+      }>;
+    },
+  ) {
+    const eventIds = body.receipts.map((r) => r.eventId);
+    const events = await this.prisma.eventLog.findMany({
+      where: { id: { in: eventIds } },
+      select: {
+        id: true,
+        eventHash: true,
+        entityId: true,
+        entitySequence: true,
+      },
+    });
+
+    const eventMap = new Map(events.map((e) => [e.id, e]));
+
+    const results = body.receipts.map((receipt) => {
+      const event = eventMap.get(receipt.eventId);
+      if (!event) {
+        return {
+          eventId: receipt.eventId,
+          entityId: receipt.entityId,
+          status: "MISSING" as const,
+          detail: "Event not found in ledger — platform may have omitted it",
+        };
+      }
+      if (event.eventHash !== receipt.eventHash) {
+        return {
+          eventId: receipt.eventId,
+          entityId: receipt.entityId,
+          status: "HASH_MISMATCH" as const,
+          detail: "Event exists but hash differs — data may have been altered",
+          expected: receipt.eventHash,
+          actual: event.eventHash,
+        };
+      }
+      if (event.entitySequence !== receipt.entitySequence) {
+        return {
+          eventId: receipt.eventId,
+          entityId: receipt.entityId,
+          status: "SEQUENCE_MISMATCH" as const,
+          detail: "Event exists but entity sequence differs",
+          expected: receipt.entitySequence,
+          actual: event.entitySequence,
+        };
+      }
+      return {
+        eventId: receipt.eventId,
+        entityId: receipt.entityId,
+        status: "VERIFIED" as const,
+        detail: "Event confirmed in ledger with matching hash and sequence",
+      };
+    });
+
+    const verified = results.filter((r) => r.status === "VERIFIED").length;
+    const missing = results.filter((r) => r.status === "MISSING").length;
+    const mismatched = results.filter(
+      (r) => r.status === "HASH_MISMATCH" || r.status === "SEQUENCE_MISMATCH",
+    ).length;
+
+    return {
+      total: results.length,
+      verified,
+      missing,
+      mismatched,
+      allVerified: missing === 0 && mismatched === 0,
+      results,
+    };
+  }
 }

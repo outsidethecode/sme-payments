@@ -1,9 +1,9 @@
 # SME Payments Platform — Technical Reference
 
-**Version:** 2.0  
-**Date:** 10 March 2026  
+**Version:** 2.1  
+**Date:** 11 March 2026  
 **Audience:** Engineering team, auditors, integration partners, regulators  
-**Status:** Production-ready (312/312 tests passing, 19 test suites)
+**Status:** Production-ready (312/312 tests passing, 19 test suites, isolated test database)
 
 ---
 
@@ -36,35 +36,55 @@
    - 8.3 [Canonical JSON Serialization](#83-canonical-json-serialization)
    - 8.4 [Concurrency & Retry Logic](#84-concurrency--retry-logic)
    - 8.5 [Event Types Reference](#85-event-types-reference)
-9. [Passkey Signing (WebAuthn)](#9-passkey-signing-webauthn)
-   - 9.1 [Challenge Generation](#91-challenge-generation)
-   - 9.2 [Assertion Verification](#92-assertion-verification)
-   - 9.3 [What Gets Stored](#93-what-gets-stored)
-10. [Trust Envelope (Evidence Pack v2.0)](#10-trust-envelope-evidence-pack-v20)
-    - 10.1 [Purpose](#101-purpose)
-    - 10.2 [Generation Flow](#102-generation-flow)
-    - 10.3 [Complete Envelope Structure](#103-complete-envelope-structure)
-    - 10.4 [Section-by-Section Reference](#104-section-by-section-reference)
-    - 10.5 [Integrity Hash Hierarchy](#105-integrity-hash-hierarchy)
-    - 10.6 [Platform Signature](#106-platform-signature)
-11. [Proof Bundles](#11-proof-bundles)
-    - 11.1 [Structure](#111-structure)
-    - 11.2 [Per-Event vs Per-Entity Generation](#112-per-event-vs-per-entity-generation)
-    - 11.3 [Public Registries](#113-public-registries)
-12. [Verification System](#12-verification-system)
-    - 12.1 [Three Layers of Verification](#121-three-layers-of-verification)
-    - 12.2 [Full Envelope Verification — 14 Checks](#122-full-envelope-verification--14-checks)
-    - 12.3 [Standalone CLI Verifier](#123-standalone-cli-verifier)
-    - 12.4 [Web Verification Service](#124-web-verification-service)
-    - 12.5 [Proof Bundle Verification — 7 Steps](#125-proof-bundle-verification--7-steps)
-13. [Cryptographic Primitives](#13-cryptographic-primitives)
-    - 13.1 [Algorithms Used](#131-algorithms-used)
-    - 13.2 [COSE → SPKI Key Conversion](#132-cose--spki-key-conversion)
-    - 13.3 [DER Signature Encoding](#133-der-signature-encoding)
-    - 13.4 [Platform Signing Key Management](#134-platform-signing-key-management)
-14. [Evidence Attachments](#14-evidence-attachments)
-15. [API Reference](#15-api-reference)
-16. [Security Considerations](#16-security-considerations)
+9. [Merkle Tree Anchoring & External Notarization](#9-merkle-tree-anchoring--external-notarization)
+   - 9.1 [Overview](#91-overview)
+   - 9.2 [Merkle Tree Algorithm](#92-merkle-tree-algorithm)
+   - 9.3 [Anchor Creation Flow](#93-anchor-creation-flow)
+   - 9.4 [External Anchoring via Sigstore Rekor](#94-external-anchoring-via-sigstore-rekor)
+   - 9.5 [Anchor Provider Architecture](#95-anchor-provider-architecture)
+   - 9.6 [Inclusion Proofs](#96-inclusion-proofs)
+   - 9.7 [Anchor Chain Verification](#97-anchor-chain-verification)
+   - 9.8 [Auto-Anchoring Scheduler](#98-auto-anchoring-scheduler)
+   - 9.9 [LedgerAnchor Schema](#99-ledgeranchor-schema)
+10. [Passkey Signing (WebAuthn)](#10-passkey-signing-webauthn)
+    - 10.1 [Challenge Generation](#101-challenge-generation)
+    - 10.2 [Assertion Verification](#102-assertion-verification)
+    - 10.3 [What Gets Stored](#103-what-gets-stored)
+11. [Trust Envelope (Evidence Pack v2.0)](#11-trust-envelope-evidence-pack-v20)
+    - 11.1 [Purpose](#111-purpose)
+    - 11.2 [Generation Flow](#112-generation-flow)
+    - 11.3 [Complete Envelope Structure](#113-complete-envelope-structure)
+    - 11.4 [Section-by-Section Reference](#114-section-by-section-reference)
+    - 11.5 [Integrity Hash Hierarchy](#115-integrity-hash-hierarchy)
+    - 11.6 [Platform Signature](#116-platform-signature)
+12. [Proof Bundles](#12-proof-bundles)
+    - 12.1 [Structure](#121-structure)
+    - 12.2 [Per-Event vs Per-Entity Generation](#122-per-event-vs-per-entity-generation)
+    - 12.3 [Public Registries](#123-public-registries)
+13. [Verification System](#13-verification-system)
+    - 13.1 [Three Layers of Verification](#131-three-layers-of-verification)
+    - 13.2 [Full Envelope Verification — 15 Checks](#132-full-envelope-verification--15-checks)
+    - 13.3 [Standalone CLI Verifier](#133-standalone-cli-verifier)
+    - 13.4 [Web Verification Service](#134-web-verification-service)
+    - 13.5 [Proof Bundle Verification — 7 Steps](#135-proof-bundle-verification--7-steps)
+14. [Cryptographic Primitives](#14-cryptographic-primitives)
+    - 14.1 [Algorithms Used](#141-algorithms-used)
+    - 14.2 [COSE → SPKI Key Conversion](#142-cose--spki-key-conversion)
+    - 14.3 [DER Signature Encoding](#143-der-signature-encoding)
+    - 14.4 [Platform Signing Key Management](#144-platform-signing-key-management)
+15. [Evidence Attachments](#15-evidence-attachments)
+16. [API Reference](#16-api-reference)
+17. [Local Receipts (Layer 4)](#17-local-receipts-layer-4)
+    - 17.1 [Trust Model Context](#171-trust-model-context)
+    - 17.2 [Receipt Format](#172-receipt-format)
+    - 17.3 [Backend: Receipt Generation](#173-backend-receipt-generation)
+    - 17.4 [Frontend: IndexedDB Storage](#174-frontend-indexeddb-storage)
+    - 17.5 [Verification Endpoint](#175-verification-endpoint)
+    - 17.6 [My Receipts Dashboard](#176-my-receipts-dashboard)
+18. [Testing Infrastructure](#18-testing-infrastructure)
+    - 18.1 [Test Database Isolation](#181-test-database-isolation)
+    - 18.2 [Test Lifecycle](#182-test-lifecycle)
+19. [Security Considerations](#19-security-considerations)
 
 ---
 
@@ -78,9 +98,11 @@ The SME Payments Platform is a B2B trade finance system that enables buyers and 
 - **Payment Locks** — Buyer funds are reserved on PO acceptance and released on settlement, ensuring supplier confidence
 - **Early Payment** — Suppliers can request early payment; liquidity partners fund advances against locked POs
 - **Immutable Ledger** — Append-only event log with per-entity SHA-256 hash chains
+- **Merkle Tree Anchoring** — Periodic global anchors: a binary SHA-256 Merkle tree over all entity head hashes, producing a single root that commits to the entire ledger state
+- **External Notarization (Sigstore Rekor)** — Merkle roots are published to the Sigstore Rekor transparency log, providing independently verifiable, tamper-evident timestamps from a neutral third party
 - **Passkey Signing** — Biometric WebAuthn signatures bind human approvals to specific business actions
-- **Trust Envelopes** — Self-contained, cryptographically verifiable JSON documents proving the complete transaction lifecycle
-- **Independent Verification** — 14-check verification pipeline, standalone CLI script, and public web verification service
+- **Trust Envelopes** — Self-contained, cryptographically verifiable JSON documents proving the complete transaction lifecycle, including Merkle inclusion proofs and embedded Rekor receipts
+- **Independent Verification** — 15-check verification pipeline, standalone CLI script (with `--live` Rekor verification), and public web verification service
 
 ---
 
@@ -98,8 +120,12 @@ The SME Payments Platform is a B2B trade finance system that enables buyers and 
 | **ProofGeneratorService** | `src/proofs/` | Self-contained proof bundles per event |
 | **ProofVerifierService** | `src/proofs/` | Stateless per-bundle verification (7 steps) |
 | **EvidenceService** | `src/evidence/` | File attachments + Trust Envelope assembly |
-| **VerifyService** | `src/verify/` | Full envelope verification (14 checks) |
+| **VerifyService** | `src/verify/` | Full envelope verification (15 checks) |
 | **NodeCryptoService** | `src/crypto/` | All hashing, signing, verification (global DI) |
+| **AnchorService** | `src/ledger/` | Merkle tree anchoring, inclusion proofs, anchor chain verification |
+| **AnchorSchedulerService** | `src/ledger/` | Auto-anchoring on configurable interval |
+| **RekorProvider** | `src/ledger/anchor-providers/` | External anchoring via Sigstore Rekor transparency log |
+| **NoopProvider** | `src/ledger/anchor-providers/` | No-op anchor provider for development/testing |
 | **ApprovalsService** | `src/approvals/` | Org policy-based multi-signature approval chain |
 | **PoliciesService** | `src/policies/` | Configurable business rules (PO limits, approval thresholds, LP risk) |
 | **DisputesService** | `src/disputes/` | Dispute lifecycle with ADMIN resolution |
@@ -127,9 +153,18 @@ Buyer acknowledges payment obligation
     → LedgerService.logEvent(SETTLEMENT_COMPLETED)
     → PO → SETTLED (terminal)
 
+Periodic or manual: POST /api/ledger/anchor
+    → AnchorService.createAnchor()
+    → Merkle tree built from all entity head hashes
+    → Merkle root signed with platform ECDSA P-256 key
+    → Root published to Sigstore Rekor transparency log
+    → LedgerAnchor record stored with Rekor receipt
+
 At any point: GET /api/evidence/po/:id/pack
     → Trust Envelope generated on demand
     → All events, proofs, signatures, integrity hashes
+    → Merkle inclusion proof for this entity
+    → Embedded Rekor receipt for offline verification
     → Platform signature seals the envelope
 ```
 
@@ -579,11 +614,271 @@ Different entities write in parallel without contention, since each has its own 
 
 ---
 
-## 9. Passkey Signing (WebAuthn)
+## 9. Merkle Tree Anchoring & External Notarization
+
+### 9.1 Overview
+
+The platform periodically creates **global integrity anchors** — cryptographic snapshots of the entire ledger state. Each anchor builds a binary SHA-256 Merkle tree over all entity head hashes, producing a single root that commits to every entity chain simultaneously. This root is then:
+
+1. **Signed** with the platform's ECDSA P-256 key
+2. **Published** to the [Sigstore Rekor](https://rekor.sigstore.dev) transparency log, providing an independently verifiable, tamper-evident timestamp from a neutral third party
+3. **Stored** as a `LedgerAnchor` record with the full Rekor receipt
+
+Any external party can verify that a specific entity's events were included in a particular anchor by checking a **Merkle inclusion proof** — a compact path of sibling hashes from the entity's leaf to the root.
+
+### 9.2 Merkle Tree Algorithm
+
+**Type**: Binary SHA-256 Merkle tree  
+**Implementation**: `src/crypto/merkle-tree.ts`
+
+#### Leaf Construction
+
+Input: All entity head hashes from the ledger (`entityId → lastEventHash`).
+
+1. Entries are **sorted lexicographically by `entityId`** (deterministic ordering via `a.localeCompare(b)`)
+2. Each leaf = `SHA-256("entityId:lastEventHash")` — colon-delimited, hex-encoded output
+
+#### Interior Node Hashing
+
+```
+parentHash = SHA-256(leftChild + "|" + rightChild)
+```
+
+Interior nodes use **pipe-delimited concatenation** of the child hex strings, not raw byte concatenation. This matches the convention used throughout the platform's hash chain.
+
+#### Edge Cases
+
+| Condition | Handling |
+|-----------|----------|
+| **Odd leaf count** | Last leaf is **duplicated** (standard Merkle practice) |
+| **Single leaf** | Root = the leaf itself (no further hashing) |
+| **Zero entities** | Not permitted — `createAnchor()` requires at least one event |
+
+#### Inclusion Proof
+
+A Merkle inclusion proof is an array of `{ position: "left" | "right", hash: string }` steps from the target leaf to the root:
+
+```
+Verification algorithm:
+    current = leafHash
+    for each step in proof:
+        if step.position === "left":
+            current = SHA-256(step.hash + "|" + current)
+        else:
+            current = SHA-256(current + "|" + step.hash)
+    return current === expectedRoot
+```
+
+The `position` indicates which side the **sibling** is on: `"left"` means the sibling hash goes on the left and the current value goes on the right.
+
+### 9.3 Anchor Creation Flow
+
+**Trigger**: `POST /api/ledger/anchor` (manual) or auto-anchoring scheduler (periodic)
+
+`AnchorService.createAnchor()` step-by-step:
+
+```
+1. Gather entity heads:
+   SELECT DISTINCT ON (entity_id) entity_id, event_hash
+   FROM event_log ORDER BY entity_id, entity_sequence DESC
+   → Record<entityId, lastEventHash>
+
+2. Build Merkle tree from head hashes
+   → merkleRoot = tree.root
+
+3. anchorHash = merkleRoot (the anchor hash IS the Merkle root)
+
+4. Build merkleLeaves array:
+   [{ entityId, leafHash, headHash }] in sorted order
+
+5. Get total event count (SELECT COUNT(*) FROM event_log)
+
+6. Get previous anchor (latest by sequence)
+
+7. UPGRADE CHECK (same hash as previous anchor):
+   a) If previous anchor already has an external provider → return existing, skip
+   b) If previous anchor has NO external provider → upgrade it:
+      - Sign merkle root with platform key
+      - Call anchorProvider.anchor(merkleRoot, signature, publicKeyPem)
+      - Update existing LedgerAnchor record with Rekor receipt
+   c) If upgrade not possible → return existing with externalAnchor: null
+
+8. NEW ANCHOR (different hash):
+   a) Sign merkle root with platform ECDSA P-256 key
+   b) External anchoring (best-effort):
+      - Call anchorProvider.anchor(merkleRoot, signature, publicKeyPem)
+      - Failures are caught and logged — internal anchor still created
+   c) Store LedgerAnchor with all fields:
+      anchorHash, previousAnchorHash, eventCount, entityCount,
+      headHashes, merkleLeaves, anchorProvider, externalId,
+      externalProof, externalUrl, anchoredAt
+```
+
+The **upgrade logic** ensures that if events haven't changed since the last anchor, the system doesn't create a duplicate — instead it enriches the existing anchor with external notarization if not already present.
+
+### 9.4 External Anchoring via Sigstore Rekor
+
+[Sigstore Rekor](https://rekor.sigstore.dev) is a free, open-source transparency log for software supply chain integrity. The platform uses it as a **timestamping authority** — publishing Merkle roots to produce tamper-evident, independently verifiable timestamps.
+
+#### How It Works
+
+1. **Artifact hash**: `SHA-256(merkleRoot)` — the hex-encoded Merkle root is the "artifact"
+2. **Entry format**: `hashedrekord` v0.0.1
+
+```json
+{
+  "kind": "hashedrekord",
+  "apiVersion": "0.0.1",
+  "spec": {
+    "data": {
+      "hash": { "algorithm": "sha256", "value": "<SHA-256(merkleRoot)>" }
+    },
+    "signature": {
+      "content": "<base64 ECDSA signature over merkleRoot>",
+      "publicKey": { "content": "<base64-encoded PEM public key>" }
+    }
+  }
+}
+```
+
+3. **POST** to `https://rekor.sigstore.dev/api/v1/log/entries`
+4. **Response** contains a UUID key with the entry details
+
+#### Rekor Receipt
+
+The receipt stored in `externalProof` contains:
+
+```json
+{
+  "logIndex": 1080109490,
+  "logID": "<hex>",
+  "integratedTime": 1741685412,
+  "body": "<base64-encoded entry body>",
+  "verification": {
+    "inclusionProof": {
+      "checkpoint": "...",
+      "hashes": ["..."],
+      "logIndex": 1080109490,
+      "rootHash": "...",
+      "treeSize": 156424756
+    },
+    "signedEntryTimestamp": "<base64>"
+  }
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `logIndex` | Monotonic position in Rekor's global log |
+| `integratedTime` | Unix timestamp when entry was integrated |
+| `body` | Base64-encoded entry body (contains the artifact hash for offline verification) |
+| `verification.inclusionProof` | Rekor's own Merkle inclusion proof within its log |
+| `verification.signedEntryTimestamp` | Rekor's signature over the entry |
+
+**Verification URL**: `https://search.sigstore.dev/?logIndex=<logIndex>` — anyone can look up the entry directly.
+
+### 9.5 Anchor Provider Architecture
+
+External anchoring uses a pluggable provider pattern via dependency injection:
+
+```typescript
+interface AnchorProvider {
+  readonly name: string;
+  anchor(merkleRoot: string, signature: string, publicKeyPem: string): Promise<AnchorReceipt>;
+  verify(receipt: AnchorReceipt): Promise<boolean>;
+}
+
+interface AnchorReceipt {
+  provider: string;        // e.g. "sigstore-rekor"
+  externalId: string;      // Rekor UUID, Bitcoin txId, etc.
+  proof: Record<string, unknown>;  // Provider-specific proof data
+  verificationUrl: string;
+  anchoredAt: Date;
+}
+```
+
+| Provider | `name` | Purpose | Configuration |
+|----------|--------|---------|---------------|
+| **RekorProvider** | `"sigstore-rekor"` | Production — publishes to Sigstore Rekor | `ANCHOR_PROVIDER=rekor`, `REKOR_URL=https://rekor.sigstore.dev/api/v1/log/entries` |
+| **NoopProvider** | `"none"` | Development/testing — internal anchor only | `ANCHOR_PROVIDER=noop` (or unset) |
+
+Provider selection is via the `ANCHOR_PROVIDER` environment variable. The `NoopProvider` creates a local-only receipt (`provider: "none"`, `externalId: "local-<timestamp>"`) and its `verify()` always returns `false`.
+
+### 9.6 Inclusion Proofs
+
+When generating a Trust Envelope, the `EvidenceService` requests a Merkle inclusion proof for the entity:
+
+```
+AnchorService.getInclusionProof(entityId):
+    1. Fetch up to 20 most recent anchors (desc by sequence)
+    2. For each anchor, check if headHashes[entityId] exists
+    3. If found: rebuild Merkle tree from headHashes, compute proof path
+    4. Return { anchor metadata, proof: { entityId, leafHash, headHash, path[] } }
+```
+
+The proof is embedded in the Trust Envelope's `notarization` section, allowing any verifier to confirm the entity was included in a specific global anchor without access to the full ledger.
+
+### 9.7 Anchor Chain Verification
+
+Anchors form their own chain — each anchor's `previousAnchorHash` links to the prior anchor's `anchorHash`.
+
+`AnchorService.verifyAnchorChain()`:
+
+1. Fetch all anchors ordered by `sequence ASC`
+2. Verify first anchor has `previousAnchorHash === null`
+3. Each subsequent anchor's `previousAnchorHash` must equal the prior anchor's `anchorHash`
+4. For each anchor, **re-derive** the Merkle root from the stored `headHashes` and compare against `anchorHash`
+5. Count externally anchored entries
+6. Return `{ valid, anchorCount, externallyAnchored, details[] }`
+
+### 9.8 Auto-Anchoring Scheduler
+
+**Implementation**: `src/ledger/anchor-scheduler.service.ts`
+
+| ENV Variable | Default | Description |
+|-------------|---------|-------------|
+| `ANCHOR_INTERVAL_MINUTES` | `0` (disabled) | Anchoring interval in minutes. Set to `0` or omit for manual-only |
+
+When enabled (`> 0`):
+- A `setInterval` timer fires every `N × 60,000` ms
+- Each tick checks if there are new events since the last anchor
+- If no new events → skip (avoids duplicate anchors for unchanged state)
+- If new events exist → `AnchorService.createAnchor()` is called
+- Timer is cleaned up on module destroy
+
+When disabled (`0` or unset): anchoring is manual only via `POST /api/ledger/anchor`.
+
+### 9.9 LedgerAnchor Schema
+
+```prisma
+model LedgerAnchor {
+  id                 String    @id @default(uuid())
+  sequence           Int       @default(autoincrement())
+  anchorHash         String    @unique              // Merkle root
+  previousAnchorHash String?                        // Chain link to prior anchor
+  eventCount         Int                            // Total events at anchor time
+  entityCount        Int                            // Total entities in the tree
+  headHashes         Json                           // { entityId: lastEventHash }
+  merkleLeaves       Json?                          // Ordered [{ entityId, leafHash, headHash }]
+
+  // External anchoring
+  anchorProvider     String?                        // "sigstore-rekor" | null
+  externalId         String?                        // Rekor UUID
+  externalProof      Json?                          // Full Rekor receipt JSON
+  externalUrl        String?                        // Verification URL
+  anchoredAt         DateTime?                      // External timestamp
+
+  createdAt          DateTime  @default(now())
+}
+```
+
+---
+
+## 10. Passkey Signing (WebAuthn)
 
 For high-trust actions (accepting a PO, funding an early payment, acknowledging obligation), the user's passkey produces a real ECDSA P-256 signature bound to the specific business action. This is a two-step flow.
 
-### 9.1 Challenge Generation
+### 10.1 Challenge Generation
 
 ```
 POST /api/ledger/challenge
@@ -602,7 +897,7 @@ The backend returns:
 - The intent hash
 - WebAuthn `PublicKeyCredentialRequestOptions` (with the intent hash as the challenge)
 
-### 9.2 Assertion Verification
+### 10.2 Assertion Verification
 
 The frontend presents the challenge to the user's authenticator (Touch ID, Face ID, Windows Hello). The authenticator produces:
 
@@ -626,7 +921,7 @@ The backend:
 2. Extracts the raw signature, authenticator data, and public key
 3. Calls `LedgerService.logEvent()` with all cryptographic materials
 
-### 9.3 What Gets Stored
+### 10.3 What Gets Stored
 
 Every ledger event row includes:
 
@@ -643,9 +938,9 @@ For unsigned events (system-triggered, or before the user has registered a passk
 
 ---
 
-## 10. Trust Envelope (Evidence Pack v2.0)
+## 11. Trust Envelope (Evidence Pack v2.0)
 
-### 10.1 Purpose
+### 11.1 Purpose
 
 A Trust Envelope is a **self-contained, cryptographically verifiable JSON document** that proves the complete lifecycle of a purchase order. It packages:
 
@@ -660,7 +955,7 @@ A Trust Envelope is a **self-contained, cryptographically verifiable JSON docume
 
 **Any external party (bank, regulator, auditor) can verify the envelope without trusting the platform.** The verification can be done using the public API endpoint, the standalone CLI script, or manually using any FIDO2/WebAuthn library.
 
-### 10.2 Generation Flow
+### 11.2 Generation Flow
 
 ```
 GET /api/evidence/po/:poId/pack
@@ -703,12 +998,12 @@ Assembly steps inside `EvidenceService.buildEvidencePack()`:
 12. Platform signature:
     Sign envelopeHash with platform's ECDSA P-256 private key
 
-13. Check for ledger anchor (notarization / timestamp proof)
+13. Check for ledger anchor (Merkle inclusion proof + external notarization via Rekor)
 
 14. Assemble all sections into the final Trust Envelope JSON
 ```
 
-### 10.3 Complete Envelope Structure
+### 11.3 Complete Envelope Structure
 
 ```json
 {
@@ -731,7 +1026,7 @@ Assembly steps inside `EvidenceService.buildEvidencePack()`:
 }
 ```
 
-### 10.4 Section-by-Section Reference
+### 11.4 Section-by-Section Reference
 
 #### metadata
 
@@ -969,18 +1264,49 @@ Platform-level ECDSA P-256 signature over the envelope hash:
 
 #### notarization
 
-Optional external timestamp proof (for future RFC 3161 TSA integration):
+Merkle tree anchor with optional external notarization via Sigstore Rekor:
 
 ```json
 {
-  "type": "LEDGER_ANCHOR",
-  "anchorHash": "hex",
-  "eventCount": 42,
-  "anchoredAt": "ISO-8601"
+  "merkleRoot": "hex (SHA-256 root of the binary Merkle tree over all entity head hashes)",
+  "merkleProof": {
+    "entityId": "uuid (the entity this envelope covers)",
+    "leafHash": "hex (SHA-256 of 'entityId:headEventHash')",
+    "headHash": "hex (the head event hash for this entity at anchor time)",
+    "path": [
+      { "position": "left | right", "hash": "hex (sibling hash at this tree level)" }
+    ]
+  },
+  "anchor": {
+    "anchorId": "uuid",
+    "anchorHash": "hex (SHA-256 of all anchor fields)",
+    "previousAnchorHash": "hex | null (links to prior anchor — forms anchor chain)",
+    "eventCount": 42,
+    "entityCount": 8,
+    "createdAt": "ISO-8601"
+  },
+  "externalAnchor": {
+    "provider": "sigstore-rekor",
+    "externalId": "uuid (Rekor entry UUID)",
+    "verificationUrl": "https://search.sigstore.dev/?logIndex=...",
+    "anchoredAt": "ISO-8601",
+    "proof": {
+      "logIndex": 1080109490,
+      "logID": "hex",
+      "integratedTime": 1741649039,
+      "body": "base64 (hashedrekord v0.0.1 entry — decode to verify spec.data.hash.value === SHA-256(merkleRoot))",
+      "verification": {
+        "signedEntryTimestamp": "base64",
+        "inclusionProof": { "logIndex": 1080109490, "rootHash": "hex", "treeSize": 171195583, "hashes": ["hex", "..."] }
+      }
+    }
+  },
+  "algorithm": "SHA-256-Merkle-Tree",
+  "verificationUri": "/api/ledger/anchors/verify"
 }
 ```
 
-### 10.5 Integrity Hash Hierarchy
+### 11.5 Integrity Hash Hierarchy
 
 ```
 envelopeHash = SHA-256(documentHash | ledgerRootHash | attachmentsHash)
@@ -1002,7 +1328,7 @@ platformSignature = ECDSA-P256(envelopeHash)
 
 **Consequence**: Modifying any single field, event, or file anywhere in the envelope cascades upward and invalidates the platform signature.
 
-### 10.6 Platform Signature
+### 11.6 Platform Signature
 
 The platform holds an ECDSA P-256 key pair used exclusively to seal Trust Envelopes:
 
@@ -1018,9 +1344,9 @@ The public key is embedded in the envelope itself, making the pack self-verifyin
 
 ---
 
-## 11. Proof Bundles
+## 12. Proof Bundles
 
-### 11.1 Structure
+### 12.1 Structure
 
 A proof bundle is a **self-contained JSON document** for a single event. It contains everything needed to verify that event independently, without database access:
 
@@ -1102,7 +1428,7 @@ A proof bundle is a **self-contained JSON document** for a single event. It cont
 
 For unsigned events (where `actorSignature === "SYSTEM"`), the `assertion` section is null and `verification.steps` contains only the hash chain check.
 
-### 11.2 Per-Event vs Per-Entity Generation
+### 12.2 Per-Event vs Per-Entity Generation
 
 | API | Description |
 |-----|-------------|
@@ -1111,7 +1437,7 @@ For unsigned events (where `actorSignature === "SYSTEM"`), the `assertion` secti
 
 The entity-level generation also returns `chainValid: true/false` and a summary of the chain verification.
 
-### 11.3 Public Registries
+### 12.3 Public Registries
 
 Two **public, unauthenticated** endpoints allow external verifiers to independently confirm identities:
 
@@ -1124,17 +1450,17 @@ These enable verification without platform trust — the verifier can fetch the 
 
 ---
 
-## 12. Verification System
+## 13. Verification System
 
-### 12.1 Three Layers of Verification
+### 13.1 Three Layers of Verification
 
 | Layer | Scope | API | Auth |
 |-------|-------|-----|------|
 | **Per-event** | Single proof bundle | `POST /api/proofs/verify` | Public |
 | **Per-entity chain** | Hash chain for one entity | `GET /api/ledger/verify/:entityId` | JWT |
-| **Full envelope** | All 14 checks on the Trust Envelope | `POST /api/verify` or CLI script | Public |
+| **Full envelope** | All 15 checks on the Trust Envelope | `POST /api/verify` or CLI script | Public |
 
-### 12.2 Full Envelope Verification — 14 Checks
+### 13.2 Full Envelope Verification — 15 Checks
 
 The `VerifyService` (and the equivalent CLI script) performs these checks on a Trust Envelope:
 
@@ -1153,22 +1479,26 @@ The `VerifyService` (and the equivalent CLI script) performs these checks on a T
 | **10** | **Credential Uniqueness** | Each `credentialId` is bound to exactly one user across all proof bundles. Detects if a credential is shared between users (fraud indicator). | PASS / FAIL |
 | **11** | **Timestamp Ordering** | Events within each entity chain are chronologically ordered. Reports total time span of the transaction. | PASS / WARN |
 | **12** | **External Verification URIs** | Reports all `registryUri`, `identityUri`, `publicKeyResolutionUri` values. Warns if pointing to `localhost` (non-production). | INFO / WARN |
-| **13** | **Platform Signature & Notarization** | Verifies `platformSignature.signature` over `integrity.envelopeHash` using `createVerify("SHA256")` with the embedded SPKI DER public key. Reports notarization status (ledger anchor / RFC 3161 timestamp). | PASS / FAIL |
+| **13** | **Platform Signature & Notarization** | Verifies `platformSignature.signature` over `integrity.envelopeHash` using `createVerify("SHA256")` with the embedded SPKI DER public key. Reports whether notarization section is present. | PASS / FAIL |
+| **14** | **Merkle Proof & External Anchor** | Verifies the Merkle inclusion proof: walks `merkleProof.path` from `leafHash` to root using `SHA-256(left + "|" + right)` and confirms the result equals `merkleRoot`. Cross-checks the external anchor: for Sigstore Rekor, decodes the embedded `proof.body` (base64 → JSON), extracts `spec.data.hash.value`, and verifies it equals `SHA-256(merkleRoot)`. Reports anchor metadata (provider, logIndex, verification URL). With `--live` flag (CLI) or live mode: fetches the Rekor entry directly and cross-checks `integratedTime`. | PASS / WARN / FAIL |
 
 **Overall Verdict**:
 - `PASSED` — All checks pass
 - `PASSED_WITH_WARNINGS` — No failures, but some warnings
 - `FAILED` — One or more checks failed
 
-### 12.3 Standalone CLI Verifier
+### 13.3 Standalone CLI Verifier
 
 **File**: `scripts/verify-evidence-pack.mjs`  
 **Lines**: ~1,297  
 **Dependencies**: Zero (uses only Node.js built-in `crypto`)
 
 ```bash
-node verify-evidence-pack.mjs <evidence-pack.json>
+node verify-evidence-pack.mjs <evidence-pack.json> [--live]
 ```
+
+**Flags**:
+- `--live` — Enable live external verification. For Sigstore Rekor anchors, the script fetches the Rekor transparency log entry via HTTPS and cross-checks the `integratedTime` and entry body against the embedded proof. Without this flag, the script performs **offline cross-checking** only (decodes the embedded proof body and verifies hash consistency).
 
 **Exit codes**:
 - `0` — All checks passed  
@@ -1181,8 +1511,12 @@ The CLI script is a **complete reimplementation** of the verification pipeline i
 - Minimal CBOR parser for COSE key extraction
 - COSE → SPKI DER key conversion
 - IEEE P1363 → DER signature format conversion
-- All 14 verification checks
+- All 15 verification checks (including Merkle proof & external anchor verification)
 - Support for both Trust Envelope v2.0 and legacy Evidence Pack v1.x formats
+
+**Merkle & Anchor Verification (Check #14)**:
+- **Offline mode** (default): Decodes `notarization.externalAnchor.proof.body` from base64 to JSON, extracts `spec.data.hash.value`, and verifies it equals `SHA-256(merkleRoot)`. Walks the `merkleProof.path` from leaf to root using pipe-delimited interior hashing.
+- **Live mode** (`--live`): Additionally fetches the Rekor entry at `https://rekor.sigstore.dev/api/v1/log/entries/{uuid}` with a 10-second timeout. Verifies the fetched entry's body matches the embedded proof. Reports `logIndex`, `integratedTime`, and verification URL.
 
 **Why a standalone script?** Banks, auditors, and regulators can download this single file and verify an evidence pack on their own machine. No platform access needed. No dependencies to install. No Docker. Just `node`.
 
@@ -1208,7 +1542,7 @@ The CLI script is a **complete reimplementation** of the verification pipeline i
 
 **COSE/CBOR Parsing**: The script includes a minimal hand-rolled CBOR parser that extracts P-256 EC key coordinates from COSE format. This avoids any external CBOR library dependency.
 
-### 12.4 Web Verification Service
+### 13.4 Web Verification Service
 
 **Backend Endpoint**:
 
@@ -1234,7 +1568,7 @@ Features:
 - "Verify Another Pack" reset button
 - Also accessible from the LP dashboard sidebar ("Verify Evidence" link)
 
-### 12.5 Proof Bundle Verification — 7 Steps
+### 13.5 Proof Bundle Verification — 7 Steps
 
 The `ProofVerifierService` verifies a single proof bundle with up to 7 steps:
 
@@ -1256,15 +1590,18 @@ Endpoints:
 
 ---
 
-## 13. Cryptographic Primitives
+## 14. Cryptographic Primitives
 
-### 13.1 Algorithms Used
+### 14.1 Algorithms Used
 
 | Purpose | Algorithm | Standard |
 |---------|-----------|----------|
 | Event hashing | SHA-256 | FIPS 180-4 |
 | Integrity hashing | SHA-256 | FIPS 180-4 |
 | File content hashing | SHA-256 | FIPS 180-4 |
+| Merkle tree (leaves) | SHA-256(`entityId:headEventHash`) | FIPS 180-4 |
+| Merkle tree (interior) | SHA-256(`left\|right`) pipe-delimited | FIPS 180-4 |
+| External anchoring | SHA-256(merkleRoot) → Sigstore Rekor `hashedrekord` v0.0.1 | Sigstore / RFC 6962 |
 | Passkey signatures | ECDSA P-256 (ES256) | FIPS 186-4 / WebAuthn |
 | Platform signature | ECDSA P-256 (SHA-256) | FIPS 186-4 |
 | Public key format | COSE (CBOR) | RFC 8152 |
@@ -1274,7 +1611,7 @@ Endpoints:
 
 All cryptographic operations use Node.js's native `crypto` module, which binds to OpenSSL.
 
-### 13.2 COSE → SPKI Key Conversion
+### 14.2 COSE → SPKI Key Conversion
 
 WebAuthn stores public keys in COSE format (CBOR-encoded). Node.js `crypto.createVerify()` expects SPKI DER. The conversion process:
 
@@ -1284,7 +1621,7 @@ WebAuthn stores public keys in COSE format (CBOR-encoded). Node.js `crypto.creat
 
 The same conversion is implemented in both the backend `NodeCryptoService` and the standalone verifier script.
 
-### 13.3 DER Signature Encoding
+### 14.3 DER Signature Encoding
 
 WebAuthn produces signatures in IEEE P1363 format (`r || s`, 64 bytes for P-256). OpenSSL expects DER-encoded signatures. The conversion:
 
@@ -1293,7 +1630,7 @@ WebAuthn produces signatures in IEEE P1363 format (`r || s`, 64 bytes for P-256)
 3. Encode as ASN.1 DER: `SEQUENCE { INTEGER r, INTEGER s }`
 4. Already-DER-encoded signatures are detected and passed through
 
-### 13.4 Platform Signing Key Management
+### 14.4 Platform Signing Key Management
 
 | Environment | Key Source |
 |-------------|-----------|
@@ -1304,7 +1641,7 @@ The public key is derived from the private key as SPKI DER and embedded in every
 
 ---
 
-## 14. Evidence Attachments
+## 15. Evidence Attachments
 
 Physical evidence files (PDFs, images, spreadsheets) can be uploaded and linked to a PO.
 
@@ -1345,7 +1682,7 @@ Re-reads the file from disk, recomputes SHA-256, compares to stored hash. Return
 
 ---
 
-## 15. API Reference
+## 16. API Reference
 
 ### Ledger APIs (JWT required)
 
@@ -1360,6 +1697,7 @@ Re-reads the file from disk, recomputes SHA-256, compares to stored hash. Return
 | `POST` | `/api/ledger/anchor` | Create global integrity anchor |
 | `GET` | `/api/ledger/anchors` | Get latest anchor |
 | `GET` | `/api/ledger/anchors/verify` | Verify anchor chain |
+| `GET` | `/api/ledger/anchors/proof/:entityId` | Get Merkle inclusion proof for an entity |
 
 ### Proof APIs (mixed auth)
 
@@ -1386,12 +1724,210 @@ Re-reads the file from disk, recomputes SHA-256, compares to stored hash. Return
 
 | Method | Route | Auth | Description |
 |--------|-------|------|-------------|
-| `POST` | `/api/verify` | **Public** | Verify a full Trust Envelope (14 checks) |
+| `POST` | `/api/verify` | **Public** | Verify a full Trust Envelope (15 checks) |
 | `GET` | `/api/verify/health` | **Public** | Health check |
 
 ---
 
-## 16. Security Considerations
+## 17. Local Receipts (Layer 4)
+
+Local receipts complete the four-layer trust model by ensuring the platform **"can't omit"** events. At the moment a user performs a signed action, the platform returns a cryptographically signed receipt that the client stores locally in IndexedDB. If the platform were to later remove or alter an event, the user holds irrefutable proof of the platform's prior commitment.
+
+### 17.1 Trust Model Context
+
+| Layer | Property | Mechanism | Section |
+|-------|----------|-----------|---------|
+| 1 | Self-contained proof (can't deny) | WebAuthn ECDSA P-256 signatures | §10 |
+| 2 | Hash chain (can't reorder) | Per-entity SHA-256 chain | §8 |
+| 3 | Merkle anchor (can't alter after) | Binary Merkle tree + Sigstore Rekor | §9 |
+| **4** | **Local receipts (can't omit)** | **Platform-signed receipts in IndexedDB** | **§17** |
+
+### 17.2 Receipt Format
+
+Each `EventReceipt` has version `"1.0"` and contains:
+
+```typescript
+interface EventReceipt {
+  version: "1.0";
+  eventId: string;           // UUID of the ledger event
+  entityId: string;          // Entity (PO / early-payment) ID
+  entityType: string;        // "PURCHASE_ORDER" | "EARLY_PAYMENT"
+  eventType: string;         // e.g. "PO_SENT", "PO_ACCEPTED"
+  entitySequence: number;    // Per-entity sequence number
+  eventHash: string;         // SHA-256 hash of the event record
+  previousHash: string;      // Previous hash in entity chain
+  actorId: string;           // User who performed the action
+  timestamp: string;         // ISO-8601 event timestamp
+  payloadHash: string;       // SHA-256 of canonical payload JSON
+  signed: boolean;           // Whether passkey-signed
+  intentHash: string | null; // WebAuthn intent hash (if signed)
+  platformAttestation: {
+    receiptHash: string;     // Deterministic hash of all receipt fields
+    signature: string;       // ECDSA P-256 signature over receiptHash
+    publicKey: string;       // Platform's public key (base64)
+    signedAt: string;        // ISO-8601 signing timestamp
+  };
+}
+```
+
+**Receipt hash** is computed as `SHA-256` of a deterministic pipe-delimited string:
+```
+eventId|entityId|entityType|eventType|entitySequence|eventHash|previousHash|actorId|timestamp|payloadHash|signed|intentHash
+```
+
+The platform signs this hash with its ECDSA P-256 private key, creating a non-repudiable commitment.
+
+### 17.3 Backend: Receipt Generation
+
+`LedgerService.buildReceipt(event)` constructs and signs a receipt from a raw event record:
+
+1. Computes `payloadHash = SHA-256(canonicalStringify(event.payload))`
+2. Determines `signed` status from presence of WebAuthn signature fields
+3. Builds deterministic `receiptHash` from pipe-joined fields
+4. Signs with `ICryptoService.signWithPlatformKey(receiptHash)`
+5. Returns the complete `EventReceipt`
+
+Every user-signed service method (14 across PO + early payment services) now returns the receipt alongside the entity:
+
+```typescript
+// PurchaseOrdersService — 12 methods:
+// send (2 paths), accept, reject, counterPropose, acceptCounter,
+// rejectCounter, markShipped, markDelivered, verifyDelivery,
+// acknowledgeObligation, dispute
+
+// EarlyPaymentsService — 2 methods:
+// requestEarlyPayment, fund
+
+return { ...formatPO(entity), _receipt: this.ledger.buildReceipt(event) };
+```
+
+System-generated events (auto-approval, settlement completion, expiry) do **not** generate receipts — they are platform-initiated and do not require client-side non-repudiation.
+
+### 17.4 Frontend: IndexedDB Storage
+
+The receipt store (`frontend/src/lib/receipt-store.ts`) provides:
+
+| Function | Description |
+|----------|-------------|
+| `storeReceipt(apiResponse)` | Extracts `_receipt` from API response, stores in IndexedDB |
+| `getReceipts(actorId?)` | Retrieves all receipts, optionally filtered by actor |
+| `getReceiptsByEntity(entityId)` | Retrieves receipts for a specific entity |
+| `getReceiptCount()` | Returns total stored receipt count |
+| `exportReceipts()` | JSON export for external verification/backup |
+
+**IndexedDB schema:**
+- Database: `sme-receipts`
+- Object store: `receipts` (keyPath: `eventId`)
+- Indexes: `entityId`, `actorId`, `eventType`, `timestamp`
+
+All functions are SSR-safe (check `typeof window`). Storage failures never block the UI — they log a warning and return `null`.
+
+**Integration points** — receipts are captured in `onSuccess` of every signing mutation:
+- Purchase Order detail page (`makeSignedAction` helper, 12 mutation types)
+- Early Payments page (`requestMutation`, `fundMutation`)
+
+### 17.5 Verification Endpoint
+
+```
+POST /api/ledger/receipts/verify
+```
+
+**Request body:**
+```json
+{
+  "receipts": [
+    {
+      "eventId": "uuid",
+      "eventHash": "sha256-hex",
+      "entityId": "uuid",
+      "entitySequence": 3
+    }
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "total": 10,
+  "verified": 9,
+  "missing": 1,
+  "mismatched": 0,
+  "allVerified": false,
+  "results": [
+    {
+      "eventId": "uuid",
+      "entityId": "uuid",
+      "status": "VERIFIED",
+      "detail": "Event hash and sequence match"
+    },
+    {
+      "eventId": "uuid",
+      "entityId": "uuid",
+      "status": "MISSING",
+      "detail": "Event not found in ledger"
+    }
+  ]
+}
+```
+
+**Status codes:** `VERIFIED` | `MISSING` | `HASH_MISMATCH` | `SEQUENCE_MISMATCH`
+
+The endpoint performs a bulk lookup of events by ID and compares hashes and sequence numbers against the stored receipt stubs.
+
+### 17.6 My Receipts Dashboard
+
+The `/dashboard/receipts` page provides:
+
+- **Receipt count** — total receipts stored in browser IndexedDB
+- **Receipt log table** — event type, entity ID (truncated), sequence, signed status, timestamp, event hash (truncated), verification status
+- **Verify All** button — sends all receipt stubs to the verification endpoint, color-codes results (green = verified, red = missing/mismatch)
+- **Export JSON** — downloads all receipts as a JSON file for external backup or independent verification
+- **Summary cards** — total, verified, missing, mismatched counts after verification
+- **Verification banner** — green (all match) or red (discrepancies found) with explanatory text
+
+---
+
+## 18. Testing Infrastructure
+
+### 18.1 Test Database Isolation
+
+Tests execute against a dedicated `sme_payments_test` database, completely isolated from the development database. The lifecycle is managed by Jest hooks:
+
+| Phase | File | Action |
+|-------|------|--------|
+| **Global Setup** | `test/global-setup.ts` | Creates `sme_payments_test` database (idempotent — checks `pg_database` catalogue first). Runs `prisma migrate deploy` and `ts-node prisma/seed.ts` against the test DB. |
+| **Before Each File** | `test/set-test-env.ts` (via `setupFiles`) | Sets `DATABASE_URL=postgresql://sme_user:sme_password@localhost:5433/sme_payments_test`, `ANCHOR_PROVIDER=noop`, `ANCHOR_INTERVAL_MINUTES=0` |
+| **Global Teardown** | `test/global-teardown.ts` | Terminates all active connections via `pg_terminate_backend`, then `DROP DATABASE IF EXISTS sme_payments_test` |
+
+**No `.env.test` file** — all test environment variables are hardcoded in the setup files to ensure deterministic behaviour.
+
+### 18.2 Anchor Configuration in Tests
+
+| Variable | Test Value | Production Value |
+|----------|------------|-----------------|
+| `ANCHOR_PROVIDER` | `noop` | `rekor` (Sigstore Rekor) |
+| `ANCHOR_INTERVAL_MINUTES` | `0` (disabled) | Non-zero (auto-anchoring cron) |
+
+The `NoopProvider` returns a synthetic anchor response without making any external network calls, keeping tests fast and deterministic.
+
+### 18.3 Test Suite Inventory
+
+| Category | Suites | Tests |
+|----------|--------|-------|
+| **Unit tests** (`.spec.ts`) | 8 | 85 |
+| **E2E tests** (`.e2e-spec.ts`) | 11 | 238 |
+| **Total** | **19** | **323** |
+
+Both Jest configs (`jest.config.ts` and `test/jest-e2e.config.ts`) share the same `globalSetup`, `globalTeardown`, and `setupFiles` entries.
+
+### 18.4 Shell Integration Test
+
+`e2e-test.sh` is a separate **curl-based** integration script that exercises a running backend (port 3001) and frontend (port 3002) through 18 sequential steps: multi-user login → PO creation → negotiation → early payment → LP funding → delivery → settlement → verification → admin statistics → frontend page checks.
+
+---
+
+## 19. Security Considerations
 
 | Area | Approach |
 |------|----------|
@@ -1410,7 +1946,13 @@ Re-reads the file from disk, recomputes SHA-256, compares to stored hash. Return
 | **LP risk controls** | Exposure ceilings, per-buyer/per-supplier concentration limits, whitelist enforcement |
 | **Verification independence** | Public APIs (proof verify, envelope verify, credential registry) require no auth — anyone can verify |
 | **Zero-dependency verifier** | Standalone CLI script reimplements all crypto from scratch; no supply chain trust required |
+| **Merkle tree anchoring** | Binary SHA-256 Merkle tree over all entity head hashes; inclusion proofs let any entity verify membership without full ledger access |
+| **External notarization** | Merkle roots anchored to Sigstore Rekor transparency log — tamper-evident third-party timestamps; offline cross-check via embedded proof body |
+| **Anchor chain integrity** | Each `LedgerAnchor` hashes the previous anchor's hash, forming an ordered chain; gaps or reordering are detectable |
+| **Local receipt non-repudiation** | Platform-signed ECDSA P-256 receipts stored client-side in IndexedDB; if platform omits an event, user holds cryptographic proof of prior commitment |
+| **Receipt verification** | Bulk `POST /ledger/receipts/verify` compares local receipt stubs against live ledger; detects omissions, hash mismatches, and sequence gaps |
+| **Test isolation** | Dedicated `sme_payments_test` database created/destroyed per test run; `ANCHOR_PROVIDER=noop` prevents external calls during tests |
 
 ---
 
-*Generated 10 March 2026. This document reflects the current production codebase (312 tests, 19 suites, all passing).*
+*Generated 11 March 2026. This document reflects the current production codebase (312 tests, 19 suites, all passing). Updated for Layer 4 (Local Receipts) implementation.*

@@ -11,6 +11,7 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { usePasskey } from "@/lib/use-passkey";
+import { storeReceipt } from "@/lib/receipt-store";
 import { EvidencePanel, EvidencePackButton } from "@/components/evidence-panel";
 import {
   formatCurrency,
@@ -111,7 +112,12 @@ export default function PurchaseOrderDetailPage() {
         // Step 3: Perform the action with signature attached
         return action(id, signatureData);
       },
-      onSuccess: () => {
+      onSuccess: (result: unknown) => {
+        // Store Layer 4 local receipt in IndexedDB
+        const axiosData = (result as { data?: Record<string, unknown> })?.data;
+        if (axiosData) {
+          storeReceipt(axiosData).catch(() => {});
+        }
         queryClient.invalidateQueries({ queryKey: ["purchase-order", id] });
         queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
         queryClient.invalidateQueries({ queryKey: ["ledger", id] });

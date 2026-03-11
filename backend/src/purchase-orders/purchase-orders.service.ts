@@ -317,7 +317,7 @@ export class PurchaseOrdersService {
           expiresInHours: 7 * 24, // 7 days
         });
 
-        await this.ledger.logEvent({
+        const event = await this.ledger.logEvent({
           entityType: "PURCHASE_ORDER",
           entityId: id,
           eventType: "PO_APPROVAL_REQUESTED",
@@ -332,7 +332,8 @@ export class PurchaseOrdersService {
           ...sig,
         });
 
-        return this.formatPO(updated);
+        const result = this.formatPO(updated);
+        return { ...result, _receipt: this.ledger.buildReceipt(event) };
       }
 
       // Auto-approved — log it and continue to SENT
@@ -378,7 +379,7 @@ export class PurchaseOrdersService {
       },
     });
 
-    await this.ledger.logEvent({
+    const event = await this.ledger.logEvent({
       entityType: "PURCHASE_ORDER",
       entityId: id,
       eventType: "PO_SENT",
@@ -388,7 +389,8 @@ export class PurchaseOrdersService {
       ...sig,
     });
 
-    return this.formatPO(updated);
+    const result = this.formatPO(updated);
+    return { ...result, _receipt: this.ledger.buildReceipt(event) };
   }
 
   /**
@@ -505,7 +507,7 @@ export class PurchaseOrdersService {
       },
     });
 
-    await this.ledger.logEvent({
+    const event = await this.ledger.logEvent({
       entityType: "PURCHASE_ORDER",
       entityId: id,
       eventType: "PO_ACCEPTED",
@@ -519,7 +521,8 @@ export class PurchaseOrdersService {
       ...sig,
     });
 
-    return this.formatPO(updated);
+    const result = this.formatPO(updated);
+    return { ...result, _receipt: this.ledger.buildReceipt(event) };
   }
 
   async reject(id: string, actorId: string, sig?: SignatureData) {
@@ -553,7 +556,7 @@ export class PurchaseOrdersService {
       },
     });
 
-    await this.ledger.logEvent({
+    const event = await this.ledger.logEvent({
       entityType: "PURCHASE_ORDER",
       entityId: id,
       eventType: "PO_CANCELLED",
@@ -563,7 +566,8 @@ export class PurchaseOrdersService {
       ...sig,
     });
 
-    return this.formatPO(updated);
+    const result = this.formatPO(updated);
+    return { ...result, _receipt: this.ledger.buildReceipt(event) };
   }
 
   // ── Negotiation (counter-proposals) ─────────────────────────
@@ -681,7 +685,7 @@ export class PurchaseOrdersService {
       },
     });
 
-    await this.ledger.logEvent({
+    const event = await this.ledger.logEvent({
       entityType: "PURCHASE_ORDER",
       entityId: id,
       eventType: "PO_COUNTER_PROPOSED",
@@ -697,7 +701,8 @@ export class PurchaseOrdersService {
       ...sig,
     });
 
-    return this.formatPO(updated);
+    const result = this.formatPO(updated);
+    return { ...result, _receipt: this.ledger.buildReceipt(event) };
   }
 
   async acceptCounter(id: string, actorId: string, sig?: SignatureData) {
@@ -777,7 +782,7 @@ export class PurchaseOrdersService {
       },
     });
 
-    await this.ledger.logEvent({
+    const event = await this.ledger.logEvent({
       entityType: "PURCHASE_ORDER",
       entityId: id,
       eventType: "PO_COUNTER_ACCEPTED",
@@ -791,7 +796,8 @@ export class PurchaseOrdersService {
       ...sig,
     });
 
-    return this.formatPO(updated);
+    const result = this.formatPO(updated);
+    return { ...result, _receipt: this.ledger.buildReceipt(event) };
   }
 
   async rejectCounter(id: string, actorId: string, sig?: SignatureData) {
@@ -854,7 +860,7 @@ export class PurchaseOrdersService {
       },
     });
 
-    await this.ledger.logEvent({
+    const event = await this.ledger.logEvent({
       entityType: "PURCHASE_ORDER",
       entityId: id,
       eventType: "PO_COUNTER_REJECTED",
@@ -867,7 +873,8 @@ export class PurchaseOrdersService {
       ...sig,
     });
 
-    return this.formatPO(updated);
+    const result = this.formatPO(updated);
+    return { ...result, _receipt: this.ledger.buildReceipt(event) };
   }
 
   async markShipped(id: string, actorId: string, sig?: SignatureData) {
@@ -907,7 +914,7 @@ export class PurchaseOrdersService {
       },
     });
 
-    await this.ledger.logEvent({
+    const event = await this.ledger.logEvent({
       entityType: "PURCHASE_ORDER",
       entityId: id,
       eventType: "GOODS_SHIPPED",
@@ -917,7 +924,8 @@ export class PurchaseOrdersService {
       ...sig,
     });
 
-    return this.formatPO(updated);
+    const result = this.formatPO(updated);
+    return { ...result, _receipt: this.ledger.buildReceipt(event) };
   }
 
   async markDelivered(id: string, actorId: string, sig?: SignatureData) {
@@ -961,7 +969,7 @@ export class PurchaseOrdersService {
       },
     });
 
-    await this.ledger.logEvent({
+    const event = await this.ledger.logEvent({
       entityType: "PURCHASE_ORDER",
       entityId: id,
       eventType: "DELIVERY_MARKED",
@@ -971,7 +979,8 @@ export class PurchaseOrdersService {
       ...sig,
     });
 
-    return this.formatPO(updated);
+    const result = this.formatPO(updated);
+    return { ...result, _receipt: this.ledger.buildReceipt(event) };
   }
 
   async verifyDelivery(id: string, actorId: string, sig?: SignatureData) {
@@ -1005,7 +1014,7 @@ export class PurchaseOrdersService {
       },
     });
 
-    await this.ledger.logEvent({
+    const event = await this.ledger.logEvent({
       entityType: "PURCHASE_ORDER",
       entityId: id,
       eventType: "DELIVERY_VERIFIED",
@@ -1015,7 +1024,8 @@ export class PurchaseOrdersService {
       ...sig,
     });
 
-    return this.formatPO(updated);
+    const result = this.formatPO(updated);
+    return { ...result, _receipt: this.ledger.buildReceipt(event) };
   }
 
   async acknowledgeObligation(
@@ -1067,7 +1077,7 @@ export class PurchaseOrdersService {
     const FEE_BPS = 50;
 
     // Log obligation acknowledgment before settlement
-    await this.ledger.logEvent({
+    const event = await this.ledger.logEvent({
       entityType: "PURCHASE_ORDER",
       entityId: id,
       eventType: "OBLIGATION_ACKNOWLEDGED",
@@ -1146,7 +1156,8 @@ export class PurchaseOrdersService {
       },
     });
 
-    return this.formatPO(settledPO);
+    const formatted = this.formatPO(settledPO);
+    return { ...formatted, _receipt: this.ledger.buildReceipt(event) };
   }
 
   async dispute(id: string, actorId: string, sig?: SignatureData) {
@@ -1202,7 +1213,7 @@ export class PurchaseOrdersService {
       });
     }
 
-    await this.ledger.logEvent({
+    const event = await this.ledger.logEvent({
       entityType: "PURCHASE_ORDER",
       entityId: id,
       eventType: "DELIVERY_DISPUTED",
@@ -1212,7 +1223,8 @@ export class PurchaseOrdersService {
       ...sig,
     });
 
-    return this.formatPO(updated);
+    const result = this.formatPO(updated);
+    return { ...result, _receipt: this.ledger.buildReceipt(event) };
   }
 
   // ── CSV Import ────────────────────────────────────────────

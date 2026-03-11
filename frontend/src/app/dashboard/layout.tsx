@@ -29,6 +29,7 @@ import {
   ArrowRightLeft,
   Scale,
   AlertTriangle,
+  Receipt,
 } from "lucide-react";
 import { PasskeyBanner } from "@/components/passkey-banner";
 import { HealthIndicator } from "@/components/health-indicator";
@@ -98,6 +99,12 @@ const NAV_ITEMS = [
     href: "/dashboard/ledger",
     label: "Ledger",
     icon: BookOpen,
+    roles: ["BUYER", "SUPPLIER", "LIQUIDITY_PARTNER", "ADMIN"],
+  },
+  {
+    href: "/dashboard/receipts",
+    label: "My Receipts",
+    icon: Receipt,
     roles: ["BUYER", "SUPPLIER", "LIQUIDITY_PARTNER", "ADMIN"],
   },
   {
