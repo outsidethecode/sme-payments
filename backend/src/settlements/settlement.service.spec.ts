@@ -69,12 +69,25 @@ describe("SettlementService", () => {
   });
 
   describe("reserveForPO", () => {
-    it("should reserve funds and create a payment lock", async () => {
+    it("should create PENDING lock, call adapter, then confirm to LOCKED", async () => {
+      // SimulatedAdapter.reserveFunds checks balance then decrements
       mockPrisma.user.findUnique.mockResolvedValue({ balance: 100_000 });
       mockPrisma.user.update.mockResolvedValue({});
+
+      // Step 1: Lock created as PENDING
       mockPrisma.paymentLock.create.mockResolvedValue({
         id: "lock-1",
         purchaseOrderId: "po-1",
+        buyerId: "buyer-1",
+        amount: 50_000,
+        status: "PENDING",
+      });
+
+      // Step 4: confirmLock updates to LOCKED
+      mockPrisma.paymentLock.update.mockResolvedValue({
+        id: "lock-1",
+        purchaseOrderId: "po-1",
+        buyerId: "buyer-1",
         amount: 50_000,
         status: "LOCKED",
       });
@@ -89,6 +102,48 @@ describe("SettlementService", () => {
       expect(result.paymentLockId).toBe("lock-1");
       expect(result.externalRef).toMatch(/^SIM-RSV-/);
       expect(result.status).toBe(TransferStatus.RESERVED);
+
+      // Verify lock was created as PENDING first
+      expect(mockPrisma.paymentLock.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: "PENDING",
+            purchaseOrderId: "po-1",
+            buyerId: "buyer-1",
+            amount: 50_000,
+          }),
+        }),
+      );
+
+      // Verify lock was then updated to LOCKED (confirmLock)
+      expect(mockPrisma.paymentLock.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "lock-1" },
+          data: expect.objectContaining({
+            status: "LOCKED",
+            openBankingRef: expect.stringMatching(/^SIM-RSV-/),
+          }),
+        }),
+      );
+
+      // Verify BOTH ledger events were logged: REQUESTED then CONFIRMED
+      expect(mockLedger.logEvent).toHaveBeenCalledTimes(2);
+      expect(mockLedger.logEvent).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          eventType: "PAYMENT_LOCK_REQUESTED",
+          entityId: "lock-1",
+        }),
+      );
+      expect(mockLedger.logEvent).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          eventType: "PAYMENT_LOCK_CONFIRMED",
+          entityId: "lock-1",
+        }),
+      );
+
+      // Verify adapter still decremented buyer balance
       expect(mockPrisma.user.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: "buyer-1" },
@@ -97,8 +152,28 @@ describe("SettlementService", () => {
       );
     });
 
-    it("should throw when buyer has insufficient balance", async () => {
+    it("should create PENDING lock then transition to LOCK_FAILED on insufficient balance", async () => {
+      // SimulatedAdapter will throw "Insufficient balance"
       mockPrisma.user.findUnique.mockResolvedValue({ balance: 1_000 });
+
+      // Lock created as PENDING
+      mockPrisma.paymentLock.create.mockResolvedValue({
+        id: "lock-fail-1",
+        purchaseOrderId: "po-1",
+        buyerId: "buyer-1",
+        amount: 50_000,
+        status: "PENDING",
+      });
+
+      // failLock updates to LOCK_FAILED
+      mockPrisma.paymentLock.update.mockResolvedValue({
+        id: "lock-fail-1",
+        purchaseOrderId: "po-1",
+        buyerId: "buyer-1",
+        amount: 50_000,
+        status: "LOCK_FAILED",
+        failureReason: "Insufficient balance",
+      });
 
       await expect(
         service.reserveForPO({
@@ -108,11 +183,110 @@ describe("SettlementService", () => {
           currency: "GBP",
         }),
       ).rejects.toThrow("Insufficient balance");
+
+      // Verify PENDING lock was created
+      expect(mockPrisma.paymentLock.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: "PENDING" }),
+        }),
+      );
+
+      // Verify lock transitioned to LOCK_FAILED
+      expect(mockPrisma.paymentLock.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "lock-fail-1" },
+          data: expect.objectContaining({
+            status: "LOCK_FAILED",
+            failureReason: expect.stringContaining("Insufficient balance"),
+          }),
+        }),
+      );
+
+      // Verify REQUESTED + FAILED ledger events
+      expect(mockLedger.logEvent).toHaveBeenCalledTimes(2);
+      expect(mockLedger.logEvent).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ eventType: "PAYMENT_LOCK_REQUESTED" }),
+      );
+      expect(mockLedger.logEvent).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ eventType: "PAYMENT_LOCK_FAILED" }),
+      );
+    });
+  });
+
+  describe("confirmLock", () => {
+    it("should transition PENDING → LOCKED and log CONFIRMED event", async () => {
+      mockPrisma.paymentLock.update.mockResolvedValue({
+        id: "lock-1",
+        purchaseOrderId: "po-1",
+        buyerId: "buyer-1",
+        amount: 50_000,
+        status: "LOCKED",
+      });
+
+      const processedAt = new Date("2025-03-01T12:00:00Z");
+      await service.confirmLock("lock-1", "EXT-REF-123", processedAt);
+
+      expect(mockPrisma.paymentLock.update).toHaveBeenCalledWith({
+        where: { id: "lock-1" },
+        data: {
+          status: "LOCKED",
+          openBankingRef: "EXT-REF-123",
+          lockedAt: processedAt,
+        },
+      });
+
+      expect(mockLedger.logEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          entityType: "PAYMENT_LOCK",
+          entityId: "lock-1",
+          eventType: "PAYMENT_LOCK_CONFIRMED",
+          payload: expect.objectContaining({
+            externalRef: "EXT-REF-123",
+          }),
+        }),
+      );
+    });
+  });
+
+  describe("failLock", () => {
+    it("should transition PENDING → LOCK_FAILED and log FAILED event", async () => {
+      mockPrisma.paymentLock.update.mockResolvedValue({
+        id: "lock-2",
+        purchaseOrderId: "po-2",
+        buyerId: "buyer-2",
+        amount: 30_000,
+        status: "LOCK_FAILED",
+        failureReason: "Bank declined",
+      });
+
+      await service.failLock("lock-2", "Bank declined");
+
+      expect(mockPrisma.paymentLock.update).toHaveBeenCalledWith({
+        where: { id: "lock-2" },
+        data: {
+          status: "LOCK_FAILED",
+          failedAt: expect.any(Date),
+          failureReason: "Bank declined",
+        },
+      });
+
+      expect(mockLedger.logEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          entityType: "PAYMENT_LOCK",
+          entityId: "lock-2",
+          eventType: "PAYMENT_LOCK_FAILED",
+          payload: expect.objectContaining({
+            reason: "Bank declined",
+          }),
+        }),
+      );
     });
   });
 
   describe("settlePO", () => {
-    it("should release funds and create settlement record", async () => {
+    it("should create PROCESSING settlement, call adapter, then confirm to COMPLETED", async () => {
       mockPrisma.paymentLock.findUnique.mockResolvedValue({
         id: "lock-1",
         purchaseOrderId: "po-1",
@@ -124,19 +298,35 @@ describe("SettlementService", () => {
       // SimulatedAdapter.releaseFunds credits the user
       mockPrisma.user.update.mockResolvedValue({});
 
-      // $transaction executes the callback
+      // Settlement created as PROCESSING
+      mockPrisma.settlement.create.mockResolvedValue({
+        id: "settlement-1",
+        purchaseOrderId: "po-1",
+        fromUserId: "buyer-1",
+        toUserId: "supplier-1",
+        amount: 49_750,
+        type: "STANDARD",
+        status: "PROCESSING",
+      });
+
+      // confirmSettlement updates to COMPLETED
+      mockPrisma.settlement.update.mockResolvedValue({
+        id: "settlement-1",
+        purchaseOrderId: "po-1",
+        toUserId: "supplier-1",
+        amount: 49_750,
+        type: "STANDARD",
+        status: "COMPLETED",
+        settlementRail: "SIMULATED",
+      });
+
+      // $transaction executes the callback (lock release + platform fee)
       mockPrisma.$transaction.mockImplementation(async (fn: any) => {
         if (typeof fn === "function") return fn(mockPrisma);
         return Promise.all(fn);
       });
 
       mockPrisma.paymentLock.update.mockResolvedValue({});
-      mockPrisma.settlement.create.mockResolvedValue({
-        id: "settlement-1",
-        amount: 49_750,
-        type: "STANDARD",
-        status: "COMPLETED",
-      });
       mockPrisma.platformFee.create.mockResolvedValue({});
 
       const result = await service.settlePO({
@@ -151,6 +341,35 @@ describe("SettlementService", () => {
       expect(result.feeAmount).toBe(250); // 50_000 * 50 / 10_000
       expect(result.netAmount).toBe(49_750);
       expect(result.externalRef).toMatch(/^SIM-REL-/);
+
+      // Verify settlement was created as PROCESSING first
+      expect(mockPrisma.settlement.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: "PROCESSING",
+            type: "STANDARD",
+          }),
+        }),
+      );
+
+      // Verify settlement was confirmed to COMPLETED
+      expect(mockPrisma.settlement.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "settlement-1" },
+          data: expect.objectContaining({
+            status: "COMPLETED",
+            externalRef: expect.stringMatching(/^SIM-REL-/),
+          }),
+        }),
+      );
+
+      // Verify ledger events: SETTLEMENT_PROCESSING + SETTLEMENT_CONFIRMED + PAYMENT_LOCK_RELEASED
+      const logCalls = mockLedger.logEvent.mock.calls.map(
+        (c: any[]) => c[0].eventType,
+      );
+      expect(logCalls).toContain("SETTLEMENT_PROCESSING");
+      expect(logCalls).toContain("SETTLEMENT_CONFIRMED");
+      expect(logCalls).toContain("PAYMENT_LOCK_RELEASED");
     });
 
     it("should throw when no active lock exists", async () => {
@@ -168,15 +387,104 @@ describe("SettlementService", () => {
     });
   });
 
+  describe("confirmSettlement", () => {
+    it("should transition PROCESSING → COMPLETED and log CONFIRMED event", async () => {
+      mockPrisma.settlement.update.mockResolvedValue({
+        id: "s-1",
+        purchaseOrderId: "po-1",
+        toUserId: "supplier-1",
+        amount: 49_750,
+        type: "STANDARD",
+        status: "COMPLETED",
+        settlementRail: "SIMULATED",
+      });
+
+      const processedAt = new Date("2025-03-01T12:00:00Z");
+      await service.confirmSettlement("s-1", "EXT-REF-456", processedAt);
+
+      expect(mockPrisma.settlement.update).toHaveBeenCalledWith({
+        where: { id: "s-1" },
+        data: {
+          status: "COMPLETED",
+          externalRef: "EXT-REF-456",
+          completedAt: processedAt,
+        },
+      });
+
+      expect(mockLedger.logEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          entityType: "SETTLEMENT",
+          entityId: "s-1",
+          eventType: "SETTLEMENT_CONFIRMED",
+          payload: expect.objectContaining({
+            externalRef: "EXT-REF-456",
+          }),
+        }),
+      );
+    });
+  });
+
+  describe("failSettlement", () => {
+    it("should transition PROCESSING → FAILED and log FAILED event", async () => {
+      mockPrisma.settlement.update.mockResolvedValue({
+        id: "s-2",
+        purchaseOrderId: "po-2",
+        toUserId: "supplier-2",
+        amount: 30_000,
+        type: "STANDARD",
+        status: "FAILED",
+        settlementRail: "SIMULATED",
+      });
+
+      await service.failSettlement("s-2", "Bank rejected transfer");
+
+      expect(mockPrisma.settlement.update).toHaveBeenCalledWith({
+        where: { id: "s-2" },
+        data: {
+          status: "FAILED",
+          failureReason: "Bank rejected transfer",
+        },
+      });
+
+      expect(mockLedger.logEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          entityType: "SETTLEMENT",
+          entityId: "s-2",
+          eventType: "SETTLEMENT_FAILED",
+          payload: expect.objectContaining({
+            reason: "Bank rejected transfer",
+          }),
+        }),
+      );
+    });
+  });
+
   describe("transferAdvance", () => {
-    it("should transfer LP → Supplier advance and record settlement", async () => {
+    it("should create PROCESSING settlement, transfer LP→Supplier, then confirm", async () => {
       // SimulatedAdapter.transferFunds checks sender balance then does debit+credit
       mockPrisma.user.findUnique.mockResolvedValue({ balance: 500_000 });
       mockPrisma.$transaction.mockResolvedValue([{}, {}]); // batch update results
 
+      // Settlement created as PROCESSING
       mockPrisma.settlement.create.mockResolvedValue({
         id: "adv-settle-1",
+        purchaseOrderId: "po-1",
+        fromUserId: "lp-1",
+        toUserId: "supplier-1",
+        amount: 47_500,
         type: "EARLY_PAY_ADVANCE",
+        status: "PROCESSING",
+      });
+
+      // confirmSettlement updates to COMPLETED
+      mockPrisma.settlement.update.mockResolvedValue({
+        id: "adv-settle-1",
+        purchaseOrderId: "po-1",
+        toUserId: "supplier-1",
+        amount: 47_500,
+        type: "EARLY_PAY_ADVANCE",
+        status: "COMPLETED",
+        settlementRail: "SIMULATED",
       });
 
       const result = await service.transferAdvance({
@@ -190,10 +498,56 @@ describe("SettlementService", () => {
 
       expect(result.settlementId).toBe("adv-settle-1");
       expect(result.externalRef).toMatch(/^SIM-TRF-/);
+
+      // Verify PROCESSING → COMPLETED flow
+      expect(mockPrisma.settlement.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: "PROCESSING",
+            type: "EARLY_PAY_ADVANCE",
+          }),
+        }),
+      );
+      expect(mockPrisma.settlement.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "adv-settle-1" },
+          data: expect.objectContaining({ status: "COMPLETED" }),
+        }),
+      );
+
+      // Verify ledger events include SETTLEMENT_PROCESSING + SETTLEMENT_CONFIRMED + EARLY_PAY_FUNDED
+      const logCalls = mockLedger.logEvent.mock.calls.map(
+        (c: any[]) => c[0].eventType,
+      );
+      expect(logCalls).toContain("SETTLEMENT_PROCESSING");
+      expect(logCalls).toContain("SETTLEMENT_CONFIRMED");
+      expect(logCalls).toContain("EARLY_PAY_FUNDED");
     });
 
-    it("should throw when LP has insufficient balance", async () => {
+    it("should create PROCESSING settlement then transition to FAILED on insufficient balance", async () => {
       mockPrisma.user.findUnique.mockResolvedValue({ balance: 100 });
+
+      // Settlement created as PROCESSING
+      mockPrisma.settlement.create.mockResolvedValue({
+        id: "adv-fail-1",
+        purchaseOrderId: "po-1",
+        fromUserId: "lp-1",
+        toUserId: "supplier-1",
+        amount: 47_500,
+        type: "EARLY_PAY_ADVANCE",
+        status: "PROCESSING",
+      });
+
+      // failSettlement updates to FAILED
+      mockPrisma.settlement.update.mockResolvedValue({
+        id: "adv-fail-1",
+        purchaseOrderId: "po-1",
+        toUserId: "supplier-1",
+        amount: 47_500,
+        type: "EARLY_PAY_ADVANCE",
+        status: "FAILED",
+        settlementRail: "SIMULATED",
+      });
 
       await expect(
         service.transferAdvance({
@@ -205,11 +559,27 @@ describe("SettlementService", () => {
           currency: "GBP",
         }),
       ).rejects.toThrow("Insufficient balance");
+
+      // Verify settlement was created PROCESSING then moved to FAILED
+      expect(mockPrisma.settlement.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: "PROCESSING" }),
+        }),
+      );
+      expect(mockPrisma.settlement.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "adv-fail-1" },
+          data: expect.objectContaining({
+            status: "FAILED",
+            failureReason: expect.stringContaining("Insufficient balance"),
+          }),
+        }),
+      );
     });
   });
 
   describe("refundPO", () => {
-    it("should return funds to buyer", async () => {
+    it("should log refund intent, return funds to buyer, then log confirmed", async () => {
       mockPrisma.user.update.mockResolvedValue({});
       mockPrisma.paymentLock.update.mockResolvedValue({});
 
@@ -228,6 +598,21 @@ describe("SettlementService", () => {
         expect.objectContaining({
           where: { id: "buyer-1" },
           data: { balance: { increment: 50_000 } },
+        }),
+      );
+
+      // Verify BOTH ledger events: REFUND_REQUESTED then REFUNDED
+      expect(mockLedger.logEvent).toHaveBeenCalledTimes(2);
+      expect(mockLedger.logEvent).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          eventType: "PAYMENT_LOCK_REFUND_REQUESTED",
+        }),
+      );
+      expect(mockLedger.logEvent).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          eventType: "PAYMENT_LOCK_REFUNDED",
         }),
       );
     });
