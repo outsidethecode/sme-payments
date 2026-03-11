@@ -49,6 +49,28 @@ export interface ICryptoService {
    * Generate a random UUID v4.
    */
   randomUUID(): string;
+
+  // ── Platform signing ───────────────────────────────────────
+
+  /**
+   * Sign data with the platform's ECDSA P-256 key.
+   * Used to seal Trust Envelopes so recipients can verify
+   * the pack was produced by this platform instance.
+   *
+   * @param data  The string to sign (typically an envelopeHash)
+   * @returns     signature (base64) and publicKey (base64 SPKI DER)
+   */
+  signWithPlatformKey(data: string): { signature: string; publicKey: string };
+
+  /**
+   * Get the platform's public key in base64 SPKI DER format.
+   */
+  getPlatformPublicKey(): string;
+
+  /**
+   * Get the platform's public key in PEM format (for external services).
+   */
+  getPlatformPublicKeyPem(): string;
 }
 
 /**

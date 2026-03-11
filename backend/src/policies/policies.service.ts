@@ -191,6 +191,51 @@ export class PoliciesService {
     };
   }
 
+  // ── PO Order Limits ────────────────────────────────────────
+
+  /** Default fallback limits (used when no PO_ORDER_LIMITS policy exists). */
+  private static readonly DEFAULT_LIMITS: Record<
+    string,
+    { minAmount: number; maxAmount: number }
+  > = {
+    GBP: { minAmount: 500_00, maxAmount: 250_000_00 },
+    SAR: { minAmount: 1_875_00, maxAmount: 93_750_000 },
+  };
+
+  /**
+   * Retrieve the PO min/max order limits for a buyer organisation.
+   * Returns the organisation's PO_ORDER_LIMITS policy if one exists,
+   * otherwise returns sensible currency-aware defaults.
+   */
+  async getPOLimits(
+    organisationId: string,
+    currency: string,
+  ): Promise<{ minAmount: number; maxAmount: number; source: string }> {
+    const rules = await this.prisma.policyRule.findMany({
+      where: {
+        organisationId,
+        ruleType: "PO_ORDER_LIMITS",
+        active: true,
+      },
+      orderBy: { priority: "desc" },
+    });
+
+    if (rules.length > 0) {
+      const cond = rules[0].conditions as unknown as PolicyConditions;
+      return {
+        minAmount: cond.minAmount ?? 0,
+        maxAmount: cond.maxAmount ?? Number.MAX_SAFE_INTEGER,
+        source: rules[0].name,
+      };
+    }
+
+    // Fallback to hardcoded defaults
+    const defaults =
+      PoliciesService.DEFAULT_LIMITS[currency] ??
+      PoliciesService.DEFAULT_LIMITS["GBP"];
+    return { ...defaults, source: "platform-default" };
+  }
+
   // ── LP Exposure Evaluation ────────────────────────────────
 
   /**

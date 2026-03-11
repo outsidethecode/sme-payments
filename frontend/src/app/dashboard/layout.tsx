@@ -106,6 +106,12 @@ const NAV_ITEMS = [
     icon: Settings,
     roles: ["ADMIN"],
   },
+  {
+    href: "/verify",
+    label: "Verify Evidence",
+    icon: ShieldCheck,
+    roles: ["LIQUIDITY_PARTNER", "ADMIN"],
+  },
 ];
 
 export default function DashboardLayout({

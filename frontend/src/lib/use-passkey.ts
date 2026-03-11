@@ -114,12 +114,14 @@ export function usePasskey() {
         };
       } catch (err: any) {
         if (err.name === "NotAllowedError") {
-          toast.error("Signing was cancelled");
-        } else {
-          console.error("Passkey signing error:", err);
-          // Don't block the action — fall back to unsigned
-          toast.error("Passkey signing failed — action will proceed unsigned");
+          // User explicitly cancelled — abort the action entirely
+          const cancelled = new Error("Signing cancelled by user");
+          cancelled.name = "SigningCancelled";
+          throw cancelled;
         }
+        console.error("Passkey signing error:", err);
+        // Technical failure — fall back to unsigned so the action isn't blocked
+        toast.error("Passkey signing failed — action will proceed unsigned");
         return null;
       } finally {
         setSigning(false);

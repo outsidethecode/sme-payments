@@ -543,6 +543,10 @@ export const policiesApi = {
     api.get<PolicyEvaluation>("/policies/evaluate/po-approval", {
       params: { amount: amount.toString() },
     }),
+  poLimits: () =>
+    api.get<{ minAmount: number; maxAmount: number; source: string }>(
+      "/policies/po-limits",
+    ),
   exposure: (orgId: string) =>
     api.get<LPExposure>(`/policies/exposure/${orgId}`),
 };

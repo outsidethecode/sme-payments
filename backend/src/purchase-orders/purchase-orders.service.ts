@@ -90,19 +90,21 @@ export class PurchaseOrdersService {
       0,
     );
 
-    // Currency-aware validation (amounts in smallest unit)
-    const minAmount = currency === "SAR" ? 1_875_00 : 500_00; // SAR 1,875 ≈ £500
-    const maxAmount = currency === "SAR" ? 93_750_000 : 250_000_00; // SAR 937,500 ≈ £250k
+    // Currency-aware validation via policy rules (admin-configurable)
+    const limits = await this.policies.getPOLimits(
+      buyerOrg?.id ?? "",
+      currency,
+    );
     const currencySymbol = currency === "SAR" ? "SAR" : "£";
 
-    if (amount < minAmount) {
+    if (amount < limits.minAmount) {
       throw new BadRequestException(
-        `Minimum order amount is ${currencySymbol}${(minAmount / 100).toLocaleString()}`,
+        `Minimum order amount is ${currencySymbol}${(limits.minAmount / 100).toLocaleString()}`,
       );
     }
-    if (amount > maxAmount) {
+    if (amount > limits.maxAmount) {
       throw new BadRequestException(
-        `Maximum order amount is ${currencySymbol}${(maxAmount / 100).toLocaleString()}`,
+        `Maximum order amount is ${currencySymbol}${(limits.maxAmount / 100).toLocaleString()}`,
       );
     }
 
@@ -1027,12 +1029,31 @@ export class PurchaseOrdersService {
         "Only the buyer can acknowledge the obligation",
       );
 
-    // Check if there's a funded early payment request
+    // Check if there's an early payment request
     const earlyPay = await this.prisma.earlyPaymentRequest.findUnique({
       where: { purchaseOrderId: id },
     });
     const hasEarlyPay =
       earlyPay && earlyPay.status === "FUNDED" && earlyPay.liquidityPartnerId;
+
+    // Auto-expire unfunded early payment requests — the PO is settling without LP involvement
+    if (earlyPay && earlyPay.status === "REQUESTED") {
+      await this.prisma.earlyPaymentRequest.update({
+        where: { id: earlyPay.id },
+        data: { status: "EXPIRED" },
+      });
+      await this.ledger.logEvent({
+        entityType: "EARLY_PAYMENT",
+        entityId: earlyPay.id,
+        eventType: "EARLY_PAY_EXPIRED",
+        actorId,
+        actorRole: "SYSTEM",
+        payload: {
+          reason: "PO settled without LP funding",
+          purchaseOrderId: id,
+        },
+      });
+    }
 
     // Resolve currency and recipient account ref
     const currency = (po.currency || "GBP") as SettlementCurrency;
@@ -1158,6 +1179,28 @@ export class PurchaseOrdersService {
         paymentLock: true,
       },
     });
+
+    // Auto-expire any unfunded early payment request — dispute blocks normal settlement
+    const earlyPay = await this.prisma.earlyPaymentRequest.findUnique({
+      where: { purchaseOrderId: id },
+    });
+    if (earlyPay && earlyPay.status === "REQUESTED") {
+      await this.prisma.earlyPaymentRequest.update({
+        where: { id: earlyPay.id },
+        data: { status: "EXPIRED" },
+      });
+      await this.ledger.logEvent({
+        entityType: "EARLY_PAYMENT",
+        entityId: earlyPay.id,
+        eventType: "EARLY_PAY_EXPIRED",
+        actorId,
+        actorRole: "SYSTEM",
+        payload: {
+          reason: "PO disputed by buyer",
+          purchaseOrderId: id,
+        },
+      });
+    }
 
     await this.ledger.logEvent({
       entityType: "PURCHASE_ORDER",

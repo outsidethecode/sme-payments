@@ -257,7 +257,7 @@ async function main() {
   async function seedPolicy(
     orgId: string,
     data: {
-      ruleType: "PO_APPROVAL" | "FUNDING_LIMIT";
+      ruleType: "PO_APPROVAL" | "PO_ORDER_LIMITS" | "FUNDING_LIMIT";
       name: string;
       conditions: Record<string, unknown>;
       requiredApprovals: number;
@@ -344,6 +344,28 @@ async function main() {
     priority: 1,
   });
 
+  // ── KSA Buyer PO Order Limits ──────────────────────────────
+  await seedPolicy(orgKsaBuyer.id, {
+    ruleType: "PO_ORDER_LIMITS",
+    name: "KSA PO order limits (SAR)",
+    conditions: { minAmount: 1_875_00, maxAmount: 93_750_000 },
+    requiredApprovals: 0,
+    requiredRoles: [],
+    autoApprove: true,
+    priority: 1,
+  });
+
+  // ── UK Buyer PO Order Limits ───────────────────────────────
+  await seedPolicy(orgBuyer1.id, {
+    ruleType: "PO_ORDER_LIMITS",
+    name: "UK PO order limits (GBP)",
+    conditions: { minAmount: 500_00, maxAmount: 250_000_00 },
+    requiredApprovals: 0,
+    requiredRoles: [],
+    autoApprove: true,
+    priority: 1,
+  });
+
   // ── KSA LP Funding Limits ──────────────────────────────────
   await seedPolicy(orgKsaLP.id, {
     ruleType: "FUNDING_LIMIT",
@@ -414,6 +436,10 @@ async function main() {
   console.log(
     "   UK LP:      Funding limits (£2M total, 40% buyer, 30% supplier, 90d tenor, 200bps)",
   );
+  console.log(
+    "   KSA Buyer:  PO order limits (min SAR 1,875 / max SAR 937,500)",
+  );
+  console.log("   UK Buyer 1: PO order limits (min £500 / max £250,000)");
   console.log("");
   console.log("   All passwords: password123");
 }

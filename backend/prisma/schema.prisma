@@ -187,6 +187,7 @@ model OrgMembership {
 
 enum PolicyRuleType {
   PO_APPROVAL
+  PO_ORDER_LIMITS
   FUNDING_LIMIT
 }
 
@@ -577,6 +578,7 @@ enum EarlyPaymentStatus {
   SETTLED
   REJECTED
   DEFAULTED
+  EXPIRED
 }
 
 model EarlyPaymentRequest {
@@ -671,6 +673,31 @@ model EventLog {
   @@index([actorId])
   @@index([entityType, eventType])
   @@map("event_log")
+}
+
+// ── Ledger Anchor (Periodic Global Integrity Snapshot) ───────
+
+model LedgerAnchor {
+  id          String   @id @default(uuid())
+  sequence    Int      @default(autoincrement()) @map("anchor_sequence")
+  anchorHash  String   @unique @map("anchor_hash")   // Merkle root of entity head hashes
+  previousAnchorHash String? @map("previous_anchor_hash") // Link to prior anchor
+  eventCount  Int      @map("event_count")             // total events at anchor time
+  entityCount Int      @map("entity_count")             // total unique entities
+  headHashes  Json     @map("head_hashes")              // { entityId: lastEventHash }
+  merkleLeaves Json?   @map("merkle_leaves")            // Ordered leaf hashes for proof generation
+
+  // External anchoring (Sigstore Rekor, OpenTimestamps, Bitcoin, etc.)
+  anchorProvider String?   @map("anchor_provider")      // "sigstore-rekor" | "opentimestamps" | null
+  externalId     String?   @map("external_id")          // Rekor UUID, Bitcoin txId, etc.
+  externalProof  Json?     @map("external_proof")       // Full receipt/proof from external service
+  externalUrl    String?   @map("external_url")         // URL to verify externally
+  anchoredAt     DateTime? @map("anchored_at")          // Timestamp from external service
+
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([sequence])
+  @@map("ledger_anchors")
 }
 
 // ── Platform Fees ────────────────────────────────────────────

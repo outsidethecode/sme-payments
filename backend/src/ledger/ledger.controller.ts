@@ -17,6 +17,7 @@ import {
 } from "@nestjs/swagger";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { LedgerService } from "./ledger.service";
+import { AnchorService } from "./anchor.service";
 import { PasskeysService } from "../passkeys/passkeys.service";
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -27,6 +28,7 @@ import { PrismaService } from "../prisma/prisma.service";
 export class LedgerController {
   constructor(
     private readonly ledgerService: LedgerService,
+    private readonly anchorService: AnchorService,
     private readonly passkeysService: PasskeysService,
     private readonly prisma: PrismaService,
   ) {}
@@ -39,13 +41,13 @@ export class LedgerController {
   }
 
   @Get("verify")
-  @ApiOperation({ summary: "Verify the entire global hash chain" })
+  @ApiOperation({ summary: "Verify the entire ledger (all entity chains)" })
   async verifyAll() {
     return this.ledgerService.verifyChain();
   }
 
   @Get("verify/:entityId")
-  @ApiOperation({ summary: "Verify hash chain for a specific entity" })
+  @ApiOperation({ summary: "Verify the entity-scoped hash chain" })
   async verify(@Param("entityId") entityId: string) {
     return this.ledgerService.verifyChain(entityId);
   }
@@ -217,5 +219,49 @@ export class LedgerController {
       intentHash: body.intentHash,
       clientDataJSON: verified.clientDataJSON,
     });
+  }
+
+  // ── Anchoring endpoints ──────────────────────────────────
+
+  @Post("anchor")
+  @ApiOperation({
+    summary: "Create a ledger anchor (global integrity snapshot)",
+  })
+  async createAnchor(@Query("skipExternal") skipExternal?: string) {
+    return this.anchorService.createAnchor({
+      skipExternal: skipExternal === "true",
+    });
+  }
+
+  @Get("anchors")
+  @ApiOperation({ summary: "Get latest anchor" })
+  async getLatestAnchor() {
+    const anchor = await this.anchorService.getLatestAnchor();
+    if (!anchor) throw new NotFoundException("No anchors exist yet");
+    return anchor;
+  }
+
+  @Get("anchors/verify")
+  @ApiOperation({ summary: "Verify anchor chain integrity" })
+  async verifyAnchors() {
+    return this.anchorService.verifyAnchorChain();
+  }
+
+  @Get("anchors/proof/:entityId")
+  @ApiOperation({
+    summary: "Get Merkle inclusion proof for an entity",
+    description:
+      "Returns the Merkle proof path from an entity's leaf to the anchor root, " +
+      "plus the external anchoring receipt. A third party can use this to verify " +
+      "the entity's state was committed to the public transparency log.",
+  })
+  async getInclusionProof(@Param("entityId") entityId: string) {
+    const result = await this.anchorService.getInclusionProof(entityId);
+    if (!result.found) {
+      throw new NotFoundException(
+        `No anchor covering entity ${entityId} found`,
+      );
+    }
+    return result;
   }
 }

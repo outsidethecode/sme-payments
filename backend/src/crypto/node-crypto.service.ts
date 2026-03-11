@@ -1,5 +1,13 @@
-import { Injectable } from "@nestjs/common";
-import { createHash, createVerify, randomUUID } from "crypto";
+import { Injectable, Logger } from "@nestjs/common";
+import {
+  createHash,
+  createPrivateKey,
+  createPublicKey,
+  createSign,
+  createVerify,
+  generateKeyPairSync,
+  randomUUID,
+} from "crypto";
 import type { ICryptoService } from "./crypto.interface";
 
 /**
@@ -17,6 +25,47 @@ import type { ICryptoService } from "./crypto.interface";
  */
 @Injectable()
 export class NodeCryptoService implements ICryptoService {
+  private readonly logger = new Logger(NodeCryptoService.name);
+  private readonly platformPrivateKey: Buffer;
+  private readonly platformPublicKey: Buffer; // SPKI DER
+
+  constructor() {
+    const envKey = process.env.PLATFORM_SIGNING_KEY; // base64-encoded PKCS8 DER
+    if (envKey) {
+      this.platformPrivateKey = Buffer.from(envKey, "base64");
+      // Derive public key from the private key
+      const privKeyObj = createPrivateKey({
+        key: this.platformPrivateKey,
+        format: "der",
+        type: "pkcs8",
+      });
+      const pubKeyObj = createPublicKey(privKeyObj);
+      this.platformPublicKey = pubKeyObj.export({
+        format: "der",
+        type: "spki",
+      }) as Buffer;
+      this.logger.log(
+        "Platform signing key loaded from PLATFORM_SIGNING_KEY env",
+      );
+    } else {
+      // Auto-generate a key pair for dev / demo
+      const { privateKey, publicKey } = generateKeyPairSync("ec", {
+        namedCurve: "prime256v1",
+      });
+      this.platformPrivateKey = privateKey.export({
+        format: "der",
+        type: "pkcs8",
+      }) as Buffer;
+      this.platformPublicKey = publicKey.export({
+        format: "der",
+        type: "spki",
+      }) as Buffer;
+      this.logger.log(
+        "Auto-generated platform signing key (set PLATFORM_SIGNING_KEY for production)",
+      );
+    }
+  }
+
   // ── Hashing ────────────────────────────────────────────────
 
   sha256Hex(input: string | Buffer): string {
@@ -145,16 +194,30 @@ export class NodeCryptoService implements ICryptoService {
         offset = keyOff;
 
         const valueByte = buf[offset];
-        if ((valueByte & 0xe0) === 0x40) {
-          const len = valueByte & 0x1f;
+        const major = (valueByte & 0xe0) >> 5;
+        const additional = valueByte & 0x1f;
+
+        if (major === 2 && additional < 24) {
+          // byte string — length in initial byte (0x40-0x57)
+          const len = additional;
           offset++;
           const val = buf.subarray(offset, offset + len);
           offset += len;
           if (key === -2) x = Buffer.from(val);
           if (key === -3) y = Buffer.from(val);
-        } else if (valueByte === 0x58) {
+        } else if (major === 2 && additional === 24) {
+          // byte string — 1-byte uint length follows (0x58)
           offset++;
           const len = buf[offset++];
+          const val = buf.subarray(offset, offset + len);
+          offset += len;
+          if (key === -2) x = Buffer.from(val);
+          if (key === -3) y = Buffer.from(val);
+        } else if (major === 2 && additional === 25) {
+          // byte string — 2-byte uint length follows (0x59)
+          offset++;
+          const len = buf.readUInt16BE(offset);
+          offset += 2;
           const val = buf.subarray(offset, offset + len);
           offset += len;
           if (key === -2) x = Buffer.from(val);
@@ -251,5 +314,39 @@ export class NodeCryptoService implements ICryptoService {
       buf = Buffer.concat([Buffer.from([0x00]), buf]);
     }
     return buf;
+  }
+
+  // ── Platform signing ───────────────────────────────────────
+
+  signWithPlatformKey(data: string): { signature: string; publicKey: string } {
+    const signer = createSign("SHA256");
+    signer.update(data);
+    const signature = signer.sign({
+      key: this.platformPrivateKey,
+      format: "der",
+      type: "pkcs8",
+    });
+
+    return {
+      signature: signature.toString("base64"),
+      publicKey: this.platformPublicKey.toString("base64"),
+    };
+  }
+
+  getPlatformPublicKey(): string {
+    return this.platformPublicKey.toString("base64");
+  }
+
+  getPlatformPublicKeyPem(): string {
+    const b64 = this.platformPublicKey.toString("base64");
+    const lines: string[] = [];
+    for (let i = 0; i < b64.length; i += 64) {
+      lines.push(b64.substring(i, i + 64));
+    }
+    return [
+      "-----BEGIN PUBLIC KEY-----",
+      ...lines,
+      "-----END PUBLIC KEY-----",
+    ].join("\n");
   }
 }

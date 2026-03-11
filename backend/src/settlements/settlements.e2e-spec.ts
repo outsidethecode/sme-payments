@@ -471,6 +471,271 @@ describe("Settlements E2E", () => {
     });
   });
 
+  // ── Early Payment State Machine Tests ──────────────────────────
+
+  describe("Early payment EXPIRED: PO settles without LP funding", () => {
+    let poId: string;
+    let epId: string;
+
+    it("should create PO, accept, and request early payment", async () => {
+      poId = await createAndAcceptPO();
+
+      const res = await request(app.getHttpServer())
+        .post("/early-payments")
+        .set("Authorization", `Bearer ${supplierToken}`)
+        .send({ purchaseOrderId: poId });
+
+      expect(res.status).toBe(201);
+      expect(res.body.status).toBe("REQUESTED");
+      epId = res.body.id;
+    });
+
+    it("should show request in LP marketplace while PO is fundable", async () => {
+      const res = await request(app.getHttpServer())
+        .get("/early-payments/marketplace")
+        .set("Authorization", `Bearer ${lpToken}`);
+
+      expect(res.status).toBe(200);
+      const found = res.body.find((r: any) => r.id === epId);
+      expect(found).toBeDefined();
+      expect(found.status).toBe("REQUESTED");
+    });
+
+    it("should settle PO normally (deliver → verify → acknowledge) and auto-expire the request", async () => {
+      // Deliver
+      await request(app.getHttpServer())
+        .patch(`/purchase-orders/${poId}/deliver`)
+        .set("Authorization", `Bearer ${supplierToken}`);
+
+      // Verify
+      await request(app.getHttpServer())
+        .patch(`/purchase-orders/${poId}/verify`)
+        .set("Authorization", `Bearer ${buyerToken}`);
+
+      // Acknowledge — should auto-expire the unfunded early payment request
+      const ackRes = await request(app.getHttpServer())
+        .patch(`/purchase-orders/${poId}/acknowledge`)
+        .set("Authorization", `Bearer ${buyerToken}`);
+
+      expect(ackRes.status).toBe(200);
+      expect(ackRes.body.status).toBe("SETTLED");
+    });
+
+    it("should have expired the early payment request", async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/early-payments/${epId}`)
+        .set("Authorization", `Bearer ${supplierToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("EXPIRED");
+    });
+
+    it("should NOT show expired request in LP marketplace", async () => {
+      const res = await request(app.getHttpServer())
+        .get("/early-payments/marketplace")
+        .set("Authorization", `Bearer ${lpToken}`);
+
+      expect(res.status).toBe(200);
+      const found = res.body.find((r: any) => r.id === epId);
+      expect(found).toBeUndefined();
+    });
+
+    it("should have EARLY_PAY_EXPIRED ledger event", async () => {
+      const res = await request(app.getHttpServer())
+        .get("/ledger")
+        .set("Authorization", `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      const expiredEvents = res.body.filter(
+        (e: any) => e.eventType === "EARLY_PAY_EXPIRED" && e.entityId === epId,
+      );
+      expect(expiredEvents.length).toBe(1);
+      expect(expiredEvents[0].payload.reason).toContain("without LP funding");
+    });
+  });
+
+  describe("Early payment EXPIRED: PO disputed by buyer", () => {
+    let poId: string;
+    let epId: string;
+
+    it("should create PO, accept, request early payment, then deliver", async () => {
+      poId = await createAndAcceptPO();
+
+      const epRes = await request(app.getHttpServer())
+        .post("/early-payments")
+        .set("Authorization", `Bearer ${supplierToken}`)
+        .send({ purchaseOrderId: poId });
+
+      expect(epRes.status).toBe(201);
+      epId = epRes.body.id;
+
+      // Deliver
+      await request(app.getHttpServer())
+        .patch(`/purchase-orders/${poId}/deliver`)
+        .set("Authorization", `Bearer ${supplierToken}`);
+    });
+
+    it("should expire early payment when buyer disputes", async () => {
+      const disputeRes = await request(app.getHttpServer())
+        .patch(`/purchase-orders/${poId}/dispute`)
+        .set("Authorization", `Bearer ${buyerToken}`);
+
+      expect(disputeRes.status).toBe(200);
+      expect(disputeRes.body.status).toBe("DISPUTED");
+    });
+
+    it("should have expired the early payment request", async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/early-payments/${epId}`)
+        .set("Authorization", `Bearer ${supplierToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("EXPIRED");
+    });
+
+    it("should have EARLY_PAY_EXPIRED ledger event with dispute reason", async () => {
+      const res = await request(app.getHttpServer())
+        .get("/ledger")
+        .set("Authorization", `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      const expiredEvents = res.body.filter(
+        (e: any) => e.eventType === "EARLY_PAY_EXPIRED" && e.entityId === epId,
+      );
+      expect(expiredEvents.length).toBe(1);
+      expect(expiredEvents[0].payload.reason).toContain("disputed");
+    });
+  });
+
+  describe("Early payment fund() blocked on non-fundable PO status", () => {
+    let poId: string;
+    let epId: string;
+
+    it("should create PO, accept, request early payment, then settle without LP", async () => {
+      poId = await createAndAcceptPO();
+
+      const epRes = await request(app.getHttpServer())
+        .post("/early-payments")
+        .set("Authorization", `Bearer ${supplierToken}`)
+        .send({ purchaseOrderId: poId });
+
+      expect(epRes.status).toBe(201);
+      epId = epRes.body.id;
+
+      // Race the PO to SETTLED
+      await request(app.getHttpServer())
+        .patch(`/purchase-orders/${poId}/deliver`)
+        .set("Authorization", `Bearer ${supplierToken}`);
+
+      await request(app.getHttpServer())
+        .patch(`/purchase-orders/${poId}/verify`)
+        .set("Authorization", `Bearer ${buyerToken}`);
+
+      await request(app.getHttpServer())
+        .patch(`/purchase-orders/${poId}/acknowledge`)
+        .set("Authorization", `Bearer ${buyerToken}`);
+    });
+
+    it("should reject LP fund attempt on settled PO with 400", async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/early-payments/${epId}/fund`)
+        .set("Authorization", `Bearer ${lpToken}`);
+
+      expect(res.status).toBe(400);
+      expect(res.body.message).toContain("EXPIRED");
+    });
+  });
+
+  describe("Early payment: duplicate request prevented", () => {
+    let poId: string;
+
+    it("should reject a second early payment request on the same PO", async () => {
+      poId = await createAndAcceptPO();
+
+      const res1 = await request(app.getHttpServer())
+        .post("/early-payments")
+        .set("Authorization", `Bearer ${supplierToken}`)
+        .send({ purchaseOrderId: poId });
+
+      expect(res1.status).toBe(201);
+
+      const res2 = await request(app.getHttpServer())
+        .post("/early-payments")
+        .set("Authorization", `Bearer ${supplierToken}`)
+        .send({ purchaseOrderId: poId });
+
+      expect(res2.status).toBe(400);
+      expect(res2.body.message).toContain("already exists");
+    });
+  });
+
+  describe("Early payment: request rejected on ineligible PO status", () => {
+    it("should reject early payment request on DRAFT PO", async () => {
+      const createRes = await request(app.getHttpServer())
+        .post("/purchase-orders")
+        .set("Authorization", `Bearer ${buyerToken}`)
+        .send({
+          supplierId,
+          description: "Draft PO for EP test",
+          lineItems: [
+            { description: "Item", quantity: 10, unitPricePennies: 10_000 },
+          ],
+        });
+
+      expect(createRes.status).toBe(201);
+      const draftPoId = createRes.body.id;
+
+      const res = await request(app.getHttpServer())
+        .post("/early-payments")
+        .set("Authorization", `Bearer ${supplierToken}`)
+        .send({ purchaseOrderId: draftPoId });
+
+      expect(res.status).toBe(400);
+      const msg = Array.isArray(res.body.message)
+        ? res.body.message.join(" ")
+        : res.body.message;
+      expect(msg).toContain("ACCEPTED");
+    });
+  });
+
+  describe("Early payment: marketplace hides non-fundable POs", () => {
+    let poId: string;
+    let epId: string;
+
+    it("should create request then verify PO (making it non-fundable for marketplace)", async () => {
+      poId = await createAndAcceptPO();
+
+      const epRes = await request(app.getHttpServer())
+        .post("/early-payments")
+        .set("Authorization", `Bearer ${supplierToken}`)
+        .send({ purchaseOrderId: poId });
+
+      expect(epRes.status).toBe(201);
+      epId = epRes.body.id;
+
+      // Move PO past fundable status: deliver → verify
+      await request(app.getHttpServer())
+        .patch(`/purchase-orders/${poId}/deliver`)
+        .set("Authorization", `Bearer ${supplierToken}`);
+
+      await request(app.getHttpServer())
+        .patch(`/purchase-orders/${poId}/verify`)
+        .set("Authorization", `Bearer ${buyerToken}`);
+    });
+
+    it("should NOT show the request in marketplace since PO is VERIFIED", async () => {
+      const res = await request(app.getHttpServer())
+        .get("/early-payments/marketplace")
+        .set("Authorization", `Bearer ${lpToken}`);
+
+      expect(res.status).toBe(200);
+      const found = res.body.find((r: any) => r.id === epId);
+      expect(found).toBeUndefined();
+    });
+  });
+
+  // ── Original Tests ───────────────────────────────────────────
+
   describe("Admin reconciliation", () => {
     it("should return pending settlements (empty initially)", async () => {
       const res = await request(app.getHttpServer())

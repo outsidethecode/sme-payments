@@ -428,13 +428,55 @@ describe("Evidence & PO Extended Fields E2E", () => {
         .set("Authorization", `Bearer ${buyerToken}`);
 
       expect(res.status).toBe(200);
-      expect(res.body.purchaseOrder).toBeDefined();
-      expect(res.body.purchaseOrder.id).toBe(poId);
-      expect(res.body.purchaseOrder.reference).toBeDefined();
-      expect(res.body.ledgerEvents).toBeDefined();
-      expect(Array.isArray(res.body.ledgerEvents)).toBe(true);
+
+      // Trust Envelope v2.0 structure
+      expect(res.body.metadata).toBeDefined();
+      expect(res.body.metadata.packVersion).toBe("2.0");
+      expect(res.body.metadata.schemaVersion).toBe("trust-envelope-v1");
+      expect(res.body.metadata.generatedAt).toBeDefined();
+
+      // Document (formerly purchaseOrder)
+      expect(res.body.document).toBeDefined();
+      expect(res.body.document.id).toBe(poId);
+      expect(res.body.document.type).toBe("PURCHASE_ORDER");
+      expect(res.body.document.documentHash).toBeDefined();
+      expect(res.body.document.reference).toBeDefined();
+
+      // Actors
+      expect(res.body.actors).toBeDefined();
+      expect(Array.isArray(res.body.actors)).toBe(true);
+      expect(res.body.actors.length).toBeGreaterThanOrEqual(1);
+
+      // Ledger
+      expect(res.body.ledger).toBeDefined();
+      expect(res.body.ledger.chainAlgorithm).toBe("SHA-256");
+      expect(Array.isArray(res.body.ledger.events)).toBe(true);
+
+      // Approvals
+      expect(res.body.approvals).toBeDefined();
+      expect(Array.isArray(res.body.approvals)).toBe(true);
+
+      // Integrity
       expect(res.body.integrity).toBeDefined();
-      expect(res.body.generatedAt).toBeDefined();
+      expect(res.body.integrity.documentHash).toBeDefined();
+      expect(res.body.integrity.ledgerRootHash).toBeDefined();
+      expect(res.body.integrity.envelopeHash).toBeDefined();
+      expect(typeof res.body.integrity.eventCount).toBe("number");
+
+      // Verification instructions
+      expect(res.body.verification).toBeDefined();
+      expect(res.body.verification.instructions).toBeDefined();
+
+      // Future fields (null until implemented)
+      expect(res.body.platformSignature).toBeDefined();
+      expect(res.body.platformSignature.algorithm).toBe("ECDSA-P256-SHA256");
+      expect(res.body.platformSignature.signature).toBeDefined();
+      expect(typeof res.body.platformSignature.signature).toBe("string");
+      expect(res.body.platformSignature.publicKey).toBeDefined();
+      expect(typeof res.body.platformSignature.publicKey).toBe("string");
+      expect(res.body.platformSignature.signedAt).toBeDefined();
+      expect(res.body.platformSignature.signedFields).toBe("envelopeHash");
+      expect(res.body.notarization).toBeNull();
     });
   });
 

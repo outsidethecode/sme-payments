@@ -1,0 +1,236 @@
+# Trust Envelope Verification Guide
+
+> **Audience:** Banks, auditors, compliance officers, and dispute-resolution teams.
+> **Last updated:** 2026-03-09
+
+---
+
+## What Is a Trust Envelope?
+
+A Trust Envelope (v2.0) is a self-contained JSON document that provides **cryptographic proof** of every action taken on a purchase order — who approved it, when, and that no data has been tampered with.
+
+It contains:
+
+| Section | Purpose |
+|---|---|
+| `metadata` | Pack version, schema, hash & signature algorithms, generation timestamp |
+| `actors` | Every person/entity involved, their roles, companies, and public key credentials |
+| `document` | The purchase order snapshot at the time of export |
+| `ledger` | Ordered list of events (created, approved, counter-proposed, etc.) |
+| `approvals` | Explicit list of passkey-signed human approvals |
+| `proofBundles` | One per event — hash chain, payload hash, WebAuthn assertion, public key |
+| `integrity` | Root hashes: `documentHash`, `ledgerRootHash`, `attachmentsHash`, `envelopeHash` |
+| `verification` | Human-readable instructions for how to verify the pack |
+| `platformSignature` | ECDSA P-256 server-side seal over the `envelopeHash` — proves the pack was produced by this platform |
+| `notarization` | (Future) RFC 3161 third-party timestamp token |
+
+---
+
+## Prerequisites
+
+- **Node.js 18+** (uses built-in `crypto` module)
+- No other dependencies required
+
+---
+
+## Quick Start
+
+```bash
+# 1. Export the evidence pack from the platform (JSON file)
+#    e.g. evidence-pack-PO-001.json
+
+# 2. Run the verifier
+node scripts/verify-evidence-pack.mjs evidence-pack-PO-001.json
+```
+
+The script will produce a coloured terminal report showing pass/fail for each check.
+
+**Exit codes:**
+- `0` — All checks passed
+- `1` — One or more checks failed
+- `2` — Invalid input (file not found, malformed JSON)
+
+---
+
+## What the Verifier Checks
+
+### 1. Hash Chain Integrity
+Each event's `eventHash` is recomputed from scratch:
+```
+SHA-256( previousHash | entityType | entityId | entitySequence | eventType | actorId | actorRole | canonicalPayload | timestamp )
+```
+If the recomputed hash matches the stored hash, the event has not been altered.
+
+### 2. Entity Chain Continuity
+Each event's `previousHash` must match the prior event's `eventHash`, forming an unbroken chain. Any gap means an event was inserted, deleted, or reordered.
+
+### 3. Payload Hash Verification
+The `payloadHash` in each proof bundle is compared against `SHA-256(canonical(payload))` to confirm the payload data matches what was hashed.
+
+### 4. Intent Hash (Action Binding)
+For passkey-signed events, the `intentHash` is verified:
+```
+SHA-256( eventType | entityId | userId )  → base64url
+```
+This proves the signer intended to perform *this specific action* on *this specific document*.
+
+### 5. WebAuthn Challenge Binding
+The `clientDataJSON.challenge` field (set by the browser's WebAuthn API) must equal the `intentHash`. This binds the hardware key ceremony to the business action — the signer's device cryptographically attested to the intent.
+
+### 6. ECDSA P-256 Signature Verification
+The raw WebAuthn signature is verified using the signer's embedded public key:
+```
+signedData = authenticatorData || SHA-256(clientDataJSON_bytes)
+```
+This is the strongest check — it proves a specific hardware key was physically present.
+
+### 7. Integrity Root Hashes (v2.0)
+- **`documentHash`** = SHA-256 of the canonical document (excluding the `documentHash` field itself)
+- **`ledgerRootHash`** = SHA-256 of all event hashes joined by `|`
+- **`attachmentsHash`** = SHA-256 of all attachment hashes joined by `|` (or `"NONE"`)
+- **`envelopeHash`** = SHA-256 of `documentHash|ledgerRootHash|attachmentsHash`
+
+The `envelopeHash` seals the entire pack — if any section changes, this hash breaks.
+
+### 8. Actors & Approvals (v2.0)
+- Every signer in the proof bundles must appear in the `actors[]` array
+- Public keys in `actors[]` must match those in `proofBundles`
+- Each approval in `approvals[]` must reference a valid signed proof bundle
+
+### 9. Cross-Consistency
+- PO amount matches the `PO_ACCEPTED` event payload
+- PO status is consistent with the event trail
+- Buyer and supplier are distinct entities
+- Negotiation counter-proposals alternate between parties
+
+### 10. Credential Uniqueness
+Each passkey credential ID should be bound to exactly one user. Shared credentials are flagged.
+
+### 11. Timestamp Ordering
+Events must be in chronological order — no timestamps going backward.
+
+### 12. External Verification URIs
+The pack includes URIs for resolving credentials and identity online. If these point to `localhost`, the script warns that external verification requires the embedded public keys instead.
+
+### 13. Platform Signature & Notarization
+- **Platform Signature:** The platform signs the `envelopeHash` with its own ECDSA P-256 key. The verifier checks this signature using the embedded public key in `platformSignature.publicKey`. This proves the pack was generated by the platform and not tampered with post-export.
+- **Notarization:** (Future) An RFC 3161 timestamp from a trusted third-party Time Stamping Authority
+
+---
+
+## Interpreting the Report
+
+```
+✓  = Check passed
+✗  = Check failed (integrity concern)
+⚠  = Warning (non-critical but noteworthy)
+ℹ  = Informational
+```
+
+A pack with **0 failures** and **0 warnings** is cryptographically sound.
+
+Warnings about `localhost` URIs are expected in development/demo environments — the pack's embedded public keys still allow full offline verification.
+
+---
+
+## Manual Spot-Check (No Script)
+
+If you prefer to verify manually using standard tools:
+
+```bash
+# Extract a single event's hash input and verify
+echo -n "previousHash|PURCHASE_ORDER|po-id|1|PO_CREATED|user-id|BUYER|{...payload...}|2025-02-26T..." \
+  | shasum -a 256
+
+# Compare against proofBundles[0].chain.eventHash
+```
+
+For signature verification, you need an ECDSA P-256 implementation that can parse COSE public keys and DER-encoded signatures.
+
+---
+
+## Format Compatibility
+
+| Pack Version | Supported | Notes |
+|---|---|---|
+| v2.0 (Trust Envelope) | ✅ Full | All 13 check categories |
+| v1.1 | ✅ Full | Checks 1–6, 9–12 (no root hashes, actors, approvals) |
+| v1.0 | ✅ Full | Same as v1.1 |
+
+The verifier auto-detects the version from `metadata.packVersion` (v2.0) or `packVersion` (v1.x).
+
+---
+
+## Security Model
+
+The Trust Envelope provides **non-repudiation** through layered verification:
+
+1. **Hardware-bound identity** — WebAuthn/FIDO2 passkeys cannot be copied or phished
+2. **Action binding** — The challenge contains the hash of the intended action, not a random nonce
+3. **Hash chain** — Events are chained; inserting/removing/reordering breaks the chain
+4. **Canonical serialization** — Deterministic JSON ensures consistent hashing regardless of key order
+5. **Root integrity hashes** — A single `envelopeHash` seals the entire document
+6. **Self-contained verification** — Public keys are embedded; no online dependency required
+
+---
+
+## Exporting an Evidence Pack
+
+### From the Web UI
+
+1. Log in as buyer or supplier
+2. Navigate to **Dashboard → Purchase Orders → [select a PO]**
+3. Click **"Download Evidence"**
+4. Save the `.json` file
+
+### From the API (curl)
+
+```bash
+# 1. Login
+TOKEN=$(curl -s http://localhost:3001/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"buyer@acme.co.uk","password":"password123"}' \
+  | node -pe 'JSON.parse(require("fs").readFileSync("/dev/stdin","utf8")).accessToken')
+
+# 2. List your POs
+curl -s http://localhost:3001/api/purchase-orders \
+  -H "Authorization: Bearer $TOKEN" | node -pe 'JSON.parse(require("fs").readFileSync("/dev/stdin","utf8")).map(p=>p.id+" "+p.status).join("\n")'
+
+# 3. Export evidence pack
+curl -s http://localhost:3001/api/evidence/po/<PO_ID>/pack \
+  -H "Authorization: Bearer $TOKEN" \
+  -o evidence-pack.json
+```
+
+### Running the Verifier
+
+```bash
+# Run against any exported evidence pack
+node scripts/verify-evidence-pack.mjs evidence-pack.json
+```
+
+**Example output (all green):**
+```
+╔══════════════════════════════════════════════════════════════╗
+║        TRUST ENVELOPE VERIFICATION REPORT                   ║
+╚══════════════════════════════════════════════════════════════╝
+
+── Pack Structure & Version ───────────────────────────────
+  ✓ Schema: trust-envelope-v1
+  ✓ Generator: sme-payments-trust-ledger
+  ...
+── Platform Signature & Notarization ──────────────────────
+  ✓ Platform signature VALID — envelope sealed by issuing platform
+  ...
+════════════════════════════════════════════════════════════════
+  19 passed  0 failed  0 warnings
+════════════════════════════════════════════════════════════════
+
+  VERDICT: ALL CHECKS PASSED ✓
+```
+
+---
+
+## Questions?
+
+Contact the platform administrator or refer to the technical documentation in the repository's `documentation/` folder.

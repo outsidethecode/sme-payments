@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { poApi, usersApi, type LineItem } from "@/lib/api";
+import { poApi, usersApi, policiesApi, type LineItem } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 import {
   Card,
@@ -27,10 +27,23 @@ import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { Plus, Trash2, ArrowLeft } from "lucide-react";
 import Link from "next/link";
+import { useAuth } from "@/lib/auth-context";
 
 export default function NewPurchaseOrderPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const currency: "GBP" | "SAR" = user?.currency === "SAR" ? "SAR" : "GBP";
+  const currencySymbol = currency === "SAR" ? "SAR " : "£";
+
+  const { data: poLimits } = useQuery({
+    queryKey: ["po-limits"],
+    queryFn: () => policiesApi.poLimits().then((r) => r.data),
+  });
+  const minAmount =
+    poLimits?.minAmount ?? (currency === "SAR" ? 1_875_00 : 500_00);
+  const maxAmount =
+    poLimits?.maxAmount ?? (currency === "SAR" ? 93_750_000 : 250_000_00);
 
   const [supplierId, setSupplierId] = useState("");
   const [description, setDescription] = useState("");
@@ -146,8 +159,16 @@ export default function NewPurchaseOrderPage() {
       (sum, item) => sum + item.quantity * item.unitPricePennies,
       0,
     );
-    if (itemTotal < 500_00) {
-      toast.error("Minimum order amount is £500");
+    if (itemTotal < minAmount) {
+      toast.error(
+        `Minimum order amount is ${formatCurrency(minAmount, currency)}`,
+      );
+      return;
+    }
+    if (itemTotal > maxAmount) {
+      toast.error(
+        `Maximum order amount is ${formatCurrency(maxAmount, currency)}`,
+      );
       return;
     }
 
@@ -413,7 +434,9 @@ export default function NewPurchaseOrderPage() {
                     </Select>
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Unit Price (£)</Label>
+                    <Label className="text-xs">
+                      Unit Price ({currencySymbol.trim()})
+                    </Label>
                     <Input
                       type="number"
                       min={0}
@@ -442,7 +465,10 @@ export default function NewPurchaseOrderPage() {
                 </div>
                 <p className="mt-1 text-right text-xs text-muted-foreground">
                   Subtotal:{" "}
-                  {formatCurrency(item.quantity * item.unitPricePennies)}
+                  {formatCurrency(
+                    item.quantity * item.unitPricePennies,
+                    currency,
+                  )}
                 </p>
               </div>
             ))}
@@ -451,7 +477,7 @@ export default function NewPurchaseOrderPage() {
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">Total</span>
               <span className="text-lg font-bold">
-                {formatCurrency(totalPennies)}
+                {formatCurrency(totalPennies, currency)}
               </span>
             </div>
           </CardContent>

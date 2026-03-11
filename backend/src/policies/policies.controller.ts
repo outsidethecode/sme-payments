@@ -26,6 +26,7 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RolesGuard } from "../auth/roles.guard";
 import { Roles } from "../auth/roles.decorator";
 import { PoliciesService, PolicyConditions } from "./policies.service";
+import { OrganisationsService } from "../organisations/organisations.service";
 
 class CreatePolicyRuleDto {
   @IsString()
@@ -104,7 +105,10 @@ class UpdatePolicyRuleDto {
 @UseGuards(JwtAuthGuard, RolesGuard)
 @ApiBearerAuth()
 export class PoliciesController {
-  constructor(private readonly policiesService: PoliciesService) {}
+  constructor(
+    private readonly policiesService: PoliciesService,
+    private readonly orgsService: OrganisationsService,
+  ) {}
 
   @Post()
   @Roles("ADMIN")
@@ -140,6 +144,24 @@ export class PoliciesController {
         matchedRule: null,
       };
     return this.policiesService.evaluatePOApproval(orgId, parseInt(amount, 10));
+  }
+
+  @Get("po-limits")
+  @ApiOperation({
+    summary: "Get PO order limits for current user's org (min/max amounts)",
+  })
+  async getPOLimits(@Request() req: any) {
+    const orgId = req.user.organisationId;
+    if (!orgId) {
+      return {
+        minAmount: 500_00,
+        maxAmount: 250_000_00,
+        source: "platform-default",
+      };
+    }
+    const org = await this.orgsService.findById(orgId);
+    const currency = org?.currency || "GBP";
+    return this.policiesService.getPOLimits(orgId, currency);
   }
 
   @Get("exposure/:orgId")

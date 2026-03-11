@@ -88,7 +88,15 @@ export default function DashboardPage() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatCard
           title="Account Balance"
-          icon={<PoundSterling className="h-4 w-4 text-muted-foreground" />}
+          icon={
+            user.currency === "SAR" ? (
+              <span className="text-sm font-medium text-muted-foreground">
+                ﷼
+              </span>
+            ) : (
+              <PoundSterling className="h-4 w-4 text-muted-foreground" />
+            )
+          }
           loading={balanceLoading}
           value={
             balanceData

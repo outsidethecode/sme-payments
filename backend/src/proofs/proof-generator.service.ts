@@ -53,6 +53,9 @@ export class ProofGeneratorService {
 
     // ── Resolve signer identity ────────────────────────────
     const signer = await this.resolveSigner(event.actorId);
+    // Use the actorRole recorded at event time (may be "SYSTEM" for
+    // system-triggered events) so the proof bundle matches the hash input.
+    signer.role = event.actorRole;
 
     // ── Resolve credential ─────────────────────────────────
     const credential = event.credentialId

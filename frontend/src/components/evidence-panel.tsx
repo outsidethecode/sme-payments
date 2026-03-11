@@ -303,7 +303,7 @@ export function EvidencePackButton({
       onClick={downloadPack}
       disabled={loading}
     >
-      <Package className="mr-1 h-3 w-3" />
+      <Download className="mr-1 h-3 w-3" />
       {loading ? "Generating…" : "Evidence Pack"}
     </Button>
   );

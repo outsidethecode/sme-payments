@@ -1,6 +1,7 @@
 import { MiddlewareConsumer, Module, NestModule } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { BullModule } from "@nestjs/bullmq";
+import { ScheduleModule } from "@nestjs/schedule";
 import { ThrottlerModule } from "@nestjs/throttler";
 import { PrismaModule } from "./prisma/prisma.module";
 import { AuthModule } from "./auth/auth.module";
@@ -26,11 +27,13 @@ import { HealthModule } from "./health/health.module";
 import { PdpaModule } from "./pdpa/pdpa.module";
 import { ProofsModule } from "./proofs/proofs.module";
 import { CryptoModule } from "./crypto/crypto.module";
+import { VerifyModule } from "./verify/verify.module";
 import { CorrelationIdMiddleware } from "./common/correlation-id.middleware";
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ScheduleModule.forRoot(),
     BullModule.forRoot({
       connection: {
         host: process.env.REDIS_HOST || "localhost",
@@ -67,6 +70,7 @@ import { CorrelationIdMiddleware } from "./common/correlation-id.middleware";
     HealthModule,
     PdpaModule,
     ProofsModule,
+    VerifyModule,
   ],
 })
 export class AppModule implements NestModule {

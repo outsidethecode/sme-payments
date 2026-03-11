@@ -158,7 +158,7 @@ export interface ProofIssuer {
 export interface ProofChainContext {
   /** SHA-256 hash of this event (includes all event data + previous hash) */
   eventHash: string;
-  /** Hash of the previous event in the chain (or "GENESIS") */
+  /** Hash of the previous event for the same entity (or "GENESIS" for first event) */
   previousHash: string;
   /** Sequence number within the entity's event chain */
   entitySequence: number;

@@ -176,8 +176,24 @@ export class ProofVerifierService {
         };
       }
 
-      const challengeMatches =
+      // The challenge in clientDataJSON is base64url(challenge_bytes).
+      // If the platform passed the intentHash string as UTF-8 bytes to
+      // the WebAuthn API, the browser stores base64url(UTF8(intentHash)).
+      // We check both: direct match and decoded-string match.
+      let challengeMatches =
         clientData.challenge === bundle.assertion.intentHash;
+
+      if (!challengeMatches && clientData.challenge) {
+        try {
+          const decoded = Buffer.from(
+            clientData.challenge,
+            "base64url",
+          ).toString("utf-8");
+          challengeMatches = decoded === bundle.assertion.intentHash;
+        } catch {
+          /* ignore decode errors */
+        }
+      }
 
       return {
         step,

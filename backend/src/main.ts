@@ -5,7 +5,15 @@ import helmet from "helmet";
 import { AppModule } from "./app.module";
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    bodyParser: true,
+  });
+
+  // Increase JSON body limit for large evidence packs
+  // (default 100 KB is too small for multi-event packs)
+  const expressApp = app.getHttpAdapter().getInstance();
+  const bodyParser = require("body-parser");
+  expressApp.use(bodyParser.json({ limit: "5mb" }));
 
   // Security headers
   app.use(helmet());

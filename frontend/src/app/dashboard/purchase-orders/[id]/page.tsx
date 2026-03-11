@@ -122,6 +122,10 @@ export default function PurchaseOrderDetailPage() {
       onError: (
         err: Error & { response?: { data?: { message?: string } } },
       ) => {
+        if (err.name === "SigningCancelled") {
+          toast.info("Action cancelled");
+          return;
+        }
         toast.error(err.response?.data?.message || "Action failed");
       },
     });
@@ -272,6 +276,7 @@ export default function PurchaseOrderDetailPage() {
             Created {formatDate(po.createdAt)}
           </p>
         </div>
+        <EvidencePackButton purchaseOrderId={id} />
       </div>
 
       {/* Actions */}
@@ -787,11 +792,6 @@ export default function PurchaseOrderDetailPage() {
 
       {/* Evidence & Attachments */}
       <EvidencePanel purchaseOrderId={id} />
-
-      {/* Evidence Pack Download */}
-      <div className="flex justify-end">
-        <EvidencePackButton purchaseOrderId={id} />
-      </div>
 
       {/* Negotiation History */}
       {po.revisions && po.revisions.length > 0 && (

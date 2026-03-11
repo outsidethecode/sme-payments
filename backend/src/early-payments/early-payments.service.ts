@@ -276,6 +276,35 @@ export class EarlyPaymentsService {
       );
     }
 
+    // Guard: PO must still be in a fundable state
+    const fundableStatuses = [
+      "ACCEPTED",
+      "IN_PROGRESS",
+      "SHIPPED",
+      "DELIVERED",
+    ];
+    if (!fundableStatuses.includes(request.purchaseOrder.status)) {
+      // Auto-expire the stale request
+      await this.prisma.earlyPaymentRequest.update({
+        where: { id },
+        data: { status: "EXPIRED" },
+      });
+      await this.ledger.logEvent({
+        entityType: "EARLY_PAYMENT",
+        entityId: id,
+        eventType: "EARLY_PAY_EXPIRED",
+        actorId: lpId,
+        actorRole: "SYSTEM",
+        payload: {
+          reason: `PO already in ${request.purchaseOrder.status} status`,
+          purchaseOrderId: request.purchaseOrderId,
+        },
+      });
+      throw new BadRequestException(
+        `Cannot fund — PO is already ${request.purchaseOrder.status}`,
+      );
+    }
+
     // Verify LP has sufficient balance
     const lp = await this.prisma.user.findUnique({ where: { id: lpId } });
     if (!lp) throw new NotFoundException("LP not found");
@@ -439,7 +468,13 @@ export class EarlyPaymentsService {
    */
   async getMarketplace() {
     const requests = await this.prisma.earlyPaymentRequest.findMany({
-      where: { status: "REQUESTED" },
+      where: {
+        status: "REQUESTED",
+        // Only show requests where the PO is still in a fundable state
+        purchaseOrder: {
+          status: { in: ["ACCEPTED", "IN_PROGRESS", "SHIPPED", "DELIVERED"] },
+        },
+      },
       include: {
         purchaseOrder: {
           include: {
