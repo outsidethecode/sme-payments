@@ -4,6 +4,7 @@ import {
   Post,
   Param,
   Body,
+  Query,
   UseGuards,
   Request,
 } from "@nestjs/common";
@@ -11,11 +12,15 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RolesGuard } from "../auth/roles.guard";
 import { Roles } from "../auth/roles.decorator";
 import { SettlementService } from "./settlement.service";
+import { ReconciliationService } from "./reconciliation.service";
 
 @Controller("settlements")
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class SettlementsController {
-  constructor(private readonly service: SettlementService) {}
+  constructor(
+    private readonly service: SettlementService,
+    private readonly reconciliation: ReconciliationService,
+  ) {}
 
   /** GET /settlements — list settlements visible to current user */
   @Get()
@@ -55,6 +60,35 @@ export class SettlementsController {
       settlementId: id,
       externalRef: body.externalRef,
     });
+  }
+
+  // ── Reconciliation Engine Endpoints ─────────────────────────
+
+  /** GET /settlements/reconciliation/reports — paginated reconciliation history */
+  @Get("reconciliation/reports")
+  @Roles("ADMIN")
+  async getReconciliationReports(
+    @Query("limit") limit?: string,
+    @Query("offset") offset?: string,
+  ) {
+    return this.reconciliation.getReports(
+      limit ? parseInt(limit, 10) : 20,
+      offset ? parseInt(offset, 10) : 0,
+    );
+  }
+
+  /** GET /settlements/reconciliation/latest — most recent reconciliation report */
+  @Get("reconciliation/latest")
+  @Roles("ADMIN")
+  async getLatestReconciliation() {
+    return this.reconciliation.getLatest();
+  }
+
+  /** POST /settlements/reconciliation/run — manually trigger reconciliation */
+  @Post("reconciliation/run")
+  @Roles("ADMIN")
+  async runReconciliation() {
+    return this.reconciliation.runReconciliation();
   }
 
   private format(s: any) {

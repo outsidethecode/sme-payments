@@ -10,6 +10,7 @@ import { PoliciesService } from "../policies/policies.service";
 import { OrganisationsService } from "../organisations/organisations.service";
 import { SettlementService } from "../settlements/settlement.service";
 import { SettlementCurrency } from "../settlements/settlement-adapter.interface";
+import { RiskSnapshotService } from "./risk-snapshot.service";
 
 /** Default ujrah fee if no policy rule specifies a custom feeBps */
 const DEFAULT_FEE_BPS = 250;
@@ -22,6 +23,7 @@ export class EarlyPaymentsService {
     private policies: PoliciesService,
     private orgs: OrganisationsService,
     private settlement: SettlementService,
+    private riskSnapshot: RiskSnapshotService,
   ) {}
 
   /**
@@ -514,7 +516,14 @@ export class EarlyPaymentsService {
       orderBy: { createdAt: "desc" },
     });
 
-    return requests.map((r) => this.formatEarlyPayment(r));
+    // Enrich with risk snapshots
+    const poIds = requests.map((r) => r.purchaseOrderId);
+    const snapshots = await this.riskSnapshot.computeForPOs(poIds);
+
+    return requests.map((r) => ({
+      ...this.formatEarlyPayment(r),
+      risk: snapshots.get(r.purchaseOrderId) ?? null,
+    }));
   }
 
   // ── Helpers ──────────────────────────────────────────────────

@@ -385,6 +385,7 @@ model PurchaseOrder {
   supplier User @relation("SupplierOrders", fields: [supplierId], references: [id])
 
   paymentLock         PaymentLock?
+  paymentInstrument   PaymentInstrument?
   earlyPaymentRequest EarlyPaymentRequest?
   settlements         Settlement[]
   platformFees        PlatformFee[]
@@ -569,7 +570,47 @@ model PaymentLock {
   purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
   buyer         User          @relation(fields: [buyerId], references: [id])
 
+  @@index([openBankingRef])
   @@map("payment_locks")
+}
+
+// ── Payment Instruments (Financial Contract Abstraction) ─────
+
+enum InstrumentType {
+  ESCROW_LOCK
+}
+
+enum InstrumentStatus {
+  CREATED
+  LOCK_REQUESTED
+  LOCKED
+  RELEASE_PENDING
+  RELEASED
+  REFUNDED
+  FAILED
+}
+
+model PaymentInstrument {
+  id                  String           @id @default(uuid())
+  purchaseOrderId     String           @unique @map("purchase_order_id")
+  type                InstrumentType   @default(ESCROW_LOCK)
+  amount              Int
+  currency            String           @default("GBP")
+  status              InstrumentStatus @default(CREATED)
+  escrowReference     String?          @map("escrow_reference")       // bank escrow account ref
+  bankReference       String?          @map("bank_reference")         // SARIE / ACH transaction ref
+  payerAccountRef     String?          @map("payer_account_ref")      // buyer IBAN
+  recipientAccountRef String?          @map("recipient_account_ref")  // supplier/LP IBAN
+  failureReason       String?          @map("failure_reason")
+  createdAt           DateTime         @default(now()) @map("created_at")
+  lockedAt            DateTime?        @map("locked_at")
+  releasedAt          DateTime?        @map("released_at")
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+
+  @@index([status])
+  @@index([bankReference])
+  @@map("payment_instruments")
 }
 
 // ── Early Payment Requests ───────────────────────────────────
@@ -721,4 +762,22 @@ model PlatformFee {
   purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
 
   @@map("platform_fees")
+}
+
+// ── Reconciliation Reports ───────────────────────────────────
+
+model ReconciliationReport {
+  id            String   @id @default(uuid())
+  runAt         DateTime @map("run_at")
+  totalChecked  Int      @map("total_checked")
+  matched       Int
+  mismatches    Int
+  alerts        Json     @default("[]")          // array of {instrumentId?, settlementId?, expected, actual, externalRef}
+  ledgerBalance Int?     @map("ledger_balance")  // sum of all LOCKED instruments (smallest currency unit)
+  bankBalance   Int?     @map("bank_balance")    // from adapter, if supported
+  variance      Int?                              // ledgerBalance - bankBalance
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([runAt])
+  @@map("reconciliation_reports")
 }

@@ -12,7 +12,11 @@ import {
 import { useAuth } from "@/lib/auth-context";
 import { usePasskey } from "@/lib/use-passkey";
 import { storeReceipt } from "@/lib/receipt-store";
-import { EvidencePanel, EvidencePackButton } from "@/components/evidence-panel";
+import {
+  EvidencePanel,
+  EvidencePackButton,
+  InstrumentLifecycleCard,
+} from "@/components/evidence-panel";
 import {
   formatCurrency,
   formatDate,
@@ -798,6 +802,9 @@ export default function PurchaseOrderDetailPage() {
 
       {/* Evidence & Attachments */}
       <EvidencePanel purchaseOrderId={id} />
+
+      {/* Financial Instrument & Reconciliation */}
+      <InstrumentLifecycleCard purchaseOrderId={id} />
 
       {/* Negotiation History */}
       {po.revisions && po.revisions.length > 0 && (

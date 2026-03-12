@@ -148,6 +148,18 @@ export interface PaymentLock {
   releasedAt: string | null;
 }
 
+export interface RiskSnapshot {
+  riskScore: number;
+  defaultProbability: number;
+  paymentLocked: boolean;
+  instrumentStatus: string | null;
+  deliveryStatus: string;
+  buyerDisputeRate: number;
+  bankReference: string | null;
+  expectedSettlement: string | null;
+  evidencePackAvailable: boolean;
+}
+
 export interface EarlyPaymentRequest {
   id: string;
   purchaseOrderId: string;
@@ -172,6 +184,7 @@ export interface EarlyPaymentRequest {
   };
   supplier?: User;
   liquidityPartner?: User;
+  risk?: RiskSnapshot | null;
 }
 
 export interface PaymentLockEntry {
@@ -407,6 +420,23 @@ export interface EvidencePack {
     sha256: string;
   }[];
   generatedAt: string;
+  paymentInstrument?: {
+    instrumentId: string;
+    type: string;
+    amount: number;
+    currency: string;
+    status: string;
+    escrowReference: string | null;
+    bankReference: string | null;
+    lifecycle: { status: string; at: string; bankRef?: string | null }[];
+  } | null;
+  reconciliation?: {
+    lastChecked: string;
+    status: string;
+    bankBalance: number | null;
+    ledgerBalance: number | null;
+    variance: number | null;
+  } | null;
 }
 
 export const evidenceApi = {
@@ -714,6 +744,40 @@ export const settlementsApi = {
       currentStatus: string;
       changed: boolean;
     }>(`/settlements/${id}/reconcile`, { externalRef }),
+};
+
+// ── Reconciliation ────────────────────────────────────────────
+
+export interface ReconciliationAlert {
+  instrumentId?: string;
+  settlementId?: string;
+  expected: string;
+  actual: string;
+  externalRef: string;
+  reason: string;
+}
+
+export interface ReconciliationReport {
+  id: string;
+  runAt: string;
+  totalChecked: number;
+  matched: number;
+  mismatches: number;
+  alerts: ReconciliationAlert[];
+  ledgerBalance: number | null;
+  bankBalance: number | null;
+  variance: number | null;
+  createdAt: string;
+}
+
+export const reconciliationApi = {
+  getLatest: () =>
+    api.get<ReconciliationReport | null>("/settlements/reconciliation/latest"),
+  getReports: (limit = 20, offset = 0) =>
+    api.get<ReconciliationReport[]>("/settlements/reconciliation/reports", {
+      params: { limit, offset },
+    }),
+  run: () => api.post<ReconciliationReport>("/settlements/reconciliation/run"),
 };
 
 // ── Disputes ──────────────────────────────────────────────────

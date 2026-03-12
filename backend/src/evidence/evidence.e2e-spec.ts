@@ -478,6 +478,75 @@ describe("Evidence & PO Extended Fields E2E", () => {
       expect(res.body.platformSignature.signedFields).toBe("envelopeHash");
       expect(res.body.notarization).toBeNull();
     });
+
+    it("should include paymentInstrument section when PO has an instrument", async () => {
+      // The PO created earlier should have an auto-created instrument
+      const res = await request(app.getHttpServer())
+        .get(`/evidence/po/${poId}/pack`)
+        .set("Authorization", `Bearer ${buyerToken}`);
+
+      expect(res.status).toBe(200);
+
+      // paymentInstrument may or may not exist depending on whether the PO
+      // flow auto-creates instruments — test both cases
+      if (res.body.paymentInstrument) {
+        expect(res.body.paymentInstrument.instrumentId).toBeDefined();
+        expect(typeof res.body.paymentInstrument.type).toBe("string");
+        expect(typeof res.body.paymentInstrument.amount).toBe("number");
+        expect(typeof res.body.paymentInstrument.currency).toBe("string");
+        expect(typeof res.body.paymentInstrument.status).toBe("string");
+        expect(Array.isArray(res.body.paymentInstrument.lifecycle)).toBe(true);
+        expect(
+          res.body.paymentInstrument.lifecycle.length,
+        ).toBeGreaterThanOrEqual(1);
+        expect(res.body.paymentInstrument.lifecycle[0]).toHaveProperty(
+          "status",
+        );
+        expect(res.body.paymentInstrument.lifecycle[0]).toHaveProperty("at");
+      } else {
+        expect(res.body.paymentInstrument).toBeNull();
+      }
+    });
+
+    it("should include reconciliation section (null or valid shape)", async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/evidence/po/${poId}/pack`)
+        .set("Authorization", `Bearer ${buyerToken}`);
+
+      expect(res.status).toBe(200);
+
+      // Reconciliation may be null if no reports have been run
+      if (res.body.reconciliation) {
+        expect(res.body.reconciliation.lastChecked).toBeDefined();
+        expect(["CONSISTENT", "MISMATCH_DETECTED"]).toContain(
+          res.body.reconciliation.status,
+        );
+        expect(res.body.reconciliation).toHaveProperty("bankBalance");
+        expect(res.body.reconciliation).toHaveProperty("ledgerBalance");
+        expect(res.body.reconciliation).toHaveProperty("variance");
+      } else {
+        expect(res.body.reconciliation).toBeNull();
+      }
+    });
+
+    it("should include verification checks 16 and 17", async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/evidence/po/${poId}/pack`)
+        .set("Authorization", `Bearer ${buyerToken}`);
+
+      expect(res.status).toBe(200);
+
+      const checks: string[] = res.body.verification.checksToPerform;
+      expect(checks.length).toBeGreaterThanOrEqual(13);
+
+      // Check 16 — instrument lifecycle integrity
+      expect(checks.some((c) => c.includes("instrument lifecycle"))).toBe(true);
+
+      // Check 17 — bank reference consistency
+      expect(checks.some((c) => c.includes("bank reference consistency"))).toBe(
+        true,
+      );
+    });
   });
 
   // ── CSV Import ──────────────────────────────────────────────

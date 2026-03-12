@@ -6,6 +6,7 @@ import {
   poApi,
   passkeysApi,
   type SignaturePayload,
+  type RiskSnapshot,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { usePasskey } from "@/lib/use-passkey";
@@ -29,6 +30,19 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -43,8 +57,12 @@ import {
   ShieldCheck,
   TrendingUp,
   Fingerprint,
+  Shield,
+  AlertTriangle,
+  CheckCircle2,
+  ArrowUpDown,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 
 export default function EarlyPaymentsPage() {
   const { user } = useAuth();
@@ -290,11 +308,121 @@ function SupplierView() {
   );
 }
 
+// ── Risk display helpers ──────────────────────────────────────
+
+function riskColor(score: number) {
+  if (score >= 8) return "text-green-600 bg-green-50 border-green-200";
+  if (score >= 5) return "text-amber-600 bg-amber-50 border-amber-200";
+  return "text-red-600 bg-red-50 border-red-200";
+}
+
+function riskIcon(score: number) {
+  if (score >= 8) return <CheckCircle2 className="h-3 w-3" />;
+  if (score >= 5) return <Shield className="h-3 w-3" />;
+  return <AlertTriangle className="h-3 w-3" />;
+}
+
+function riskLabel(score: number) {
+  if (score >= 8) return "Low Risk";
+  if (score >= 5) return "Medium Risk";
+  return "High Risk";
+}
+
+function RiskBadge({ risk }: { risk: RiskSnapshot }) {
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${riskColor(risk.riskScore)}`}
+          >
+            {riskIcon(risk.riskScore)}
+            {risk.riskScore.toFixed(1)} / 10
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="left" className="max-w-xs">
+          <p className="font-semibold">{riskLabel(risk.riskScore)}</p>
+          <p className="text-xs">
+            Default probability: {risk.defaultProbability.toFixed(1)}%
+          </p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
+function RiskBreakdown({ risk }: { risk: RiskSnapshot }) {
+  return (
+    <div className="rounded-md bg-muted/50 p-3 text-xs space-y-1.5">
+      <p className="font-medium text-sm flex items-center gap-1.5">
+        {riskIcon(risk.riskScore)}
+        Risk Assessment — {riskLabel(risk.riskScore)} (
+        {risk.riskScore.toFixed(1)}/10)
+      </p>
+      <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-muted-foreground">
+        <span>
+          Payment Locked:{" "}
+          <span
+            className={risk.paymentLocked ? "text-green-600" : "text-red-500"}
+          >
+            {risk.paymentLocked ? "Yes" : "No"}
+          </span>
+        </span>
+        <span>
+          Delivery:{" "}
+          <span className="text-foreground">{risk.deliveryStatus}</span>
+        </span>
+        <span>
+          Buyer Disputes:{" "}
+          <span
+            className={
+              risk.buyerDisputeRate > 0.1 ? "text-amber-600" : "text-green-600"
+            }
+          >
+            {(risk.buyerDisputeRate * 100).toFixed(1)}%
+          </span>
+        </span>
+        <span>
+          Bank Confirmed:{" "}
+          <span
+            className={
+              risk.bankReference ? "text-green-600" : "text-muted-foreground"
+            }
+          >
+            {risk.bankReference ?? "Pending"}
+          </span>
+        </span>
+        <span>
+          Evidence Pack:{" "}
+          <span
+            className={
+              risk.evidencePackAvailable
+                ? "text-green-600"
+                : "text-muted-foreground"
+            }
+          >
+            {risk.evidencePackAvailable ? "Available" : "None"}
+          </span>
+        </span>
+        {risk.expectedSettlement && (
+          <span>
+            Exp. Settlement:{" "}
+            <span className="text-foreground">
+              {formatDate(risk.expectedSettlement)}
+            </span>
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── LP View ───────────────────────────────────────────────────
 
 function LPView() {
   const queryClient = useQueryClient();
   const [fundingId, setFundingId] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<string>("newest");
   const { hasPasskey, signing, signAction } = usePasskey();
 
   const { data: marketplace, isLoading: mktLoading } = useQuery({
@@ -306,6 +434,25 @@ function LPView() {
     queryKey: ["early-payments"],
     queryFn: () => earlyPayApi.list().then((r) => r.data),
   });
+
+  const sortedMarketplace = useMemo(() => {
+    if (!marketplace) return [];
+    const sorted = [...marketplace];
+    switch (sortBy) {
+      case "risk-high":
+        return sorted.sort(
+          (a, b) => (b.risk?.riskScore ?? 0) - (a.risk?.riskScore ?? 0),
+        );
+      case "risk-low":
+        return sorted.sort(
+          (a, b) => (a.risk?.riskScore ?? 0) - (b.risk?.riskScore ?? 0),
+        );
+      case "value-high":
+        return sorted.sort((a, b) => b.faceValuePennies - a.faceValuePennies);
+      default:
+        return sorted;
+    }
+  }, [marketplace, sortBy]);
 
   const fundMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -392,14 +539,32 @@ function LPView() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <DollarSign className="h-4 w-4" />
-            Available Requests
-          </CardTitle>
-          <CardDescription>
-            {marketplace?.length ?? 0} early payment request
-            {(marketplace?.length ?? 0) !== 1 ? "s" : ""} available to fund
-          </CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <DollarSign className="h-4 w-4" />
+                Available Requests
+              </CardTitle>
+              <CardDescription>
+                {marketplace?.length ?? 0} early payment request
+                {(marketplace?.length ?? 0) !== 1 ? "s" : ""} available to fund
+              </CardDescription>
+            </div>
+            <Select value={sortBy} onValueChange={setSortBy}>
+              <SelectTrigger className="w-[180px]">
+                <ArrowUpDown className="mr-2 h-3 w-3" />
+                <SelectValue placeholder="Sort by" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="newest">Newest First</SelectItem>
+                <SelectItem value="risk-high">Safest First (Risk ↓)</SelectItem>
+                <SelectItem value="risk-low">
+                  Riskiest First (Risk ↑)
+                </SelectItem>
+                <SelectItem value="value-high">Highest Value</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </CardHeader>
         <CardContent>
           {mktLoading ? (
@@ -418,7 +583,7 @@ function LPView() {
             </div>
           ) : (
             <div className="space-y-3">
-              {marketplace.map((ep) => (
+              {sortedMarketplace.map((ep) => (
                 <div key={ep.id} className="rounded-lg border p-4 space-y-3">
                   <div className="flex items-start justify-between">
                     <div>
@@ -430,10 +595,13 @@ function LPView() {
                         {ep.purchaseOrder?.buyer?.companyName}
                       </p>
                     </div>
-                    <Badge variant="outline">
-                      <ShieldCheck className="mr-1 h-3 w-3" />
-                      Payment Locked
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      {ep.risk && <RiskBadge risk={ep.risk} />}
+                      <Badge variant="outline">
+                        <ShieldCheck className="mr-1 h-3 w-3" />
+                        Payment Locked
+                      </Badge>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-3 gap-4 text-sm">
@@ -458,6 +626,8 @@ function LPView() {
                       </p>
                     </div>
                   </div>
+
+                  {ep.risk && <RiskBreakdown risk={ep.risk} />}
 
                   <Separator />
 

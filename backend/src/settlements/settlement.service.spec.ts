@@ -7,6 +7,7 @@ import {
 } from "./settlement-adapter.interface";
 import { PrismaService } from "../prisma/prisma.service";
 import { LedgerService } from "../ledger/ledger.service";
+import { InstrumentService } from "./instrument.service";
 
 describe("SettlementService", () => {
   let service: SettlementService;
@@ -39,6 +40,25 @@ describe("SettlementService", () => {
     logEvent: jest.fn(),
   };
 
+  const mockInstrument = {
+    create: jest.fn().mockResolvedValue({ id: "instr-1", status: "CREATED" }),
+    requestLock: jest
+      .fn()
+      .mockResolvedValue({ id: "instr-1", status: "LOCK_REQUESTED" }),
+    confirmLock: jest
+      .fn()
+      .mockResolvedValue({ id: "instr-1", status: "LOCKED" }),
+    requestRelease: jest
+      .fn()
+      .mockResolvedValue({ id: "instr-1", status: "RELEASE_PENDING" }),
+    confirmRelease: jest
+      .fn()
+      .mockResolvedValue({ id: "instr-1", status: "RELEASED" }),
+    refund: jest.fn().mockResolvedValue({ id: "instr-1", status: "REFUNDED" }),
+    fail: jest.fn().mockResolvedValue({ id: "instr-1", status: "FAILED" }),
+    findByPO: jest.fn().mockResolvedValue({ id: "instr-1", status: "LOCKED" }),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
 
@@ -54,6 +74,7 @@ describe("SettlementService", () => {
         },
         { provide: PrismaService, useValue: mockPrisma },
         { provide: LedgerService, useValue: mockLedger },
+        { provide: InstrumentService, useValue: mockInstrument },
       ],
     }).compile();
 

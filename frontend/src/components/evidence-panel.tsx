@@ -33,6 +33,10 @@ import {
   Image,
   Package,
   AlertCircle,
+  CheckCircle2,
+  Clock,
+  XCircle,
+  Lock,
 } from "lucide-react";
 
 const EVIDENCE_TYPES = [
@@ -306,5 +310,211 @@ export function EvidencePackButton({
       <Download className="mr-1 h-3 w-3" />
       {loading ? "Generating…" : "Evidence Pack"}
     </Button>
+  );
+}
+
+// ── Instrument Lifecycle Card ─────────────────────────────────
+
+interface InstrumentLifecycleStep {
+  status: string;
+  at: string;
+  bankRef?: string | null;
+}
+
+interface InstrumentData {
+  instrumentId: string;
+  type: string;
+  amount: number;
+  currency: string;
+  status: string;
+  escrowReference: string | null;
+  bankReference: string | null;
+  lifecycle: InstrumentLifecycleStep[];
+}
+
+interface ReconciliationData {
+  lastChecked: string;
+  status: string;
+  bankBalance: number | null;
+  ledgerBalance: number | null;
+  variance: number | null;
+}
+
+function lifecycleIcon(status: string) {
+  switch (status) {
+    case "CREATED":
+      return <Clock className="h-3.5 w-3.5 text-blue-500" />;
+    case "LOCKED":
+      return <Lock className="h-3.5 w-3.5 text-amber-500" />;
+    case "RELEASED":
+      return <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />;
+    case "FAILED":
+      return <XCircle className="h-3.5 w-3.5 text-red-500" />;
+    default:
+      return <Clock className="h-3.5 w-3.5 text-muted-foreground" />;
+  }
+}
+
+function formatCurrencyAmount(amount: number, currency: string) {
+  const major = amount / 100;
+  return new Intl.NumberFormat("en", {
+    style: "currency",
+    currency,
+    minimumFractionDigits: 2,
+  }).format(major);
+}
+
+/**
+ * Displays the payment instrument lifecycle and latest reconciliation status.
+ * Designed to sit alongside the evidence panel in the PO detail page.
+ */
+export function InstrumentLifecycleCard({
+  purchaseOrderId,
+}: {
+  purchaseOrderId: string;
+}) {
+  const { data: pack, isLoading } = useQuery({
+    queryKey: ["evidence-pack", purchaseOrderId],
+    queryFn: () => evidenceApi.pack(purchaseOrderId).then((r) => r.data),
+    staleTime: 60_000,
+  });
+
+  const instrument: InstrumentData | null = pack?.paymentInstrument ?? null;
+  const reconciliation: ReconciliationData | null =
+    pack?.reconciliation ?? null;
+
+  if (isLoading) return null;
+  if (!instrument && !reconciliation) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <ShieldCheck className="h-4 w-4" />
+          Financial Instrument & Reconciliation
+        </CardTitle>
+        <CardDescription>
+          Payment instrument lifecycle and system reconciliation status
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {instrument && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Payment Instrument</span>
+              <Badge
+                variant={
+                  instrument.status === "RELEASED"
+                    ? "default"
+                    : instrument.status === "LOCKED"
+                      ? "secondary"
+                      : instrument.status === "FAILED"
+                        ? "destructive"
+                        : "outline"
+                }
+              >
+                {instrument.status}
+              </Badge>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-sm text-muted-foreground">
+              <span>
+                Type: <span className="text-foreground">{instrument.type}</span>
+              </span>
+              <span>
+                Amount:{" "}
+                <span className="text-foreground">
+                  {formatCurrencyAmount(instrument.amount, instrument.currency)}
+                </span>
+              </span>
+              {instrument.escrowReference && (
+                <span>
+                  Escrow:{" "}
+                  <span className="font-mono text-foreground text-xs">
+                    {instrument.escrowReference}
+                  </span>
+                </span>
+              )}
+              {instrument.bankReference && (
+                <span>
+                  Bank Ref:{" "}
+                  <span className="font-mono text-foreground text-xs">
+                    {instrument.bankReference}
+                  </span>
+                </span>
+              )}
+            </div>
+
+            {/* Lifecycle timeline */}
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">
+                Lifecycle
+              </p>
+              <div className="space-y-2">
+                {instrument.lifecycle.map((step, i) => (
+                  <div key={i} className="flex items-center gap-2 text-sm">
+                    {lifecycleIcon(step.status)}
+                    <span className="font-medium w-20">{step.status}</span>
+                    <span className="text-muted-foreground text-xs">
+                      {formatDateTime(step.at)}
+                    </span>
+                    {step.bankRef && (
+                      <span className="text-xs font-mono text-muted-foreground">
+                        ({step.bankRef})
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {instrument && reconciliation && <Separator />}
+
+        {reconciliation && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Reconciliation</span>
+              <Badge
+                variant={
+                  reconciliation.status === "CONSISTENT"
+                    ? "default"
+                    : "destructive"
+                }
+              >
+                {reconciliation.status === "CONSISTENT"
+                  ? "Consistent"
+                  : "Mismatch Detected"}
+              </Badge>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-sm text-muted-foreground">
+              <span>
+                Last Checked:{" "}
+                <span className="text-foreground">
+                  {formatDateTime(reconciliation.lastChecked)}
+                </span>
+              </span>
+              {reconciliation.variance !== null && (
+                <span>
+                  Variance:{" "}
+                  <span
+                    className={
+                      reconciliation.variance === 0
+                        ? "text-green-600"
+                        : "text-red-600"
+                    }
+                  >
+                    {reconciliation.variance === 0
+                      ? "None"
+                      : reconciliation.variance.toLocaleString()}
+                  </span>
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

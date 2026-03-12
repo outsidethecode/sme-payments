@@ -3,7 +3,9 @@ import {
   Inject,
   Logger,
   BadRequestException,
+  UnauthorizedException,
 } from "@nestjs/common";
+import { createHmac, timingSafeEqual } from "crypto";
 import { PrismaService } from "../prisma/prisma.service";
 import { LedgerService } from "../ledger/ledger.service";
 import {
@@ -13,6 +15,7 @@ import {
   TransferStatus,
   TransferResult,
 } from "./settlement-adapter.interface";
+import { InstrumentService } from "./instrument.service";
 
 // ── DTO types ────────────────────────────────────────────────
 
@@ -62,6 +65,35 @@ export interface ReconcileRefInput {
   settlementId: string;
 }
 
+// ── Webhook types ────────────────────────────────────────────
+
+export type BankWebhookStatus = "CONFIRMED" | "FAILED";
+
+export interface BankWebhookPayload {
+  /** Adapter-assigned external reference (e.g. SIM-RSV-xxx, SARIE-RSV-xxx) */
+  externalRef: string;
+  /** Bank-side outcome */
+  status: BankWebhookStatus;
+  /** Amount in smallest currency unit (pence / halalah) */
+  amount: number;
+  /** Bank's own reference (for audit trail) */
+  bankReference: string;
+  /** ISO-8601 timestamp from the bank */
+  timestamp: string;
+  /** HMAC-SHA256 signature of the payload */
+  signature: string;
+}
+
+export interface BankWebhookResult {
+  accepted: boolean;
+  externalRef: string;
+  action: "confirmed" | "failed" | "no-op";
+  detail: string;
+}
+
+/** Maximum age (ms) for a webhook timestamp before it's rejected (replay protection) */
+const WEBHOOK_MAX_AGE_MS = 5 * 60 * 1000; // 5 minutes
+
 // ── Service ──────────────────────────────────────────────────
 
 @Injectable()
@@ -71,6 +103,7 @@ export class SettlementService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ledger: LedgerService,
+    private readonly instrumentService: InstrumentService,
     @Inject(SETTLEMENT_ADAPTER)
     private readonly adapter: SettlementAdapter,
   ) {}
@@ -100,6 +133,17 @@ export class SettlementService {
     externalRef: string;
     status: TransferStatus;
   }> {
+    // Step 0: Create PaymentInstrument (financial contract abstraction)
+    const instrument = await this.instrumentService.create(
+      {
+        purchaseOrderId: input.purchaseOrderId,
+        amount: input.amount,
+        currency: input.currency,
+        payerAccountRef: input.buyerAccountRef,
+      },
+      input.buyerId,
+    );
+
     // Step 1: Create lock in PENDING state (record intent BEFORE calling bank)
     const lock = await this.prisma.paymentLock.create({
       data: {
@@ -109,6 +153,9 @@ export class SettlementService {
         status: "PENDING",
       },
     });
+
+    // Step 1b: Instrument → LOCK_REQUESTED
+    await this.instrumentService.requestLock(instrument.id, input.buyerId);
 
     // Step 2: Log the request event (immutable intent)
     await this.ledger.logEvent({
@@ -122,6 +169,7 @@ export class SettlementService {
         amount: input.amount,
         currency: input.currency,
         settlementRail: this.adapter.name,
+        instrumentId: instrument.id,
       },
     });
 
@@ -137,8 +185,13 @@ export class SettlementService {
         description: `Payment lock for PO ${input.purchaseOrderId}`,
       });
     } catch (error) {
-      // Adapter threw — record failure and re-throw
+      // Adapter threw — record failure on both lock and instrument
       await this.failLock(lock.id, (error as Error).message);
+      await this.instrumentService.fail(
+        instrument.id,
+        (error as Error).message,
+        input.buyerId,
+      );
       throw new BadRequestException(
         (error as Error).message || "Failed to reserve funds",
       );
@@ -146,20 +199,26 @@ export class SettlementService {
 
     // Step 4: Transition based on adapter result
     if (result.status === TransferStatus.FAILED) {
-      await this.failLock(
-        lock.id,
-        result.failureReason || "Adapter returned FAILED",
-      );
+      const reason = result.failureReason || "Adapter returned FAILED";
+      await this.failLock(lock.id, reason);
+      await this.instrumentService.fail(instrument.id, reason, input.buyerId);
       throw new BadRequestException(
         result.failureReason || "Failed to reserve funds",
       );
     }
 
-    // Success → confirm
+    // Success → confirm lock and instrument
     await this.confirmLock(lock.id, result.externalRef, result.processedAt);
+    await this.instrumentService.confirmLock(
+      {
+        instrumentId: instrument.id,
+        bankReference: result.externalRef,
+      },
+      input.buyerId,
+    );
 
     this.logger.log(
-      `Reserved ${input.amount} ${input.currency} for PO ${input.purchaseOrderId} → lock ${lock.id} ref ${result.externalRef}`,
+      `Reserved ${input.amount} ${input.currency} for PO ${input.purchaseOrderId} → lock ${lock.id} instrument ${instrument.id} ref ${result.externalRef}`,
     );
 
     return {
@@ -267,6 +326,20 @@ export class SettlementService {
     const feeAmount = Math.round((input.totalAmount * input.feeBps) / 10_000);
     const netAmount = input.totalAmount - feeAmount;
 
+    // Step 1b: Instrument → RELEASE_PENDING
+    const instrument = await this.instrumentService.findByPO(
+      input.purchaseOrderId,
+    );
+    if (instrument && instrument.status === "LOCKED") {
+      await this.instrumentService.requestRelease(
+        {
+          instrumentId: instrument.id,
+          recipientAccountRef: input.recipientAccountRef,
+        },
+        input.recipientId,
+      );
+    }
+
     // Step 2: Create settlement as PROCESSING (intent-first)
     const settlement = await this.prisma.settlement.create({
       data: {
@@ -297,6 +370,7 @@ export class SettlementService {
         currency: input.currency,
         settlementRail: this.adapter.name,
         type: input.earlyPaymentRequestId ? "EARLY_PAY_SETTLEMENT" : "STANDARD",
+        instrumentId: instrument?.id ?? null,
       },
     });
 
@@ -314,16 +388,24 @@ export class SettlementService {
       });
     } catch (error) {
       await this.failSettlement(settlement.id, (error as Error).message);
+      if (instrument && instrument.status === "LOCKED") {
+        await this.instrumentService
+          .fail(instrument.id, (error as Error).message, input.recipientId)
+          .catch(() => {}); // best-effort; instrument may already be in RELEASE_PENDING
+      }
       throw new BadRequestException(
         (error as Error).message || "Failed to release funds",
       );
     }
 
     if (result.status === TransferStatus.FAILED) {
-      await this.failSettlement(
-        settlement.id,
-        result.failureReason || "Adapter returned FAILED",
-      );
+      const reason = result.failureReason || "Adapter returned FAILED";
+      await this.failSettlement(settlement.id, reason);
+      if (instrument && instrument.status === "LOCKED") {
+        await this.instrumentService
+          .fail(instrument.id, reason, input.recipientId)
+          .catch(() => {});
+      }
       throw new BadRequestException(
         result.failureReason || "Failed to release funds",
       );
@@ -350,6 +432,16 @@ export class SettlementService {
       result.externalRef,
       result.processedAt,
     );
+
+    // Step 5b: Instrument → RELEASED
+    if (instrument) {
+      await this.instrumentService
+        .confirmRelease(
+          { instrumentId: instrument.id, bankReference: result.externalRef },
+          input.recipientId,
+        )
+        .catch(() => {}); // best-effort if instrument was already transitioned
+    }
 
     // Log lock release event
     await this.ledger.logEvent({
@@ -626,6 +718,17 @@ export class SettlementService {
       data: { status: "REFUNDED", releasedAt: new Date() },
     });
 
+    // Step 3b: Refund the instrument if it exists
+    const instrument = await this.instrumentService.findByPO(
+      input.purchaseOrderId,
+    );
+    if (instrument && instrument.status === "LOCKED") {
+      await this.instrumentService.refund(
+        { instrumentId: instrument.id, reason: input.reason || "Refund" },
+        input.buyerId,
+      );
+    }
+
     // Log confirmed refund event
     await this.ledger.logEvent({
       entityType: "PAYMENT_LOCK",
@@ -780,5 +883,241 @@ export class SettlementService {
       },
       orderBy: { createdAt: "asc" },
     });
+  }
+
+  // ── Bank webhook handler ─────────────────────────────────
+
+  /**
+   * Process an asynchronous bank callback.
+   *
+   * Flow:
+   *   1. Verify HMAC-SHA256 signature (shared secret)
+   *   2. Reject replays older than 5 minutes
+   *   3. Look up PaymentLock or Settlement by externalRef
+   *   4. Idempotency: if already in target state → 200 no-op
+   *   5. Transition: confirmLock / failLock / confirmSettlement / failSettlement
+   *   6. Log BANK_WEBHOOK_RECEIVED ledger event
+   */
+  async handleBankCallback(
+    payload: BankWebhookPayload,
+  ): Promise<BankWebhookResult> {
+    // Step 1: Verify HMAC signature
+    const secret = process.env.BANK_WEBHOOK_SECRET || "";
+    if (!secret) {
+      throw new UnauthorizedException("Webhook secret not configured");
+    }
+    this.verifyWebhookSignature(payload, secret);
+
+    // Step 2: Replay protection
+    const webhookAge = Date.now() - new Date(payload.timestamp).getTime();
+    if (webhookAge > WEBHOOK_MAX_AGE_MS) {
+      throw new BadRequestException(
+        `Webhook timestamp too old (${Math.round(webhookAge / 1000)}s)`,
+      );
+    }
+
+    // Step 3: Look up by externalRef — try PaymentLock first, then Settlement
+    const lock = await this.prisma.paymentLock.findFirst({
+      where: { openBankingRef: payload.externalRef },
+    });
+
+    const settlement = lock
+      ? null
+      : await this.prisma.settlement.findFirst({
+          where: { externalRef: payload.externalRef },
+        });
+
+    if (!lock && !settlement) {
+      throw new BadRequestException(
+        `No lock or settlement found for ref ${payload.externalRef}`,
+      );
+    }
+
+    let result: BankWebhookResult;
+
+    if (lock) {
+      result = await this.handleLockWebhook(lock, payload);
+    } else {
+      result = await this.handleSettlementWebhook(settlement!, payload);
+    }
+
+    // Step 6: Log the webhook event regardless of outcome
+    // Use the entity owner as actor (FK constraint requires valid user)
+    const actorId = lock ? lock.buyerId : settlement!.toUserId;
+    await this.ledger.logEvent({
+      entityType: lock ? "PAYMENT_LOCK" : "SETTLEMENT",
+      entityId: lock ? lock.id : settlement!.id,
+      eventType: "BANK_WEBHOOK_RECEIVED",
+      actorId,
+      actorRole: "SYSTEM",
+      payload: {
+        externalRef: payload.externalRef,
+        bankReference: payload.bankReference,
+        status: payload.status,
+        amount: payload.amount,
+        action: result.action,
+        settlementRail: this.adapter.name,
+        source: "BANK_WEBHOOK",
+      },
+    });
+
+    this.logger.log(
+      `Webhook processed: ref=${payload.externalRef} status=${payload.status} action=${result.action}`,
+    );
+
+    return result;
+  }
+
+  // ── Webhook helpers ──────────────────────────────────────
+
+  /**
+   * Verify HMAC-SHA256 signature.
+   * Signature is computed over: externalRef|status|amount|bankReference|timestamp
+   */
+  verifyWebhookSignature(payload: BankWebhookPayload, secret: string): void {
+    const message = [
+      payload.externalRef,
+      payload.status,
+      payload.amount,
+      payload.bankReference,
+      payload.timestamp,
+    ].join("|");
+
+    const expected = createHmac("sha256", secret).update(message).digest("hex");
+
+    const sigBuffer = Buffer.from(payload.signature, "hex");
+    const expectedBuffer = Buffer.from(expected, "hex");
+
+    if (
+      sigBuffer.length !== expectedBuffer.length ||
+      !timingSafeEqual(sigBuffer, expectedBuffer)
+    ) {
+      throw new UnauthorizedException("Invalid webhook signature");
+    }
+  }
+
+  private async handleLockWebhook(
+    lock: any,
+    payload: BankWebhookPayload,
+  ): Promise<BankWebhookResult> {
+    const ref = payload.externalRef;
+
+    if (payload.status === "CONFIRMED") {
+      // Idempotency: already LOCKED → no-op
+      if (lock.status === "LOCKED") {
+        return {
+          accepted: true,
+          externalRef: ref,
+          action: "no-op",
+          detail: "Lock already LOCKED",
+        };
+      }
+      if (lock.status !== "PENDING") {
+        return {
+          accepted: true,
+          externalRef: ref,
+          action: "no-op",
+          detail: `Lock in terminal state ${lock.status}`,
+        };
+      }
+      await this.confirmLock(lock.id, ref, new Date(payload.timestamp));
+      return {
+        accepted: true,
+        externalRef: ref,
+        action: "confirmed",
+        detail: "Lock PENDING → LOCKED",
+      };
+    }
+
+    // status === "FAILED"
+    if (lock.status === "LOCK_FAILED") {
+      return {
+        accepted: true,
+        externalRef: ref,
+        action: "no-op",
+        detail: "Lock already LOCK_FAILED",
+      };
+    }
+    if (lock.status !== "PENDING") {
+      return {
+        accepted: true,
+        externalRef: ref,
+        action: "no-op",
+        detail: `Lock in terminal state ${lock.status}`,
+      };
+    }
+    await this.failLock(lock.id, `Bank webhook: ${payload.bankReference}`);
+    return {
+      accepted: true,
+      externalRef: ref,
+      action: "failed",
+      detail: "Lock PENDING → LOCK_FAILED",
+    };
+  }
+
+  private async handleSettlementWebhook(
+    settlement: any,
+    payload: BankWebhookPayload,
+  ): Promise<BankWebhookResult> {
+    const ref = payload.externalRef;
+
+    if (payload.status === "CONFIRMED") {
+      // Idempotency: already COMPLETED → no-op
+      if (settlement.status === "COMPLETED") {
+        return {
+          accepted: true,
+          externalRef: ref,
+          action: "no-op",
+          detail: "Settlement already COMPLETED",
+        };
+      }
+      if (settlement.status !== "PROCESSING") {
+        return {
+          accepted: true,
+          externalRef: ref,
+          action: "no-op",
+          detail: `Settlement in state ${settlement.status}`,
+        };
+      }
+      await this.confirmSettlement(
+        settlement.id,
+        ref,
+        new Date(payload.timestamp),
+      );
+      return {
+        accepted: true,
+        externalRef: ref,
+        action: "confirmed",
+        detail: "Settlement PROCESSING → COMPLETED",
+      };
+    }
+
+    // status === "FAILED"
+    if (settlement.status === "FAILED") {
+      return {
+        accepted: true,
+        externalRef: ref,
+        action: "no-op",
+        detail: "Settlement already FAILED",
+      };
+    }
+    if (settlement.status !== "PROCESSING") {
+      return {
+        accepted: true,
+        externalRef: ref,
+        action: "no-op",
+        detail: `Settlement in state ${settlement.status}`,
+      };
+    }
+    await this.failSettlement(
+      settlement.id,
+      `Bank webhook: ${payload.bankReference}`,
+    );
+    return {
+      accepted: true,
+      externalRef: ref,
+      action: "failed",
+      detail: "Settlement PROCESSING → FAILED",
+    };
   }
 }

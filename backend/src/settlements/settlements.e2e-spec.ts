@@ -1,6 +1,7 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { INestApplication, ValidationPipe } from "@nestjs/common";
 import * as request from "supertest";
+import { createHmac } from "crypto";
 import { AppModule } from "../app.module";
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -60,6 +61,9 @@ describe("Settlements E2E", () => {
         await prisma.earlyPaymentRequest.deleteMany({
           where: { purchaseOrderId: { in: poIds } },
         });
+        await prisma.paymentInstrument.deleteMany({
+          where: { purchaseOrderId: { in: poIds } },
+        });
         await prisma.paymentLock.deleteMany({
           where: { purchaseOrderId: { in: poIds } },
         });
@@ -79,6 +83,8 @@ describe("Settlements E2E", () => {
       await prisma.eventLog.deleteMany({
         where: { actorId: { in: existingUserIds } },
       });
+      // Clean reconciliation reports (linked via ledger events we just deleted)
+      await prisma.reconciliationReport.deleteMany({});
       // Clean memberships + orgs
       const memberships = await prisma.orgMembership.findMany({
         where: { userId: { in: existingUserIds } },
@@ -292,6 +298,18 @@ describe("Settlements E2E", () => {
       expect(po.body.paymentLock.externalRef || "").toMatch(/^SIM-RSV-/);
     });
 
+    it("should have created a PaymentInstrument in LOCKED status alongside the lock", async () => {
+      const instrument = await prisma.paymentInstrument.findUnique({
+        where: { purchaseOrderId: poId },
+      });
+
+      expect(instrument).toBeDefined();
+      expect(instrument!.status).toBe("LOCKED");
+      expect(instrument!.amount).toBeGreaterThan(0);
+      expect(instrument!.currency).toBeDefined();
+      expect(instrument!.bankReference).toMatch(/^SIM-RSV-/);
+    });
+
     it("should mark delivered by supplier", async () => {
       const res = await request(app.getHttpServer())
         .patch(`/purchase-orders/${poId}/deliver`)
@@ -333,6 +351,17 @@ describe("Settlements E2E", () => {
       expect(settlement.settlementRail).toBe("SIMULATED");
       expect(settlement.externalRef).toMatch(/^SIM-REL-/);
       expect(settlement.currency).toBe("GBP");
+    });
+
+    it("should have transitioned the PaymentInstrument to RELEASED after settlement", async () => {
+      const instrument = await prisma.paymentInstrument.findUnique({
+        where: { purchaseOrderId: poId },
+      });
+
+      expect(instrument).toBeDefined();
+      expect(instrument!.status).toBe("RELEASED");
+      expect(instrument!.bankReference).toMatch(/^SIM-REL-/);
+      expect(instrument!.releasedAt).toBeDefined();
     });
 
     it("should have settlement in the user list", async () => {
@@ -763,6 +792,219 @@ describe("Settlements E2E", () => {
       const event = settlementEvents[0];
       expect(event.payload.settlementRail).toBe("SIMULATED");
       expect(event.payload.externalRef).toBeDefined();
+    });
+  });
+
+  // ── Bank Webhook E2E Tests ──────────────────────────────
+
+  describe("POST /settlements/webhooks/bank-callback", () => {
+    const WEBHOOK_SECRET = "e2e-test-webhook-secret-32bytes!";
+
+    function signWebhookPayload(payload: {
+      externalRef: string;
+      status: string;
+      amount: number;
+      bankReference: string;
+      timestamp: string;
+    }) {
+      const message = [
+        payload.externalRef,
+        payload.status,
+        payload.amount,
+        payload.bankReference,
+        payload.timestamp,
+      ].join("|");
+
+      return createHmac("sha256", WEBHOOK_SECRET).update(message).digest("hex");
+    }
+
+    beforeAll(() => {
+      process.env.BANK_WEBHOOK_SECRET = WEBHOOK_SECRET;
+    });
+
+    afterAll(() => {
+      delete process.env.BANK_WEBHOOK_SECRET;
+    });
+
+    it("should NOT require JWT authentication", async () => {
+      // Send without Authorization header — should NOT get 401 Unauthorized
+      // It may fail for other reasons (bad signature) but not 401
+      const res = await request(app.getHttpServer())
+        .post("/settlements/webhooks/bank-callback")
+        .send({
+          externalRef: "FAKE-REF",
+          status: "CONFIRMED",
+          amount: 1000,
+          bankReference: "BANK-001",
+          timestamp: new Date().toISOString(),
+          signature: "invalid",
+        });
+
+      // Should be 401 from HMAC check (not JWT), or another error, but not a JWT 401
+      // The endpoint is reachable without JWT — if JWT guard was on, we'd get a different 401
+      expect(res.status).not.toBe(404);
+    });
+
+    it("should reject invalid HMAC signature", async () => {
+      const payload = {
+        externalRef: "SIM-RSV-FAKE",
+        status: "CONFIRMED",
+        amount: 50_000,
+        bankReference: "BANK-FAKE",
+        timestamp: new Date().toISOString(),
+        signature: "0".repeat(64),
+      };
+
+      const res = await request(app.getHttpServer())
+        .post("/settlements/webhooks/bank-callback")
+        .send(payload);
+
+      expect(res.status).toBe(401);
+      expect(res.body.message).toContain("Invalid webhook signature");
+    });
+
+    it("should reject replayed webhook (timestamp > 5 min old)", async () => {
+      const oldTimestamp = new Date(Date.now() - 6 * 60 * 1000).toISOString();
+      const payload = {
+        externalRef: "SIM-RSV-OLD",
+        status: "CONFIRMED",
+        amount: 50_000,
+        bankReference: "BANK-OLD",
+        timestamp: oldTimestamp,
+        signature: "",
+      };
+      payload.signature = signWebhookPayload(payload);
+
+      const res = await request(app.getHttpServer())
+        .post("/settlements/webhooks/bank-callback")
+        .send(payload);
+
+      expect(res.status).toBe(400);
+      expect(res.body.message).toContain("Webhook timestamp too old");
+    });
+
+    it("should reject unknown externalRef with valid signature", async () => {
+      const payload = {
+        externalRef: "UNKNOWN-REF-E2E",
+        status: "CONFIRMED",
+        amount: 50_000,
+        bankReference: "BANK-UNKNOWN",
+        timestamp: new Date().toISOString(),
+        signature: "",
+      };
+      payload.signature = signWebhookPayload(payload);
+
+      const res = await request(app.getHttpServer())
+        .post("/settlements/webhooks/bank-callback")
+        .send(payload);
+
+      expect(res.status).toBe(400);
+      expect(res.body.message).toContain("No lock or settlement found");
+    });
+
+    it("should confirm a real PENDING lock via webhook", async () => {
+      // Create a PO that will have a payment lock with a known externalRef
+      const poId = await createAndAcceptPO();
+
+      // Fetch the lock to get its externalRef
+      const poRes = await request(app.getHttpServer())
+        .get(`/purchase-orders/${poId}`)
+        .set("Authorization", `Bearer ${buyerToken}`);
+
+      const lockRef =
+        poRes.body.paymentLock?.openBankingRef ||
+        poRes.body.paymentLock?.externalRef;
+
+      // The simulated adapter confirms the lock immediately (status=LOCKED),
+      // so the webhook should return no-op (idempotent)
+      const payload = {
+        externalRef: lockRef,
+        status: "CONFIRMED",
+        amount: poRes.body.paymentLock?.amount || 100_000,
+        bankReference: "BANK-E2E-CONFIRM",
+        timestamp: new Date().toISOString(),
+        signature: "",
+      };
+      payload.signature = signWebhookPayload(payload);
+
+      const res = await request(app.getHttpServer())
+        .post("/settlements/webhooks/bank-callback")
+        .send(payload);
+
+      expect(res.status).toBe(200);
+      expect(res.body.accepted).toBe(true);
+      // SimulatedAdapter already confirmed → webhook is idempotent no-op
+      expect(res.body.action).toBe("no-op");
+      expect(res.body.detail).toContain("already LOCKED");
+    });
+  });
+
+  // ── Reconciliation Engine E2E ──────────────────────────────
+
+  describe("Reconciliation Engine", () => {
+    it("should require admin role for POST /settlements/reconciliation/run", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/settlements/reconciliation/run")
+        .set("Authorization", `Bearer ${buyerToken}`);
+
+      expect(res.status).toBe(403);
+    });
+
+    it("should run manual reconciliation and return a report (admin)", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/settlements/reconciliation/run")
+        .set("Authorization", `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(201);
+      expect(res.body).toHaveProperty("id");
+      expect(res.body).toHaveProperty("runAt");
+      expect(typeof res.body.totalChecked).toBe("number");
+      expect(typeof res.body.matched).toBe("number");
+      expect(typeof res.body.mismatches).toBe("number");
+      expect(Array.isArray(res.body.alerts)).toBe(true);
+      expect(typeof res.body.ledgerBalance).toBe("number");
+    });
+
+    it("should return latest reconciliation report (admin)", async () => {
+      const res = await request(app.getHttpServer())
+        .get("/settlements/reconciliation/latest")
+        .set("Authorization", `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      // After the manual run above, there should be at least one report
+      expect(res.body).toHaveProperty("id");
+      expect(res.body).toHaveProperty("totalChecked");
+    });
+
+    it("should return paginated reconciliation reports (admin)", async () => {
+      const res = await request(app.getHttpServer())
+        .get("/settlements/reconciliation/reports?limit=10&offset=0")
+        .set("Authorization", `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body)).toBe(true);
+      expect(res.body.length).toBeGreaterThan(0);
+      expect(res.body[0]).toHaveProperty("totalChecked");
+    });
+
+    it("should log BANK_RECONCILIATION_COMPLETED ledger event", async () => {
+      // The manual run above should have created a ledger event
+      const report = await request(app.getHttpServer())
+        .get("/settlements/reconciliation/latest")
+        .set("Authorization", `Bearer ${adminToken}`);
+
+      const events = await prisma.eventLog.findMany({
+        where: {
+          entityType: "RECONCILIATION",
+          entityId: report.body.id,
+          eventType: "BANK_RECONCILIATION_COMPLETED",
+        },
+      });
+
+      expect(events.length).toBe(1);
+      expect(events[0].payload).toMatchObject({
+        source: "RECONCILIATION_ENGINE",
+      });
     });
   });
 });

@@ -108,6 +108,12 @@ const NAV_ITEMS = [
     roles: ["BUYER", "SUPPLIER", "LIQUIDITY_PARTNER", "ADMIN"],
   },
   {
+    href: "/dashboard/admin/reconciliation",
+    label: "Reconciliation",
+    icon: ArrowRightLeft,
+    roles: ["ADMIN"],
+  },
+  {
     href: "/dashboard/admin",
     label: "Admin",
     icon: Settings,

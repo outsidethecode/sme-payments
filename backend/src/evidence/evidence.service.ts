@@ -96,6 +96,23 @@ export interface TrustEnvelope {
   };
   actors: TrustEnvelopeActor[];
   document: Record<string, unknown>;
+  paymentInstrument: null | {
+    instrumentId: string;
+    type: string;
+    amount: number;
+    currency: string;
+    status: string;
+    escrowReference: string | null;
+    bankReference: string | null;
+    lifecycle: { status: string; at: string; bankRef?: string | null }[];
+  };
+  reconciliation: null | {
+    lastChecked: string;
+    status: string;
+    bankBalance: number | null;
+    ledgerBalance: number | null;
+    variance: number | null;
+  };
   attachments: any[];
   ledger: {
     chainAlgorithm: string;
@@ -394,6 +411,7 @@ export class EvidenceService {
           select: { id: true, name: true, companyName: true, role: true },
         },
         paymentLock: true,
+        paymentInstrument: true,
         settlements: true,
         disputes: true,
         earlyPaymentRequest: true,
@@ -413,6 +431,7 @@ export class EvidenceService {
     // ── Collect ALL related entity IDs (cross-entity chains) ──
     const relatedEntityIds: string[] = [purchaseOrderId];
     if (po.paymentLock) relatedEntityIds.push(po.paymentLock.id);
+    if (po.paymentInstrument) relatedEntityIds.push(po.paymentInstrument.id);
     if (po.earlyPaymentRequest)
       relatedEntityIds.push(po.earlyPaymentRequest.id);
     for (const s of po.settlements) relatedEntityIds.push(s.id);
@@ -606,6 +625,12 @@ export class EvidenceService {
         documentHash,
       },
 
+      paymentInstrument: await this.buildInstrumentSection(
+        po.paymentInstrument,
+      ),
+
+      reconciliation: await this.buildReconciliationSection(purchaseOrderId),
+
       attachments: formattedAttachments,
 
       ledger,
@@ -641,6 +666,8 @@ export class EvidenceService {
           "Verify platform signature over envelopeHash",
           "Verify Merkle inclusion proof (entity leaf → anchor root)",
           "Verify external anchor receipt (Rekor transparency log)",
+          "Verify instrument lifecycle integrity (CREATED → LOCKED → RELEASED matches PO lifecycle)",
+          "Verify bank reference consistency (instrument.bankRef matches settlement.externalRef)",
         ],
       },
 
@@ -699,6 +726,96 @@ export class EvidenceService {
           : null,
         algorithm: "SHA-256-Merkle-Tree",
         verificationUri: `${this.baseUrl}/ledger/anchors/proof/${entityId}`,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Build paymentInstrument section with full lifecycle timeline.
+   *
+   * Queries ledger events for INSTRUMENT_* events to reconstruct
+   * the instrument's lifecycle transitions.
+   */
+  private async buildInstrumentSection(
+    instrument: any | null,
+  ): Promise<TrustEnvelope["paymentInstrument"]> {
+    if (!instrument) return null;
+
+    // Reconstruct lifecycle from ledger events
+    const events = await this.prisma.eventLog.findMany({
+      where: {
+        entityId: instrument.id,
+        eventType: {
+          in: [
+            "INSTRUMENT_CREATED",
+            "INSTRUMENT_LOCKED",
+            "INSTRUMENT_RELEASED",
+            "INSTRUMENT_FAILED",
+          ],
+        },
+      },
+      orderBy: { sequence: "asc" },
+    });
+
+    const lifecycle = events.map((e) => {
+      const payload = e.payload as Record<string, unknown>;
+      const status =
+        e.eventType === "INSTRUMENT_CREATED"
+          ? "CREATED"
+          : e.eventType === "INSTRUMENT_LOCKED"
+            ? "LOCKED"
+            : e.eventType === "INSTRUMENT_RELEASED"
+              ? "RELEASED"
+              : "FAILED";
+      return {
+        status,
+        at: e.timestamp.toISOString(),
+        bankRef: (payload?.bankReference as string) ?? null,
+      };
+    });
+
+    // If no ledger events yet, at least show current state
+    if (lifecycle.length === 0) {
+      lifecycle.push({
+        status: instrument.status,
+        at: instrument.createdAt.toISOString(),
+        bankRef: instrument.bankReference,
+      });
+    }
+
+    return {
+      instrumentId: instrument.id,
+      type: instrument.type,
+      amount: instrument.amount,
+      currency: instrument.currency,
+      status: instrument.status,
+      escrowReference: instrument.escrowReference,
+      bankReference: instrument.bankReference,
+      lifecycle,
+    };
+  }
+
+  /**
+   * Build reconciliation section from the most recent reconciliation report.
+   */
+  private async buildReconciliationSection(
+    purchaseOrderId: string,
+  ): Promise<TrustEnvelope["reconciliation"]> {
+    try {
+      const latestReport = await this.prisma.reconciliationReport.findFirst({
+        orderBy: { runAt: "desc" },
+      });
+      if (!latestReport) return null;
+
+      return {
+        lastChecked: latestReport.runAt.toISOString(),
+        status:
+          latestReport.mismatches === 0 ? "CONSISTENT" : "MISMATCH_DETECTED",
+        bankBalance: latestReport.bankBalance,
+        ledgerBalance: latestReport.ledgerBalance,
+        variance: latestReport.variance,
       };
     } catch {
       return null;
