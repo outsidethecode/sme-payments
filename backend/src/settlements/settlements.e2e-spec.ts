@@ -353,15 +353,15 @@ describe("Settlements E2E", () => {
       expect(settlement.currency).toBe("GBP");
     });
 
-    it("should have transitioned the PaymentInstrument to RELEASED after settlement", async () => {
+    it("should have transitioned the PaymentInstrument to SETTLED after settlement", async () => {
       const instrument = await prisma.paymentInstrument.findUnique({
         where: { purchaseOrderId: poId },
       });
 
       expect(instrument).toBeDefined();
-      expect(instrument!.status).toBe("RELEASED");
+      expect(instrument!.status).toBe("SETTLED");
       expect(instrument!.bankReference).toMatch(/^SIM-REL-/);
-      expect(instrument!.releasedAt).toBeDefined();
+      expect(instrument!.settledAt).toBeDefined();
     });
 
     it("should have settlement in the user list", async () => {

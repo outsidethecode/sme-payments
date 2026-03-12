@@ -100,7 +100,7 @@ export class ReconciliationService {
    * The main reconciliation engine. Can be invoked by cron or manually.
    *
    * Steps:
-   *   1. Gather all instruments in transitional states (LOCK_REQUESTED, RELEASE_PENDING)
+   *   1. Gather all instruments in transitional states (LOCK_REQUESTED, SETTLEMENT_PENDING)
    *   2. Gather all settlements in PROCESSING state
    *   3. For each item with an externalRef, query the adapter
    *   4. Compare rail status with platform status — record matches/mismatches
@@ -121,7 +121,7 @@ export class ReconciliationService {
     const transitionalInstruments =
       await this.prisma.paymentInstrument.findMany({
         where: {
-          status: { in: ["LOCK_REQUESTED", "RELEASE_PENDING"] },
+          status: { in: ["LOCK_REQUESTED", "SETTLEMENT_PENDING"] },
         },
       });
 
@@ -366,13 +366,13 @@ export class ReconciliationService {
    * Map instrument platform status → acceptable rail statuses.
    *
    * LOCK_REQUESTED  → rail may still be PENDING or RESERVED
-   * RELEASE_PENDING → rail may be PENDING or COMPLETED
+   * SETTLEMENT_PENDING → rail may be PENDING or COMPLETED
    */
   private instrumentStatusToExpectedRail(status: string): TransferStatus[] {
     switch (status) {
       case "LOCK_REQUESTED":
         return [TransferStatus.PENDING, TransferStatus.RESERVED];
-      case "RELEASE_PENDING":
+      case "SETTLEMENT_PENDING":
         return [TransferStatus.PENDING, TransferStatus.COMPLETED];
       default:
         return [];

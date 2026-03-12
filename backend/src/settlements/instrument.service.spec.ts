@@ -12,6 +12,8 @@ describe("InstrumentService", () => {
       findUnique: jest.fn(),
       update: jest.fn(),
     },
+    $transaction: jest.fn(),
+    $queryRaw: jest.fn(),
   };
 
   const mockLedger = {
@@ -35,7 +37,7 @@ describe("InstrumentService", () => {
   // ── create ──────────────────────────────────────────────
 
   describe("create", () => {
-    it("should create an instrument in CREATED status", async () => {
+    it("should create an instrument in CREATED status with SUPPLIER beneficiary", async () => {
       const created = {
         id: "instr-1",
         purchaseOrderId: "po-1",
@@ -43,6 +45,7 @@ describe("InstrumentService", () => {
         currency: "SAR",
         status: "CREATED",
         payerAccountRef: "SA1234",
+        settlementBeneficiary: "SUPPLIER",
       };
       mockPrisma.paymentInstrument.create.mockResolvedValue(created);
 
@@ -52,6 +55,8 @@ describe("InstrumentService", () => {
           amount: 100_000,
           currency: "SAR",
           payerAccountRef: "SA1234",
+          buyerOrgId: "org-buyer",
+          supplierOrgId: "org-supplier",
         },
         "buyer-1",
       );
@@ -63,7 +68,10 @@ describe("InstrumentService", () => {
           amount: 100_000,
           currency: "SAR",
           status: "CREATED",
+          settlementBeneficiary: "SUPPLIER",
           payerAccountRef: "SA1234",
+          buyerOrgId: "org-buyer",
+          supplierOrgId: "org-supplier",
         }),
       });
       expect(mockLedger.logEvent).toHaveBeenCalledWith(
@@ -171,99 +179,408 @@ describe("InstrumentService", () => {
     });
   });
 
-  // ── requestRelease ──────────────────────────────────────
+  // ── requestFinancing ────────────────────────────────────
 
-  describe("requestRelease", () => {
-    it("should transition LOCKED → RELEASE_PENDING", async () => {
+  describe("requestFinancing", () => {
+    it("should transition LOCKED → FINANCING_REQUESTED", async () => {
       mockPrisma.paymentInstrument.findUnique.mockResolvedValue({
         id: "instr-1",
         purchaseOrderId: "po-1",
         amount: 100_000,
         currency: "SAR",
         status: "LOCKED",
+        settlementBeneficiary: "SUPPLIER",
       });
       mockPrisma.paymentInstrument.update.mockResolvedValue({
         id: "instr-1",
-        status: "RELEASE_PENDING",
-        recipientAccountRef: "SA5678",
+        status: "FINANCING_REQUESTED",
       });
 
-      const result = await service.requestRelease(
-        { instrumentId: "instr-1", recipientAccountRef: "SA5678" },
-        "system-1",
-      );
+      const result = await service.requestFinancing("instr-1", "supplier-1");
 
-      expect(result.status).toBe("RELEASE_PENDING");
+      expect(result.status).toBe("FINANCING_REQUESTED");
       expect(mockLedger.logEvent).toHaveBeenCalledWith(
         expect.objectContaining({
-          eventType: "INSTRUMENT_RELEASE_REQUESTED",
+          eventType: "FINANCING_REQUESTED",
+          actorId: "supplier-1",
+          actorRole: "SUPPLIER",
         }),
       );
     });
 
-    it("should reject release from CREATED state", async () => {
+    it("should reject financing from CREATED state", async () => {
       mockPrisma.paymentInstrument.findUnique.mockResolvedValue({
         id: "instr-1",
         status: "CREATED",
       });
 
       await expect(
-        service.requestRelease({ instrumentId: "instr-1" }, "system-1"),
+        service.requestFinancing("instr-1", "supplier-1"),
       ).rejects.toThrow(
-        "Invalid instrument transition: CREATED → RELEASE_PENDING",
+        "Invalid instrument transition: CREATED → FINANCING_REQUESTED",
       );
     });
   });
 
-  // ── confirmRelease ──────────────────────────────────────
+  // ── confirmFinancing (atomic beneficiary flip) ──────────
 
-  describe("confirmRelease", () => {
-    it("should transition RELEASE_PENDING → RELEASED", async () => {
+  describe("confirmFinancing", () => {
+    it("should atomically transition FINANCING_REQUESTED → FINANCING_FUNDED and flip beneficiary", async () => {
+      const updatedInstrument = {
+        id: "instr-1",
+        purchaseOrderId: "po-1",
+        amount: 100_000,
+        currency: "SAR",
+        status: "FINANCING_FUNDED",
+        settlementBeneficiary: "LIQUIDITY_PROVIDER",
+        financingPartnerId: "lp-1",
+      };
+
+      mockPrisma.$transaction.mockImplementation(async (cb: any) => {
+        const txMock = {
+          $queryRaw: jest.fn().mockResolvedValue([
+            {
+              id: "instr-1",
+              purchase_order_id: "po-1",
+              amount: 100_000,
+              currency: "SAR",
+              status: "FINANCING_REQUESTED",
+              settlement_beneficiary: "SUPPLIER",
+            },
+          ]),
+          paymentInstrument: {
+            update: jest.fn().mockResolvedValue(updatedInstrument),
+          },
+        };
+        return cb(txMock);
+      });
+
+      const result = await service.confirmFinancing(
+        { instrumentId: "instr-1", financingPartnerId: "lp-1" },
+        "lp-1",
+      );
+
+      expect(result.status).toBe("FINANCING_FUNDED");
+      expect(result.settlementBeneficiary).toBe("LIQUIDITY_PROVIDER");
+      expect(mockLedger.logEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: "FINANCING_FUNDED",
+          actorId: "lp-1",
+          actorRole: "LIQUIDITY_PARTNER",
+          payload: expect.objectContaining({
+            previousBeneficiary: "SUPPLIER",
+            newBeneficiary: "LIQUIDITY_PROVIDER",
+            financingPartnerId: "lp-1",
+          }),
+        }),
+      );
+    });
+
+    it("should reject if instrument is not in FINANCING_REQUESTED state", async () => {
+      mockPrisma.$transaction.mockImplementation(async (cb: any) => {
+        const txMock = {
+          $queryRaw: jest.fn().mockResolvedValue([
+            {
+              id: "instr-1",
+              status: "LOCKED",
+              settlement_beneficiary: "SUPPLIER",
+            },
+          ]),
+          paymentInstrument: { update: jest.fn() },
+        };
+        return cb(txMock);
+      });
+
+      await expect(
+        service.confirmFinancing(
+          { instrumentId: "instr-1", financingPartnerId: "lp-1" },
+          "lp-1",
+        ),
+      ).rejects.toThrow(
+        "Cannot fund: instrument is LOCKED, expected FINANCING_REQUESTED",
+      );
+    });
+
+    it("should reject if beneficiary is already LIQUIDITY_PROVIDER (double-fund guard)", async () => {
+      mockPrisma.$transaction.mockImplementation(async (cb: any) => {
+        const txMock = {
+          $queryRaw: jest.fn().mockResolvedValue([
+            {
+              id: "instr-1",
+              status: "FINANCING_REQUESTED",
+              settlement_beneficiary: "LIQUIDITY_PROVIDER",
+            },
+          ]),
+          paymentInstrument: { update: jest.fn() },
+        };
+        return cb(txMock);
+      });
+
+      await expect(
+        service.confirmFinancing(
+          { instrumentId: "instr-1", financingPartnerId: "lp-2" },
+          "lp-2",
+        ),
+      ).rejects.toThrow(
+        "Cannot fund: beneficiary already set to LIQUIDITY_PROVIDER",
+      );
+    });
+
+    it("should reject if instrument not found", async () => {
+      mockPrisma.$transaction.mockImplementation(async (cb: any) => {
+        const txMock = {
+          $queryRaw: jest.fn().mockResolvedValue([]),
+          paymentInstrument: { update: jest.fn() },
+        };
+        return cb(txMock);
+      });
+
+      await expect(
+        service.confirmFinancing(
+          { instrumentId: "nonexistent", financingPartnerId: "lp-1" },
+          "lp-1",
+        ),
+      ).rejects.toThrow("Payment instrument nonexistent not found");
+    });
+  });
+
+  // ── revertFinancing (compensating transaction) ──────────
+
+  describe("revertFinancing", () => {
+    it("should revert FINANCING_FUNDED → LOCKED and reset beneficiary", async () => {
+      const reverted = {
+        id: "instr-1",
+        purchaseOrderId: "po-1",
+        amount: 100_000,
+        status: "LOCKED",
+        settlementBeneficiary: "SUPPLIER",
+      };
+
+      mockPrisma.$transaction.mockImplementation(async (cb: any) => {
+        const txMock = {
+          $queryRaw: jest.fn().mockResolvedValue([
+            {
+              id: "instr-1",
+              purchase_order_id: "po-1",
+              amount: 100_000,
+              status: "FINANCING_FUNDED",
+              settlement_beneficiary: "LIQUIDITY_PROVIDER",
+            },
+          ]),
+          paymentInstrument: {
+            update: jest.fn().mockResolvedValue(reverted),
+          },
+        };
+        return cb(txMock);
+      });
+
+      const result = await service.revertFinancing("instr-1", "lp-1");
+
+      expect(result.status).toBe("LOCKED");
+      expect(result.settlementBeneficiary).toBe("SUPPLIER");
+      expect(mockLedger.logEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: "FINANCING_REVERTED",
+          payload: expect.objectContaining({
+            previousBeneficiary: "LIQUIDITY_PROVIDER",
+            newBeneficiary: "SUPPLIER",
+          }),
+        }),
+      );
+    });
+
+    it("should also revert FINANCING_REQUESTED → LOCKED", async () => {
+      const reverted = {
+        id: "instr-1",
+        status: "LOCKED",
+        settlementBeneficiary: "SUPPLIER",
+      };
+
+      mockPrisma.$transaction.mockImplementation(async (cb: any) => {
+        const txMock = {
+          $queryRaw: jest.fn().mockResolvedValue([
+            {
+              id: "instr-1",
+              purchase_order_id: "po-1",
+              amount: 100_000,
+              status: "FINANCING_REQUESTED",
+              settlement_beneficiary: "SUPPLIER",
+            },
+          ]),
+          paymentInstrument: {
+            update: jest.fn().mockResolvedValue(reverted),
+          },
+        };
+        return cb(txMock);
+      });
+
+      const result = await service.revertFinancing("instr-1", "system-1");
+      expect(result.status).toBe("LOCKED");
+    });
+
+    it("should reject revert from LOCKED state", async () => {
+      mockPrisma.$transaction.mockImplementation(async (cb: any) => {
+        const txMock = {
+          $queryRaw: jest
+            .fn()
+            .mockResolvedValue([{ id: "instr-1", status: "LOCKED" }]),
+          paymentInstrument: { update: jest.fn() },
+        };
+        return cb(txMock);
+      });
+
+      await expect(service.revertFinancing("instr-1", "lp-1")).rejects.toThrow(
+        "Cannot revert financing: instrument is LOCKED",
+      );
+    });
+  });
+
+  // ── requestSettlement ───────────────────────────────────
+
+  describe("requestSettlement", () => {
+    it("should transition LOCKED → SETTLEMENT_PENDING (direct settlement, no LP)", async () => {
+      const updated = {
+        id: "instr-1",
+        purchaseOrderId: "po-1",
+        status: "SETTLEMENT_PENDING",
+        recipientAccountRef: "SA5678",
+      };
+
+      mockPrisma.$transaction.mockImplementation(async (cb: any) => {
+        const txMock = {
+          $queryRaw: jest.fn().mockResolvedValue([
+            {
+              id: "instr-1",
+              purchase_order_id: "po-1",
+              amount: 100_000,
+              currency: "SAR",
+              status: "LOCKED",
+              settlement_beneficiary: "SUPPLIER",
+            },
+          ]),
+          paymentInstrument: {
+            update: jest.fn().mockResolvedValue(updated),
+          },
+        };
+        return cb(txMock);
+      });
+
+      const result = await service.requestSettlement(
+        { instrumentId: "instr-1", recipientAccountRef: "SA5678" },
+        "system-1",
+      );
+
+      expect(result.status).toBe("SETTLEMENT_PENDING");
+      expect(mockLedger.logEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: "SETTLEMENT_INITIATED",
+        }),
+      );
+    });
+
+    it("should transition FINANCING_FUNDED → SETTLEMENT_PENDING (LP funded)", async () => {
+      const updated = {
+        id: "instr-1",
+        status: "SETTLEMENT_PENDING",
+      };
+
+      mockPrisma.$transaction.mockImplementation(async (cb: any) => {
+        const txMock = {
+          $queryRaw: jest.fn().mockResolvedValue([
+            {
+              id: "instr-1",
+              purchase_order_id: "po-1",
+              amount: 100_000,
+              currency: "SAR",
+              status: "FINANCING_FUNDED",
+              settlement_beneficiary: "LIQUIDITY_PROVIDER",
+            },
+          ]),
+          paymentInstrument: {
+            update: jest.fn().mockResolvedValue(updated),
+          },
+        };
+        return cb(txMock);
+      });
+
+      const result = await service.requestSettlement(
+        { instrumentId: "instr-1" },
+        "system-1",
+      );
+
+      expect(result.status).toBe("SETTLEMENT_PENDING");
+    });
+
+    it("should reject settlement from CREATED state", async () => {
+      mockPrisma.$transaction.mockImplementation(async (cb: any) => {
+        const txMock = {
+          $queryRaw: jest
+            .fn()
+            .mockResolvedValue([{ id: "instr-1", status: "CREATED" }]),
+          paymentInstrument: { update: jest.fn() },
+        };
+        return cb(txMock);
+      });
+
+      await expect(
+        service.requestSettlement({ instrumentId: "instr-1" }, "system-1"),
+      ).rejects.toThrow(
+        "Invalid instrument transition: CREATED → SETTLEMENT_PENDING",
+      );
+    });
+  });
+
+  // ── confirmSettlement ───────────────────────────────────
+
+  describe("confirmSettlement", () => {
+    it("should transition SETTLEMENT_PENDING → SETTLED", async () => {
       mockPrisma.paymentInstrument.findUnique.mockResolvedValue({
         id: "instr-1",
         purchaseOrderId: "po-1",
         amount: 100_000,
         currency: "SAR",
-        status: "RELEASE_PENDING",
+        status: "SETTLEMENT_PENDING",
+        settlementBeneficiary: "SUPPLIER",
       });
       mockPrisma.paymentInstrument.update.mockResolvedValue({
         id: "instr-1",
-        status: "RELEASED",
-        bankReference: "SIM-REL-001",
+        status: "SETTLED",
+        bankReference: "SIM-SET-001",
+        settlementBeneficiary: "SUPPLIER",
       });
 
-      const result = await service.confirmRelease(
-        { instrumentId: "instr-1", bankReference: "SIM-REL-001" },
+      const result = await service.confirmSettlement(
+        { instrumentId: "instr-1", bankReference: "SIM-SET-001" },
         "system-1",
       );
 
-      expect(result.status).toBe("RELEASED");
+      expect(result.status).toBe("SETTLED");
       expect(mockLedger.logEvent).toHaveBeenCalledWith(
         expect.objectContaining({
-          eventType: "INSTRUMENT_RELEASED",
+          eventType: "INSTRUMENT_SETTLED",
         }),
       );
     });
 
-    it("should reject release from LOCKED state (must go through RELEASE_PENDING)", async () => {
+    it("should reject settlement confirmation from LOCKED state", async () => {
       mockPrisma.paymentInstrument.findUnique.mockResolvedValue({
         id: "instr-1",
         status: "LOCKED",
       });
 
       await expect(
-        service.confirmRelease(
+        service.confirmSettlement(
           { instrumentId: "instr-1", bankReference: "REF" },
           "system-1",
         ),
-      ).rejects.toThrow("Invalid instrument transition: LOCKED → RELEASED");
+      ).rejects.toThrow("Invalid instrument transition: LOCKED → SETTLED");
     });
   });
 
   // ── refund ──────────────────────────────────────────────
 
   describe("refund", () => {
-    it("should transition LOCKED → REFUNDED", async () => {
+    it("should transition LOCKED → REFUNDED with BUYER beneficiary", async () => {
       mockPrisma.paymentInstrument.findUnique.mockResolvedValue({
         id: "instr-1",
         purchaseOrderId: "po-1",
@@ -274,6 +591,7 @@ describe("InstrumentService", () => {
       mockPrisma.paymentInstrument.update.mockResolvedValue({
         id: "instr-1",
         status: "REFUNDED",
+        settlementBeneficiary: "BUYER",
       });
 
       const result = await service.refund(
@@ -282,6 +600,14 @@ describe("InstrumentService", () => {
       );
 
       expect(result.status).toBe("REFUNDED");
+      expect(mockPrisma.paymentInstrument.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: "REFUNDED",
+            settlementBeneficiary: "BUYER",
+          }),
+        }),
+      );
       expect(mockLedger.logEvent).toHaveBeenCalledWith(
         expect.objectContaining({
           eventType: "INSTRUMENT_REFUNDED",
@@ -292,10 +618,10 @@ describe("InstrumentService", () => {
       );
     });
 
-    it("should reject refund from RELEASED state", async () => {
+    it("should reject refund from SETTLED state", async () => {
       mockPrisma.paymentInstrument.findUnique.mockResolvedValue({
         id: "instr-1",
-        status: "RELEASED",
+        status: "SETTLED",
       });
 
       await expect(
@@ -303,7 +629,7 @@ describe("InstrumentService", () => {
           { instrumentId: "instr-1", reason: "Too late" },
           "admin-1",
         ),
-      ).rejects.toThrow("Invalid instrument transition: RELEASED → REFUNDED");
+      ).rejects.toThrow("Invalid instrument transition: SETTLED → REFUNDED");
     });
   });
 
@@ -354,13 +680,13 @@ describe("InstrumentService", () => {
       expect(result.status).toBe("FAILED");
     });
 
-    it("should transition RELEASE_PENDING → FAILED", async () => {
+    it("should transition SETTLEMENT_PENDING → FAILED", async () => {
       mockPrisma.paymentInstrument.findUnique.mockResolvedValue({
         id: "instr-1",
         purchaseOrderId: "po-1",
         amount: 100_000,
         currency: "SAR",
-        status: "RELEASE_PENDING",
+        status: "SETTLEMENT_PENDING",
       });
       mockPrisma.paymentInstrument.update.mockResolvedValue({
         id: "instr-1",
@@ -371,15 +697,32 @@ describe("InstrumentService", () => {
       expect(result.status).toBe("FAILED");
     });
 
-    it("should reject fail from RELEASED (terminal state)", async () => {
+    it("should transition FINANCING_REQUESTED → FAILED", async () => {
       mockPrisma.paymentInstrument.findUnique.mockResolvedValue({
         id: "instr-1",
-        status: "RELEASED",
+        purchaseOrderId: "po-1",
+        amount: 100_000,
+        currency: "SAR",
+        status: "FINANCING_REQUESTED",
+      });
+      mockPrisma.paymentInstrument.update.mockResolvedValue({
+        id: "instr-1",
+        status: "FAILED",
+      });
+
+      const result = await service.fail("instr-1", "Aborted", "system-1");
+      expect(result.status).toBe("FAILED");
+    });
+
+    it("should reject fail from SETTLED (terminal state)", async () => {
+      mockPrisma.paymentInstrument.findUnique.mockResolvedValue({
+        id: "instr-1",
+        status: "SETTLED",
       });
 
       await expect(
         service.fail("instr-1", "Late fail", "admin-1"),
-      ).rejects.toThrow("Invalid instrument transition: RELEASED → FAILED");
+      ).rejects.toThrow("Invalid instrument transition: SETTLED → FAILED");
     });
 
     it("should reject fail from REFUNDED (terminal state)", async () => {

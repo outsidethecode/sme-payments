@@ -133,12 +133,13 @@ describe("EvidenceService — Instrument & Reconciliation sections", () => {
         type: "ESCROW_LOCK",
         amount: 700000,
         currency: "SAR",
-        status: "RELEASED",
+        status: "SETTLED",
+        settlementBeneficiary: "SUPPLIER",
         escrowReference: "ESCROW-001",
         bankReference: "SARIE-001",
         createdAt: new Date("2026-03-01"),
         lockedAt: new Date("2026-03-02"),
-        releasedAt: new Date("2026-03-05"),
+        settledAt: new Date("2026-03-05"),
       };
 
       mockPrisma.purchaseOrder.findUnique.mockResolvedValue({
@@ -166,7 +167,7 @@ describe("EvidenceService — Instrument & Reconciliation sections", () => {
             },
             {
               id: "evt-3",
-              eventType: "INSTRUMENT_RELEASED",
+              eventType: "INSTRUMENT_SETTLED",
               timestamp: new Date("2026-03-05T10:00:00Z"),
               payload: { bankReference: "SARIE-001" },
               sequence: 3,
@@ -183,16 +184,16 @@ describe("EvidenceService — Instrument & Reconciliation sections", () => {
       expect(pack.paymentInstrument!.type).toBe("ESCROW_LOCK");
       expect(pack.paymentInstrument!.amount).toBe(700000);
       expect(pack.paymentInstrument!.currency).toBe("SAR");
-      expect(pack.paymentInstrument!.status).toBe("RELEASED");
+      expect(pack.paymentInstrument!.status).toBe("SETTLED");
       expect(pack.paymentInstrument!.escrowReference).toBe("ESCROW-001");
       expect(pack.paymentInstrument!.bankReference).toBe("SARIE-001");
 
-      // Lifecycle should have 3 entries: CREATED → LOCKED → RELEASED
+      // Lifecycle should have 3 entries: CREATED → LOCKED → SETTLED
       expect(pack.paymentInstrument!.lifecycle).toHaveLength(3);
       expect(pack.paymentInstrument!.lifecycle[0].status).toBe("CREATED");
       expect(pack.paymentInstrument!.lifecycle[1].status).toBe("LOCKED");
       expect(pack.paymentInstrument!.lifecycle[1].bankRef).toBe("SARIE-001");
-      expect(pack.paymentInstrument!.lifecycle[2].status).toBe("RELEASED");
+      expect(pack.paymentInstrument!.lifecycle[2].status).toBe("SETTLED");
     });
 
     it("should fall back to current state when no lifecycle events exist", async () => {
@@ -206,7 +207,8 @@ describe("EvidenceService — Instrument & Reconciliation sections", () => {
         bankReference: null,
         createdAt: new Date("2026-03-10"),
         lockedAt: null,
-        releasedAt: null,
+        settledAt: null,
+        settlementBeneficiary: "SUPPLIER",
       };
 
       mockPrisma.purchaseOrder.findUnique.mockResolvedValue({

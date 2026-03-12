@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
   ForbiddenException,
@@ -9,6 +10,7 @@ import { LedgerService, SignatureData } from "../ledger/ledger.service";
 import { PoliciesService } from "../policies/policies.service";
 import { OrganisationsService } from "../organisations/organisations.service";
 import { SettlementService } from "../settlements/settlement.service";
+import { InstrumentService } from "../settlements/instrument.service";
 import { SettlementCurrency } from "../settlements/settlement-adapter.interface";
 import { RiskSnapshotService } from "./risk-snapshot.service";
 
@@ -17,18 +19,22 @@ const DEFAULT_FEE_BPS = 250;
 
 @Injectable()
 export class EarlyPaymentsService {
+  private readonly logger = new Logger(EarlyPaymentsService.name);
+
   constructor(
     private prisma: PrismaService,
     private ledger: LedgerService,
     private policies: PoliciesService,
     private orgs: OrganisationsService,
     private settlement: SettlementService,
+    private instrumentService: InstrumentService,
     private riskSnapshot: RiskSnapshotService,
   ) {}
 
   /**
    * Supplier requests early payment on an ACCEPTED / IN_PROGRESS / DELIVERED PO.
-   * The PO must have a locked payment but not yet settled.
+   * The PO must have a locked payment instrument (not yet settled).
+   * Transitions the instrument LOCKED → FINANCING_REQUESTED.
    */
   async requestEarlyPayment(
     purchaseOrderId: string,
@@ -63,6 +69,16 @@ export class EarlyPaymentsService {
       );
     }
 
+    // Guard: instrument must exist and be in LOCKED state
+    const instrument = await this.prisma.paymentInstrument.findUnique({
+      where: { purchaseOrderId },
+    });
+    if (!instrument) {
+      throw new BadRequestException(
+        "PO has no payment instrument — cannot request early payment",
+      );
+    }
+
     // Check if an early payment request already exists
     const existing = await this.prisma.earlyPaymentRequest.findUnique({
       where: { purchaseOrderId },
@@ -77,6 +93,9 @@ export class EarlyPaymentsService {
     // At request time we don't know the LP yet, so use DEFAULT_FEE_BPS as baseline
     const feeAmount = Math.round((po.amount * DEFAULT_FEE_BPS) / 10_000);
     const netAdvance = po.amount - feeAmount;
+
+    // Transition instrument LOCKED → FINANCING_REQUESTED
+    await this.instrumentService.requestFinancing(instrument.id, supplierId);
 
     const request = await this.prisma.earlyPaymentRequest.create({
       data: {
@@ -262,8 +281,16 @@ export class EarlyPaymentsService {
   }
 
   /**
-   * LP funds an early payment request
-   * LP pays supplier the net advance, LP assumes delivery risk
+   * LP funds an early payment request.
+   *
+   * DOUBLE-PAYMENT PREVENTION:
+   * 1. Validate request + PO + LP balance + policies  (reads)
+   * 2. Atomically flip instrument beneficiary → LIQUIDITY_PROVIDER
+   *    via SELECT FOR UPDATE  (serializes with settlement path)
+   * 3. Transfer the advance via the settlement adapter  (side-effect)
+   * 4. Update earlyPay → FUNDED + record platform fee  (commit)
+   *
+   * If step 3 fails, step 2 is compensated via revertFinancing().
    */
   async fund(id: string, lpId: string, sig?: SignatureData) {
     const request = await this.prisma.earlyPaymentRequest.findUnique({
@@ -305,6 +332,16 @@ export class EarlyPaymentsService {
       });
       throw new BadRequestException(
         `Cannot fund — PO is already ${request.purchaseOrder.status}`,
+      );
+    }
+
+    // Guard: instrument must exist and be in FINANCING_REQUESTED state
+    const instrument = await this.prisma.paymentInstrument.findUnique({
+      where: { purchaseOrderId: request.purchaseOrderId },
+    });
+    if (!instrument) {
+      throw new BadRequestException(
+        "PO has no payment instrument — cannot fund",
       );
     }
 
@@ -361,7 +398,16 @@ export class EarlyPaymentsService {
     }
     // ── End LP Funding Policy Evaluation ─────────────────────
 
-    // Resolve currency and account refs
+    // ── STEP 2: Atomic beneficiary flip ──────────────────────
+    // SELECT FOR UPDATE serializes this with any concurrent settlePO() call.
+    // If a settlement is already in progress, this will block or fail.
+    await this.instrumentService.confirmFinancing(
+      { instrumentId: instrument.id, financingPartnerId: lpId },
+      lpId,
+    );
+
+    // ── STEP 3: Transfer advance via settlement adapter ──────
+    // If this fails, we must compensate by reverting the beneficiary.
     const currency = (request.purchaseOrder.currency ||
       "GBP") as SettlementCurrency;
     const lpOrg2 = lpOrg || (await this.orgs.getOrgByUserId(lpId));
@@ -369,19 +415,28 @@ export class EarlyPaymentsService {
     const lpAccountRef = lpOrg2?.bankIban || undefined;
     const supplierAccountRef = supplierOrg2?.bankIban || undefined;
 
-    // Transfer advance via settlement adapter
-    const transferResult = await this.settlement.transferAdvance({
-      purchaseOrderId: request.purchaseOrderId,
-      earlyPaymentRequestId: id,
-      lpId,
-      lpAccountRef,
-      supplierId: request.supplierId,
-      supplierAccountRef,
-      amount: request.netAdvance,
-      currency,
-    });
+    let transferResult: { externalRef: string | null };
+    try {
+      transferResult = await this.settlement.transferAdvance({
+        purchaseOrderId: request.purchaseOrderId,
+        earlyPaymentRequestId: id,
+        lpId,
+        lpAccountRef,
+        supplierId: request.supplierId,
+        supplierAccountRef,
+        amount: request.netAdvance,
+        currency,
+      });
+    } catch (err) {
+      // ── Compensating transaction: revert beneficiary ─────
+      this.logger.warn(
+        `Transfer failed for instrument ${instrument.id}, reverting financing: ${err.message}`,
+      );
+      await this.instrumentService.revertFinancing(instrument.id, lpId);
+      throw err; // re-throw so caller sees the original failure
+    }
 
-    // Update request status and record fee
+    // ── STEP 4: Commit earlyPay status + record fee ──────────
     const result = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.earlyPaymentRequest.update({
         where: { id },
@@ -459,6 +514,8 @@ export class EarlyPaymentsService {
         faceValue: request.faceValue,
         settlementRail: this.settlement.getAdapterName(),
         externalRef: transferResult.externalRef,
+        instrumentId: instrument.id,
+        beneficiaryFlipped: "SUPPLIER → LIQUIDITY_PROVIDER",
       },
       ...sig,
     });

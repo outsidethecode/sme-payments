@@ -152,11 +152,11 @@ describe("ReconciliationService", () => {
       expect(result.mismatches).toBe(0);
     });
 
-    it("should count RELEASE_PENDING instrument as matched when rail says COMPLETED", async () => {
+    it("should count SETTLEMENT_PENDING instrument as matched when rail says COMPLETED", async () => {
       mockPrisma.paymentInstrument.findMany.mockResolvedValue([
         {
           id: "instr-3",
-          status: "RELEASE_PENDING",
+          status: "SETTLEMENT_PENDING",
           bankReference: "REF-003",
           createdAt: new Date(),
         },
@@ -512,7 +512,7 @@ describe("ReconciliationService", () => {
         },
         {
           id: "instr-b",
-          status: "RELEASE_PENDING",
+          status: "SETTLEMENT_PENDING",
           bankReference: "REF-B",
           createdAt: new Date(),
         },

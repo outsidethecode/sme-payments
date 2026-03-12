@@ -102,6 +102,7 @@ export interface TrustEnvelope {
     amount: number;
     currency: string;
     status: string;
+    settlementBeneficiary: string;
     escrowReference: string | null;
     bankReference: string | null;
     lifecycle: { status: string; at: string; bankRef?: string | null }[];
@@ -666,7 +667,7 @@ export class EvidenceService {
           "Verify platform signature over envelopeHash",
           "Verify Merkle inclusion proof (entity leaf → anchor root)",
           "Verify external anchor receipt (Rekor transparency log)",
-          "Verify instrument lifecycle integrity (CREATED → LOCKED → RELEASED matches PO lifecycle)",
+          "Verify instrument lifecycle integrity (CREATED → LOCKED → SETTLED matches PO lifecycle)",
           "Verify bank reference consistency (instrument.bankRef matches settlement.externalRef)",
         ],
       },
@@ -751,7 +752,9 @@ export class EvidenceService {
           in: [
             "INSTRUMENT_CREATED",
             "INSTRUMENT_LOCKED",
-            "INSTRUMENT_RELEASED",
+            "INSTRUMENT_SETTLED",
+            "FINANCING_REQUESTED",
+            "FINANCING_FUNDED",
             "INSTRUMENT_FAILED",
           ],
         },
@@ -766,9 +769,13 @@ export class EvidenceService {
           ? "CREATED"
           : e.eventType === "INSTRUMENT_LOCKED"
             ? "LOCKED"
-            : e.eventType === "INSTRUMENT_RELEASED"
-              ? "RELEASED"
-              : "FAILED";
+            : e.eventType === "INSTRUMENT_SETTLED"
+              ? "SETTLED"
+              : e.eventType === "FINANCING_REQUESTED"
+                ? "FINANCING_REQUESTED"
+                : e.eventType === "FINANCING_FUNDED"
+                  ? "FINANCING_FUNDED"
+                  : "FAILED";
       return {
         status,
         at: e.timestamp.toISOString(),
@@ -791,6 +798,7 @@ export class EvidenceService {
       amount: instrument.amount,
       currency: instrument.currency,
       status: instrument.status,
+      settlementBeneficiary: instrument.settlementBeneficiary ?? "SUPPLIER",
       escrowReference: instrument.escrowReference,
       bankReference: instrument.bankReference,
       lifecycle,

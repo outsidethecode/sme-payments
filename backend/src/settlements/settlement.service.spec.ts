@@ -48,12 +48,21 @@ describe("SettlementService", () => {
     confirmLock: jest
       .fn()
       .mockResolvedValue({ id: "instr-1", status: "LOCKED" }),
-    requestRelease: jest
+    requestFinancing: jest
       .fn()
-      .mockResolvedValue({ id: "instr-1", status: "RELEASE_PENDING" }),
-    confirmRelease: jest
+      .mockResolvedValue({ id: "instr-1", status: "FINANCING_REQUESTED" }),
+    confirmFinancing: jest
       .fn()
-      .mockResolvedValue({ id: "instr-1", status: "RELEASED" }),
+      .mockResolvedValue({ id: "instr-1", status: "FINANCING_FUNDED" }),
+    revertFinancing: jest
+      .fn()
+      .mockResolvedValue({ id: "instr-1", status: "LOCKED" }),
+    requestSettlement: jest
+      .fn()
+      .mockResolvedValue({ id: "instr-1", status: "SETTLEMENT_PENDING" }),
+    confirmSettlement: jest
+      .fn()
+      .mockResolvedValue({ id: "instr-1", status: "SETTLED" }),
     refund: jest.fn().mockResolvedValue({ id: "instr-1", status: "REFUNDED" }),
     fail: jest.fn().mockResolvedValue({ id: "instr-1", status: "FAILED" }),
     findByPO: jest.fn().mockResolvedValue({ id: "instr-1", status: "LOCKED" }),

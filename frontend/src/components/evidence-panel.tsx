@@ -346,8 +346,14 @@ function lifecycleIcon(status: string) {
       return <Clock className="h-3.5 w-3.5 text-blue-500" />;
     case "LOCKED":
       return <Lock className="h-3.5 w-3.5 text-amber-500" />;
-    case "RELEASED":
+    case "SETTLED":
       return <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />;
+    case "FINANCING_REQUESTED":
+      return <Clock className="h-3.5 w-3.5 text-amber-500" />;
+    case "FINANCING_FUNDED":
+      return <CheckCircle2 className="h-3.5 w-3.5 text-amber-500" />;
+    case "SETTLEMENT_PENDING":
+      return <Clock className="h-3.5 w-3.5 text-green-500" />;
     case "FAILED":
       return <XCircle className="h-3.5 w-3.5 text-red-500" />;
     default:
@@ -404,9 +410,10 @@ export function InstrumentLifecycleCard({
               <span className="text-sm font-medium">Payment Instrument</span>
               <Badge
                 variant={
-                  instrument.status === "RELEASED"
+                  instrument.status === "SETTLED"
                     ? "default"
-                    : instrument.status === "LOCKED"
+                    : instrument.status === "LOCKED" ||
+                        instrument.status === "FINANCING_FUNDED"
                       ? "secondary"
                       : instrument.status === "FAILED"
                         ? "destructive"

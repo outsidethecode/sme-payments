@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   BadRequestException,
   ForbiddenException,
   NotFoundException,
@@ -11,6 +12,10 @@ import { PoliciesService } from "../policies/policies.service";
 import { ApprovalsService } from "../approvals/approvals.service";
 import { OrganisationsService } from "../organisations/organisations.service";
 import { SettlementService } from "../settlements/settlement.service";
+import {
+  InstrumentService,
+  SettlementBeneficiaryType,
+} from "../settlements/instrument.service";
 import { SettlementCurrency } from "../settlements/settlement-adapter.interface";
 
 // Simple PO reference generator
@@ -63,6 +68,8 @@ export interface CreatePOInput {
 
 @Injectable()
 export class PurchaseOrdersService {
+  private readonly logger = new Logger(PurchaseOrdersService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly ledger: LedgerService,
@@ -71,6 +78,7 @@ export class PurchaseOrdersService {
     private readonly approvals: ApprovalsService,
     private readonly orgs: OrganisationsService,
     private readonly settlement: SettlementService,
+    private readonly instrumentService: InstrumentService,
   ) {}
 
   async create(input: CreatePOInput) {
@@ -1028,6 +1036,14 @@ export class PurchaseOrdersService {
     return { ...result, _receipt: this.ledger.buildReceipt(event) };
   }
 
+  /**
+   * Buyer acknowledges their obligation to pay. Triggers settlement.
+   *
+   * DOUBLE-PAYMENT PREVENTION:
+   * The recipient is determined by the instrument's settlementBeneficiary,
+   * which is read atomically via SELECT FOR UPDATE in requestSettlement().
+   * This serialises with any concurrent LP funding attempt.
+   */
   async acknowledgeObligation(
     id: string,
     actorId: string,
@@ -1039,14 +1055,19 @@ export class PurchaseOrdersService {
         "Only the buyer can acknowledge the obligation",
       );
 
-    // Check if there's an early payment request
+    // ── Load instrument + early pay ──────────────────────────
+    const instrument = await this.prisma.paymentInstrument.findUnique({
+      where: { purchaseOrderId: id },
+    });
+    if (!instrument) {
+      throw new BadRequestException("PO has no payment instrument");
+    }
+
     const earlyPay = await this.prisma.earlyPaymentRequest.findUnique({
       where: { purchaseOrderId: id },
     });
-    const hasEarlyPay =
-      earlyPay && earlyPay.status === "FUNDED" && earlyPay.liquidityPartnerId;
 
-    // Auto-expire unfunded early payment requests — the PO is settling without LP involvement
+    // Auto-expire unfunded/unrequested early payment requests
     if (earlyPay && earlyPay.status === "REQUESTED") {
       await this.prisma.earlyPaymentRequest.update({
         where: { id: earlyPay.id },
@@ -1063,18 +1084,33 @@ export class PurchaseOrdersService {
           purchaseOrderId: id,
         },
       });
+      // If instrument was in FINANCING_REQUESTED, revert it back to LOCKED
+      if (instrument.status === "FINANCING_REQUESTED") {
+        await this.instrumentService.revertFinancing(instrument.id, actorId);
+      }
     }
 
-    // Resolve currency and recipient account ref
+    // ── Atomically transition instrument to SETTLEMENT_PENDING ──
+    // This uses SELECT FOR UPDATE internally, serialising with any
+    // concurrent confirmFinancing() call in the LP funding path.
     const currency = (po.currency || "GBP") as SettlementCurrency;
-    const recipientId = hasEarlyPay
-      ? earlyPay!.liquidityPartnerId!
-      : po.supplierId;
-    const recipientOrg = await this.orgs.getOrgByUserId(recipientId);
-    const recipientAccountRef = recipientOrg?.bankIban || undefined;
+    const recipientOrg = await this.resolveRecipientFromBeneficiary(
+      instrument,
+      po.supplierId,
+      earlyPay,
+    );
+    const recipientId = recipientOrg.userId;
+    const recipientAccountRef = recipientOrg.bankIban || undefined;
+
+    await this.instrumentService.requestSettlement(
+      { instrumentId: instrument.id, recipientAccountRef },
+      actorId,
+    );
 
     // Platform fee: 0.5% = 50 BPS
     const FEE_BPS = 50;
+    const hasEarlyPay =
+      earlyPay && earlyPay.status === "FUNDED" && earlyPay.liquidityPartnerId;
 
     // Log obligation acknowledgment before settlement
     const event = await this.ledger.logEvent({
@@ -1087,6 +1123,7 @@ export class PurchaseOrdersService {
         totalAmount: po.amount,
         currency,
         recipientId,
+        settlementBeneficiary: instrument.settlementBeneficiary,
         acknowledgedAt: new Date().toISOString(),
       },
       ...sig,
@@ -1151,6 +1188,7 @@ export class PurchaseOrdersService {
         recipientReceives: result.netAmount,
         earlyPaySettlement: !!hasEarlyPay,
         recipientId,
+        settlementBeneficiary: instrument.settlementBeneficiary,
         settlementRail: this.settlement.getAdapterName(),
         externalRef: result.externalRef,
       },
@@ -1158,6 +1196,32 @@ export class PurchaseOrdersService {
 
     const formatted = this.formatPO(settledPO);
     return { ...formatted, _receipt: this.ledger.buildReceipt(event) };
+  }
+
+  /**
+   * Resolve the settlement recipient from the instrument's beneficiary.
+   * This is the SINGLE SOURCE OF TRUTH for who gets paid.
+   */
+  private async resolveRecipientFromBeneficiary(
+    instrument: { settlementBeneficiary: string | null },
+    supplierId: string,
+    earlyPay: { liquidityPartnerId: string | null; status: string } | null,
+  ) {
+    const beneficiary =
+      (instrument.settlementBeneficiary as SettlementBeneficiaryType) ||
+      "SUPPLIER";
+
+    if (beneficiary === "LIQUIDITY_PROVIDER" && earlyPay?.liquidityPartnerId) {
+      const org = await this.orgs.getOrgByUserId(earlyPay.liquidityPartnerId);
+      return {
+        userId: earlyPay.liquidityPartnerId,
+        bankIban: org?.bankIban || null,
+      };
+    }
+
+    // Default: pay the supplier
+    const org = await this.orgs.getOrgByUserId(supplierId);
+    return { userId: supplierId, bankIban: org?.bankIban || null };
   }
 
   async dispute(id: string, actorId: string, sig?: SignatureData) {

@@ -8,16 +8,25 @@ export type InstrumentStatusType =
   | "CREATED"
   | "LOCK_REQUESTED"
   | "LOCKED"
-  | "RELEASE_PENDING"
-  | "RELEASED"
+  | "FINANCING_REQUESTED"
+  | "FINANCING_FUNDED"
+  | "SETTLEMENT_PENDING"
+  | "SETTLED"
   | "REFUNDED"
   | "FAILED";
+
+export type SettlementBeneficiaryType =
+  | "SUPPLIER"
+  | "LIQUIDITY_PROVIDER"
+  | "BUYER";
 
 export interface CreateInstrumentInput {
   purchaseOrderId: string;
   amount: number;
   currency: string;
   payerAccountRef?: string;
+  buyerOrgId?: string;
+  supplierOrgId?: string;
 }
 
 export interface ConfirmLockInput {
@@ -26,14 +35,19 @@ export interface ConfirmLockInput {
   escrowReference?: string;
 }
 
-export interface RequestReleaseInput {
+export interface RequestSettlementInput {
   instrumentId: string;
   recipientAccountRef?: string;
 }
 
-export interface ConfirmReleaseInput {
+export interface ConfirmSettlementInput {
   instrumentId: string;
   bankReference: string;
+}
+
+export interface ConfirmFinancingInput {
+  instrumentId: string;
+  financingPartnerId: string;
 }
 
 export interface RefundInstrumentInput {
@@ -47,9 +61,11 @@ const VALID_TRANSITIONS: Record<InstrumentStatusType, InstrumentStatusType[]> =
   {
     CREATED: ["LOCK_REQUESTED", "FAILED"],
     LOCK_REQUESTED: ["LOCKED", "FAILED"],
-    LOCKED: ["RELEASE_PENDING", "REFUNDED"],
-    RELEASE_PENDING: ["RELEASED", "FAILED"],
-    RELEASED: [],
+    LOCKED: ["FINANCING_REQUESTED", "SETTLEMENT_PENDING", "REFUNDED"],
+    FINANCING_REQUESTED: ["FINANCING_FUNDED", "SETTLEMENT_PENDING", "FAILED"],
+    FINANCING_FUNDED: ["SETTLEMENT_PENDING"],
+    SETTLEMENT_PENDING: ["SETTLED", "FAILED"],
+    SETTLED: [],
     REFUNDED: [],
     FAILED: [],
   };
@@ -69,7 +85,7 @@ export class InstrumentService {
 
   /**
    * Create a new PaymentInstrument in CREATED status.
-   * This is the first step before requesting a lock from the bank.
+   * settlementBeneficiary defaults to SUPPLIER.
    */
   async create(input: CreateInstrumentInput, actorId: string) {
     const instrument = await this.prisma.paymentInstrument.create({
@@ -79,6 +95,9 @@ export class InstrumentService {
         currency: input.currency,
         payerAccountRef: input.payerAccountRef ?? null,
         status: "CREATED",
+        settlementBeneficiary: "SUPPLIER",
+        buyerOrgId: input.buyerOrgId ?? null,
+        supplierOrgId: input.supplierOrgId ?? null,
       },
     });
 
@@ -93,6 +112,7 @@ export class InstrumentService {
         amount: input.amount,
         currency: input.currency,
         payerAccountRef: input.payerAccountRef ?? null,
+        settlementBeneficiary: "SUPPLIER",
       },
     });
 
@@ -183,72 +203,260 @@ export class InstrumentService {
     return updated;
   }
 
-  // ── Request Release ────────────────────────────────────────
+  // ── Request Financing ──────────────────────────────────────
 
   /**
-   * Transition LOCKED → RELEASE_PENDING.
-   * Called when the platform is about to release funds to recipient.
+   * Transition LOCKED → FINANCING_REQUESTED.
+   * Called when a supplier requests early payment for this instrument.
    */
-  async requestRelease(input: RequestReleaseInput, actorId: string) {
+  async requestFinancing(instrumentId: string, actorId: string) {
     const instrument = await this.findAndValidateTransition(
-      input.instrumentId,
-      "RELEASE_PENDING",
+      instrumentId,
+      "FINANCING_REQUESTED",
     );
 
     const updated = await this.prisma.paymentInstrument.update({
-      where: { id: input.instrumentId },
-      data: {
-        status: "RELEASE_PENDING",
-        recipientAccountRef: input.recipientAccountRef ?? null,
-      },
+      where: { id: instrumentId },
+      data: { status: "FINANCING_REQUESTED" },
     });
 
     await this.ledger.logEvent({
       entityType: "PAYMENT_INSTRUMENT",
       entityId: instrument.id,
-      eventType: "INSTRUMENT_RELEASE_REQUESTED",
+      eventType: "FINANCING_REQUESTED",
       actorId,
-      actorRole: "SYSTEM",
+      actorRole: "SUPPLIER",
       payload: {
         purchaseOrderId: instrument.purchaseOrderId,
         amount: instrument.amount,
         currency: instrument.currency,
-        recipientAccountRef: input.recipientAccountRef ?? null,
+        settlementBeneficiary: instrument.settlementBeneficiary,
+      },
+    });
+
+    this.logger.log(`Instrument ${instrumentId}: LOCKED → FINANCING_REQUESTED`);
+
+    return updated;
+  }
+
+  // ── Confirm Financing (atomic beneficiary flip) ────────────
+
+  /**
+   * Transition FINANCING_REQUESTED → FINANCING_FUNDED.
+   * Atomically flips settlementBeneficiary from SUPPLIER to LIQUIDITY_PROVIDER.
+   *
+   * Uses SELECT FOR UPDATE to serialize concurrent access — this is the
+   * core protection against double-payment race conditions.
+   */
+  async confirmFinancing(input: ConfirmFinancingInput, actorId: string) {
+    const updated = await this.prisma.$transaction(async (tx) => {
+      // SELECT FOR UPDATE — serializes concurrent access
+      const rows = await tx.$queryRaw<any[]>`
+        SELECT * FROM payment_instruments
+        WHERE id = ${input.instrumentId}
+        FOR UPDATE
+      `;
+
+      const instrument = rows[0];
+      if (!instrument) {
+        throw new BadRequestException(
+          `Payment instrument ${input.instrumentId} not found`,
+        );
+      }
+
+      const status = instrument.status as InstrumentStatusType;
+      if (status !== "FINANCING_REQUESTED") {
+        throw new BadRequestException(
+          `Cannot fund: instrument is ${status}, expected FINANCING_REQUESTED`,
+        );
+      }
+
+      if (instrument.settlement_beneficiary !== "SUPPLIER") {
+        throw new BadRequestException(
+          `Cannot fund: beneficiary already set to ${instrument.settlement_beneficiary}`,
+        );
+      }
+
+      return tx.paymentInstrument.update({
+        where: { id: input.instrumentId },
+        data: {
+          status: "FINANCING_FUNDED",
+          settlementBeneficiary: "LIQUIDITY_PROVIDER",
+          financingPartnerId: input.financingPartnerId,
+        },
+      });
+    });
+
+    await this.ledger.logEvent({
+      entityType: "PAYMENT_INSTRUMENT",
+      entityId: input.instrumentId,
+      eventType: "FINANCING_FUNDED",
+      actorId,
+      actorRole: "LIQUIDITY_PARTNER",
+      payload: {
+        purchaseOrderId: updated.purchaseOrderId,
+        amount: updated.amount,
+        currency: updated.currency,
+        previousBeneficiary: "SUPPLIER",
+        newBeneficiary: "LIQUIDITY_PROVIDER",
+        financingPartnerId: input.financingPartnerId,
       },
     });
 
     this.logger.log(
-      `Instrument ${input.instrumentId}: LOCKED → RELEASE_PENDING`,
+      `Instrument ${input.instrumentId}: FINANCING_REQUESTED → FINANCING_FUNDED (beneficiary → LIQUIDITY_PROVIDER)`,
     );
 
     return updated;
   }
 
-  // ── Confirm Release ────────────────────────────────────────
+  // ── Revert Financing (compensating transaction) ────────────
 
   /**
-   * Transition RELEASE_PENDING → RELEASED.
+   * Revert FINANCING_FUNDED → LOCKED (or FINANCING_REQUESTED → LOCKED).
+   * Used as a compensating transaction when the bank adapter fails after
+   * the beneficiary was flipped.
+   */
+  async revertFinancing(instrumentId: string, actorId: string) {
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const rows = await tx.$queryRaw<any[]>`
+        SELECT * FROM payment_instruments
+        WHERE id = ${instrumentId}
+        FOR UPDATE
+      `;
+
+      const instrument = rows[0];
+      if (!instrument) {
+        throw new BadRequestException(
+          `Payment instrument ${instrumentId} not found`,
+        );
+      }
+
+      const status = instrument.status as InstrumentStatusType;
+      if (status !== "FINANCING_FUNDED" && status !== "FINANCING_REQUESTED") {
+        throw new BadRequestException(
+          `Cannot revert financing: instrument is ${status}`,
+        );
+      }
+
+      return tx.paymentInstrument.update({
+        where: { id: instrumentId },
+        data: {
+          status: "LOCKED",
+          settlementBeneficiary: "SUPPLIER",
+          financingPartnerId: null,
+        },
+      });
+    });
+
+    await this.ledger.logEvent({
+      entityType: "PAYMENT_INSTRUMENT",
+      entityId: instrumentId,
+      eventType: "FINANCING_REVERTED",
+      actorId,
+      actorRole: "SYSTEM",
+      payload: {
+        purchaseOrderId: updated.purchaseOrderId,
+        reason: "Bank adapter failure — compensating transaction",
+        previousBeneficiary: "LIQUIDITY_PROVIDER",
+        newBeneficiary: "SUPPLIER",
+      },
+    });
+
+    this.logger.warn(
+      `Instrument ${instrumentId}: FINANCING reverted → LOCKED (beneficiary → SUPPLIER)`,
+    );
+
+    return updated;
+  }
+
+  // ── Request Settlement ─────────────────────────────────────
+
+  /**
+   * Transition LOCKED | FINANCING_FUNDED → SETTLEMENT_PENDING.
+   * Uses SELECT FOR UPDATE to atomically block LP funding.
+   *
+   * This is the settlement gate — once SETTLEMENT_PENDING, no LP can fund.
+   */
+  async requestSettlement(input: RequestSettlementInput, actorId: string) {
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const rows = await tx.$queryRaw<any[]>`
+        SELECT * FROM payment_instruments
+        WHERE id = ${input.instrumentId}
+        FOR UPDATE
+      `;
+
+      const instrument = rows[0];
+      if (!instrument) {
+        throw new BadRequestException(
+          `Payment instrument ${input.instrumentId} not found`,
+        );
+      }
+
+      const status = instrument.status as InstrumentStatusType;
+      const allowed = VALID_TRANSITIONS[status];
+      if (!allowed.includes("SETTLEMENT_PENDING")) {
+        throw new BadRequestException(
+          `Invalid instrument transition: ${status} → SETTLEMENT_PENDING`,
+        );
+      }
+
+      return tx.paymentInstrument.update({
+        where: { id: input.instrumentId },
+        data: {
+          status: "SETTLEMENT_PENDING",
+          recipientAccountRef: input.recipientAccountRef ?? null,
+        },
+      });
+    });
+
+    await this.ledger.logEvent({
+      entityType: "PAYMENT_INSTRUMENT",
+      entityId: input.instrumentId,
+      eventType: "SETTLEMENT_INITIATED",
+      actorId,
+      actorRole: "SYSTEM",
+      payload: {
+        purchaseOrderId: updated.purchaseOrderId,
+        amount: updated.amount,
+        currency: updated.currency,
+        settlementBeneficiary: updated.settlementBeneficiary,
+        recipientAccountRef: input.recipientAccountRef ?? null,
+      },
+    });
+
+    this.logger.log(
+      `Instrument ${input.instrumentId}: → SETTLEMENT_PENDING (beneficiary: ${updated.settlementBeneficiary})`,
+    );
+
+    return updated;
+  }
+
+  // ── Confirm Settlement ─────────────────────────────────────
+
+  /**
+   * Transition SETTLEMENT_PENDING → SETTLED.
    * Called when the bank confirms the release.
    */
-  async confirmRelease(input: ConfirmReleaseInput, actorId: string) {
+  async confirmSettlement(input: ConfirmSettlementInput, actorId: string) {
     const instrument = await this.findAndValidateTransition(
       input.instrumentId,
-      "RELEASED",
+      "SETTLED",
     );
 
     const updated = await this.prisma.paymentInstrument.update({
       where: { id: input.instrumentId },
       data: {
-        status: "RELEASED",
+        status: "SETTLED",
         bankReference: input.bankReference,
-        releasedAt: new Date(),
+        settledAt: new Date(),
       },
     });
 
     await this.ledger.logEvent({
       entityType: "PAYMENT_INSTRUMENT",
       entityId: instrument.id,
-      eventType: "INSTRUMENT_RELEASED",
+      eventType: "INSTRUMENT_SETTLED",
       actorId,
       actorRole: "SYSTEM",
       payload: {
@@ -256,11 +464,12 @@ export class InstrumentService {
         amount: instrument.amount,
         currency: instrument.currency,
         bankReference: input.bankReference,
+        settlementBeneficiary: updated.settlementBeneficiary,
       },
     });
 
     this.logger.log(
-      `Instrument ${input.instrumentId}: RELEASE_PENDING → RELEASED (bank ref: ${input.bankReference})`,
+      `Instrument ${input.instrumentId}: SETTLEMENT_PENDING → SETTLED (bank ref: ${input.bankReference})`,
     );
 
     return updated;
@@ -271,6 +480,7 @@ export class InstrumentService {
   /**
    * Transition LOCKED → REFUNDED.
    * Called when a locked instrument needs to be refunded (e.g. dispute).
+   * Sets beneficiary to BUYER.
    */
   async refund(input: RefundInstrumentInput, actorId: string) {
     const instrument = await this.findAndValidateTransition(
@@ -282,8 +492,9 @@ export class InstrumentService {
       where: { id: input.instrumentId },
       data: {
         status: "REFUNDED",
+        settlementBeneficiary: "BUYER",
         failureReason: input.reason,
-        releasedAt: new Date(), // marks the time funds were returned
+        settledAt: new Date(), // marks the time funds were returned
       },
     });
 
@@ -298,6 +509,7 @@ export class InstrumentService {
         amount: instrument.amount,
         currency: instrument.currency,
         reason: input.reason,
+        settlementBeneficiary: "BUYER",
       },
     });
 
@@ -311,7 +523,7 @@ export class InstrumentService {
   // ── Fail ───────────────────────────────────────────────────
 
   /**
-   * Transition to FAILED state (from CREATED, LOCK_REQUESTED, or RELEASE_PENDING).
+   * Transition to FAILED state (from CREATED, LOCK_REQUESTED, FINANCING_REQUESTED, or SETTLEMENT_PENDING).
    */
   async fail(instrumentId: string, reason: string, actorId: string) {
     const instrument = await this.findAndValidateTransition(

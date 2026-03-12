@@ -584,32 +584,45 @@ enum InstrumentStatus {
   CREATED
   LOCK_REQUESTED
   LOCKED
-  RELEASE_PENDING
-  RELEASED
+  FINANCING_REQUESTED
+  FINANCING_FUNDED
+  SETTLEMENT_PENDING
+  SETTLED
   REFUNDED
   FAILED
 }
 
+enum SettlementBeneficiary {
+  SUPPLIER
+  LIQUIDITY_PROVIDER
+  BUYER
+}
+
 model PaymentInstrument {
-  id                  String           @id @default(uuid())
-  purchaseOrderId     String           @unique @map("purchase_order_id")
-  type                InstrumentType   @default(ESCROW_LOCK)
-  amount              Int
-  currency            String           @default("GBP")
-  status              InstrumentStatus @default(CREATED)
-  escrowReference     String?          @map("escrow_reference")       // bank escrow account ref
-  bankReference       String?          @map("bank_reference")         // SARIE / ACH transaction ref
-  payerAccountRef     String?          @map("payer_account_ref")      // buyer IBAN
-  recipientAccountRef String?          @map("recipient_account_ref")  // supplier/LP IBAN
-  failureReason       String?          @map("failure_reason")
-  createdAt           DateTime         @default(now()) @map("created_at")
-  lockedAt            DateTime?        @map("locked_at")
-  releasedAt          DateTime?        @map("released_at")
+  id                    String                @id @default(uuid())
+  purchaseOrderId       String                @unique @map("purchase_order_id")
+  type                  InstrumentType        @default(ESCROW_LOCK)
+  amount                Int
+  currency              String                @default("GBP")
+  status                InstrumentStatus      @default(CREATED)
+  settlementBeneficiary SettlementBeneficiary @default(SUPPLIER) @map("settlement_beneficiary")
+  escrowReference       String?               @map("escrow_reference")       // bank escrow account ref
+  bankReference         String?               @map("bank_reference")         // SARIE / ACH transaction ref
+  payerAccountRef       String?               @map("payer_account_ref")      // buyer IBAN
+  recipientAccountRef   String?               @map("recipient_account_ref")  // supplier/LP IBAN
+  buyerOrgId            String?               @map("buyer_org_id")
+  supplierOrgId         String?               @map("supplier_org_id")
+  financingPartnerId    String?               @map("financing_partner_id")   // LP user id
+  failureReason         String?               @map("failure_reason")
+  createdAt             DateTime              @default(now()) @map("created_at")
+  lockedAt              DateTime?             @map("locked_at")
+  settledAt             DateTime?             @map("settled_at")
 
   purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
 
   @@index([status])
   @@index([bankReference])
+  @@index([settlementBeneficiary])
   @@map("payment_instruments")
 }
 

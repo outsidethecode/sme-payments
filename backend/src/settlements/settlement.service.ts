@@ -326,12 +326,17 @@ export class SettlementService {
     const feeAmount = Math.round((input.totalAmount * input.feeBps) / 10_000);
     const netAmount = input.totalAmount - feeAmount;
 
-    // Step 1b: Instrument → RELEASE_PENDING
+    // Step 1b: Instrument → SETTLEMENT_PENDING (if not already transitioned by acknowledgeObligation)
     const instrument = await this.instrumentService.findByPO(
       input.purchaseOrderId,
     );
-    if (instrument && instrument.status === "LOCKED") {
-      await this.instrumentService.requestRelease(
+    if (
+      instrument &&
+      ["LOCKED", "FINANCING_FUNDED", "FINANCING_REQUESTED"].includes(
+        instrument.status,
+      )
+    ) {
+      await this.instrumentService.requestSettlement(
         {
           instrumentId: instrument.id,
           recipientAccountRef: input.recipientAccountRef,
@@ -391,7 +396,7 @@ export class SettlementService {
       if (instrument && instrument.status === "LOCKED") {
         await this.instrumentService
           .fail(instrument.id, (error as Error).message, input.recipientId)
-          .catch(() => {}); // best-effort; instrument may already be in RELEASE_PENDING
+          .catch(() => {}); // best-effort; instrument may already be in SETTLEMENT_PENDING
       }
       throw new BadRequestException(
         (error as Error).message || "Failed to release funds",
@@ -401,7 +406,10 @@ export class SettlementService {
     if (result.status === TransferStatus.FAILED) {
       const reason = result.failureReason || "Adapter returned FAILED";
       await this.failSettlement(settlement.id, reason);
-      if (instrument && instrument.status === "LOCKED") {
+      if (
+        instrument &&
+        ["LOCKED", "SETTLEMENT_PENDING"].includes(instrument.status)
+      ) {
         await this.instrumentService
           .fail(instrument.id, reason, input.recipientId)
           .catch(() => {});
@@ -433,10 +441,10 @@ export class SettlementService {
       result.processedAt,
     );
 
-    // Step 5b: Instrument → RELEASED
+    // Step 5b: Instrument → SETTLED
     if (instrument) {
       await this.instrumentService
-        .confirmRelease(
+        .confirmSettlement(
           { instrumentId: instrument.id, bankReference: result.externalRef },
           input.recipientId,
         )
