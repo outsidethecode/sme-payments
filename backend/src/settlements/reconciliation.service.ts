@@ -33,6 +33,7 @@ export interface ReconciliationReportResult {
   mismatches: number;
   alerts: ReconciliationAlert[];
   ledgerBalance: number | null;
+  ledgerBalanceByCurrency: Record<string, number>;
   bankBalance: number | null;
   variance: number | null;
 }
@@ -220,6 +221,17 @@ export class ReconciliationService {
     });
     const ledgerBalance = lockedAgg._sum.amount ?? 0;
 
+    // Per-currency ledger balance breakdown
+    const lockedByCurrency = await this.prisma.paymentInstrument.groupBy({
+      by: ["currency"],
+      where: { status: "LOCKED" },
+      _sum: { amount: true },
+    });
+    const ledgerBalanceByCurrency: Record<string, number> = {};
+    for (const row of lockedByCurrency) {
+      ledgerBalanceByCurrency[row.currency] = row._sum.amount ?? 0;
+    }
+
     // bankBalance is only available if the adapter supports it;
     // for now we leave it null (future adapters can expose this).
     const bankBalance: number | null = null;
@@ -281,6 +293,7 @@ export class ReconciliationService {
       mismatches,
       alerts,
       ledgerBalance,
+      ledgerBalanceByCurrency,
       bankBalance,
       variance,
     };

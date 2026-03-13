@@ -194,13 +194,23 @@ export default function ReconciliationPage() {
             icon={Shield}
             label="Ledger Balance"
             value={
-              latest.ledgerBalance !== null
-                ? formatCurrency(latest.ledgerBalance)
-                : "—"
+              latest.ledgerBalanceByCurrency &&
+              Object.keys(latest.ledgerBalanceByCurrency).length > 0
+                ? Object.entries(latest.ledgerBalanceByCurrency)
+                    .map(([ccy, amt]) =>
+                      formatCurrency(amt, ccy as "GBP" | "SAR"),
+                    )
+                    .join(" / ")
+                : latest.ledgerBalance !== null
+                  ? formatCurrency(
+                      latest.ledgerBalance,
+                      latest.currency ?? "GBP",
+                    )
+                  : "—"
             }
             subtitle={
               latest.variance !== null
-                ? `Variance: ${formatCurrency(latest.variance)}`
+                ? `Variance: ${formatCurrency(latest.variance, latest.currency ?? "GBP")}`
                 : "Bank balance not available"
             }
           />
@@ -344,9 +354,19 @@ export default function ReconciliationPage() {
                           )}
                         </TableCell>
                         <TableCell className="text-right">
-                          {r.ledgerBalance !== null
-                            ? formatCurrency(r.ledgerBalance)
-                            : "—"}
+                          {r.ledgerBalanceByCurrency &&
+                          Object.keys(r.ledgerBalanceByCurrency).length > 0
+                            ? Object.entries(r.ledgerBalanceByCurrency)
+                                .map(([ccy, amt]) =>
+                                  formatCurrency(amt, ccy as "GBP" | "SAR"),
+                                )
+                                .join(" / ")
+                            : r.ledgerBalance !== null
+                              ? formatCurrency(
+                                  r.ledgerBalance,
+                                  r.currency ?? "GBP",
+                                )
+                              : "—"}
                         </TableCell>
                         <TableCell>
                           {r.mismatches === 0 ? (

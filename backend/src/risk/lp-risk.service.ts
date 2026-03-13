@@ -6,7 +6,9 @@ import { LedgerService } from "../ledger/ledger.service";
 
 export interface ExposureReport {
   liquidityPartnerId: string;
+  currency: string;
   totalExposure: number;
+  exposureByCurrency: Record<string, number>;
   fundingLimit: number | null;
   utilisationPct: number | null;
   buyerConcentration: Record<string, number>;
@@ -76,16 +78,17 @@ export class LpRiskService {
    * Exposure = sum of all funded but unsettled early payment advances.
    */
   async calculateExposure(lpId: string): Promise<ExposureReport> {
-    // Get LP's funding limit from org
+    // Get LP's organisation (funding limit + currency)
     const lpOrg = await this.prisma.organisation.findFirst({
       where: {
         members: { some: { userId: lpId } },
         type: "LIQUIDITY_PARTNER",
       },
-      select: { fundingLimitTotal: true },
+      select: { fundingLimitTotal: true, currency: true },
     });
 
     const fundingLimit = lpOrg?.fundingLimitTotal ?? null;
+    const orgCurrency = lpOrg?.currency ?? "GBP";
 
     // Get all active (funded but not yet settled) early payment requests
     const activeAdvances = await this.prisma.earlyPaymentRequest.findMany({
@@ -108,11 +111,13 @@ export class LpRiskService {
       },
     });
 
-    // Calculate total exposure
-    const totalExposure = activeAdvances.reduce(
-      (sum, a) => sum + a.netAdvance,
-      0,
-    );
+    // Calculate total exposure and per-currency breakdown
+    const exposureByCurrency: Record<string, number> = {};
+    const totalExposure = activeAdvances.reduce((sum, a) => {
+      const ccy = a.currency ?? orgCurrency;
+      exposureByCurrency[ccy] = (exposureByCurrency[ccy] ?? 0) + a.netAdvance;
+      return sum + a.netAdvance;
+    }, 0);
 
     // Build concentration maps
     const buyerConcentration: Record<string, number> = {};
@@ -184,7 +189,9 @@ export class LpRiskService {
 
     return {
       liquidityPartnerId: lpId,
+      currency: orgCurrency,
       totalExposure,
+      exposureByCurrency,
       fundingLimit,
       utilisationPct,
       buyerConcentration,

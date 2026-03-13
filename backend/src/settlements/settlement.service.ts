@@ -150,6 +150,7 @@ export class SettlementService {
         purchaseOrderId: input.purchaseOrderId,
         buyerId: input.buyerId,
         amount: input.amount,
+        currency: input.currency,
         status: "PENDING",
       },
     });
@@ -431,6 +432,7 @@ export class SettlementService {
           purchaseOrderId: input.purchaseOrderId,
           feeType: "TRANSACTION",
           amount: feeAmount,
+          currency: input.currency,
         },
       });
     });

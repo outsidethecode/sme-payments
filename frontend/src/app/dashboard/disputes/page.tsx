@@ -263,7 +263,7 @@ export default function DisputesPage() {
                                 onChange={(e) =>
                                   setRefundAmount(e.target.value)
                                 }
-                                placeholder="e.g. 50000 for £500.00"
+                                placeholder={`e.g. 50000 for ${d.purchaseOrder?.currency === "SAR" ? "SAR 500.00" : "£500.00"}`}
                               />
                             </div>
                           )}

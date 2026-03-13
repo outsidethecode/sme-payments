@@ -328,9 +328,27 @@ function AdminView() {
           <CardDescription>Total completed settlement volume</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="text-3xl font-bold">
-            {formatCurrency(totalVolume, "GBP")}
-          </div>
+          {(() => {
+            // Group completed settlements by currency
+            const byCurrency: Record<string, number> = {};
+            for (const s of completed) {
+              const ccy = s.currency ?? "GBP";
+              byCurrency[ccy] = (byCurrency[ccy] ?? 0) + s.amount;
+            }
+            const entries = Object.entries(byCurrency);
+            if (entries.length === 0) {
+              return <div className="text-3xl font-bold">—</div>;
+            }
+            return (
+              <div className="space-y-1">
+                {entries.map(([ccy, vol]) => (
+                  <div key={ccy} className="text-3xl font-bold">
+                    {formatCurrency(vol, ccy as "GBP" | "SAR")}
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
         </CardContent>
       </Card>
 

@@ -1,9 +1,9 @@
 # SME Payments Platform — Technical Reference
 
-**Version:** 2.1  
-**Date:** 11 March 2026  
+**Version:** 2.3  
+**Date:** 12 March 2026  
 **Audience:** Engineering team, auditors, integration partners, regulators  
-**Status:** Production-ready (312/312 tests passing, 19 test suites, isolated test database)
+**Status:** Production-ready (431/431 tests passing, 25 test suites, isolated test database)
 
 ---
 
@@ -28,62 +28,70 @@
    - 4.4 [LP Funding Policy & Risk Controls](#44-lp-funding-policy--risk-controls)
    - 4.5 [Expiry Logic](#45-expiry-logic)
 5. [Payment Lock State Machine](#5-payment-lock-state-machine)
-6. [Settlement State Machine](#6-settlement-state-machine)
-7. [Dispute State Machine](#7-dispute-state-machine)
-8. [The Immutable Ledger](#8-the-immutable-ledger)
-   - 8.1 [Design Principles](#81-design-principles)
-   - 8.2 [Hash Chain Algorithm](#82-hash-chain-algorithm)
-   - 8.3 [Canonical JSON Serialization](#83-canonical-json-serialization)
-   - 8.4 [Concurrency & Retry Logic](#84-concurrency--retry-logic)
-   - 8.5 [Event Types Reference](#85-event-types-reference)
-9. [Merkle Tree Anchoring & External Notarization](#9-merkle-tree-anchoring--external-notarization)
-   - 9.1 [Overview](#91-overview)
-   - 9.2 [Merkle Tree Algorithm](#92-merkle-tree-algorithm)
-   - 9.3 [Anchor Creation Flow](#93-anchor-creation-flow)
-   - 9.4 [External Anchoring via Sigstore Rekor](#94-external-anchoring-via-sigstore-rekor)
-   - 9.5 [Anchor Provider Architecture](#95-anchor-provider-architecture)
-   - 9.6 [Inclusion Proofs](#96-inclusion-proofs)
-   - 9.7 [Anchor Chain Verification](#97-anchor-chain-verification)
-   - 9.8 [Auto-Anchoring Scheduler](#98-auto-anchoring-scheduler)
-   - 9.9 [LedgerAnchor Schema](#99-ledgeranchor-schema)
-10. [Passkey Signing (WebAuthn)](#10-passkey-signing-webauthn)
-    - 10.1 [Challenge Generation](#101-challenge-generation)
-    - 10.2 [Assertion Verification](#102-assertion-verification)
-    - 10.3 [What Gets Stored](#103-what-gets-stored)
-11. [Trust Envelope (Evidence Pack v2.0)](#11-trust-envelope-evidence-pack-v20)
-    - 11.1 [Purpose](#111-purpose)
-    - 11.2 [Generation Flow](#112-generation-flow)
-    - 11.3 [Complete Envelope Structure](#113-complete-envelope-structure)
-    - 11.4 [Section-by-Section Reference](#114-section-by-section-reference)
-    - 11.5 [Integrity Hash Hierarchy](#115-integrity-hash-hierarchy)
-    - 11.6 [Platform Signature](#116-platform-signature)
-12. [Proof Bundles](#12-proof-bundles)
-    - 12.1 [Structure](#121-structure)
-    - 12.2 [Per-Event vs Per-Entity Generation](#122-per-event-vs-per-entity-generation)
-    - 12.3 [Public Registries](#123-public-registries)
-13. [Verification System](#13-verification-system)
-    - 13.1 [Three Layers of Verification](#131-three-layers-of-verification)
-    - 13.2 [Full Envelope Verification — 15 Checks](#132-full-envelope-verification--15-checks)
-    - 13.3 [Standalone CLI Verifier](#133-standalone-cli-verifier)
-    - 13.4 [Web Verification Service](#134-web-verification-service)
-    - 13.5 [Proof Bundle Verification — 7 Steps](#135-proof-bundle-verification--7-steps)
-14. [Cryptographic Primitives](#14-cryptographic-primitives)
-    - 14.1 [Algorithms Used](#141-algorithms-used)
-    - 14.2 [COSE → SPKI Key Conversion](#142-cose--spki-key-conversion)
-    - 14.3 [DER Signature Encoding](#143-der-signature-encoding)
-    - 14.4 [Platform Signing Key Management](#144-platform-signing-key-management)
-15. [Evidence Attachments](#15-evidence-attachments)
-16. [API Reference](#16-api-reference)
-17. [Local Receipts (Layer 4)](#17-local-receipts-layer-4)
-    - 17.1 [Trust Model Context](#171-trust-model-context)
-    - 17.2 [Receipt Format](#172-receipt-format)
-    - 17.3 [Backend: Receipt Generation](#173-backend-receipt-generation)
-    - 17.4 [Frontend: IndexedDB Storage](#174-frontend-indexeddb-storage)
-    - 17.5 [Verification Endpoint](#175-verification-endpoint)
-    - 17.6 [My Receipts Dashboard](#176-my-receipts-dashboard)
-18. [Testing Infrastructure](#18-testing-infrastructure)
-    - 18.1 [Test Database Isolation](#181-test-database-isolation)
-    - 18.2 [Test Lifecycle](#182-test-lifecycle)
+6. [Payment Instrument State Machine](#6-payment-instrument-state-machine)
+   - 6.1 [Instrument States](#61-instrument-states)
+   - 6.2 [Settlement Beneficiary](#62-settlement-beneficiary)
+   - 6.3 [Transition Table](#63-transition-table)
+   - 6.4 [State Diagram](#64-state-diagram)
+   - 6.5 [Atomic Locking (`SELECT FOR UPDATE`)](#65-atomic-locking-select-for-update)
+   - 6.6 [Compensating Transactions](#66-compensating-transactions)
+7. [Settlement State Machine](#7-settlement-state-machine)
+8. [Dispute State Machine](#8-dispute-state-machine)
+9. [The Immutable Ledger](#9-the-immutable-ledger)
+   - 9.1 [Design Principles](#91-design-principles)
+   - 9.2 [Hash Chain Algorithm](#92-hash-chain-algorithm)
+   - 9.3 [Canonical JSON Serialization](#93-canonical-json-serialization)
+   - 9.4 [Concurrency & Retry Logic](#94-concurrency--retry-logic)
+   - 9.5 [Event Types Reference](#95-event-types-reference)
+10. [Merkle Tree Anchoring & External Notarization](#10-merkle-tree-anchoring--external-notarization)
+    - 10.1 [Overview](#101-overview)
+    - 10.2 [Merkle Tree Algorithm](#102-merkle-tree-algorithm)
+    - 10.3 [Anchor Creation Flow](#103-anchor-creation-flow)
+    - 10.4 [External Anchoring via Sigstore Rekor](#104-external-anchoring-via-sigstore-rekor)
+    - 10.5 [Anchor Provider Architecture](#105-anchor-provider-architecture)
+    - 10.6 [Inclusion Proofs](#106-inclusion-proofs)
+    - 10.7 [Anchor Chain Verification](#107-anchor-chain-verification)
+    - 10.8 [Auto-Anchoring Scheduler](#108-auto-anchoring-scheduler)
+    - 10.9 [LedgerAnchor Schema](#109-ledgeranchor-schema)
+11. [Passkey Signing (WebAuthn)](#11-passkey-signing-webauthn)
+    - 11.1 [Challenge Generation](#111-challenge-generation)
+    - 11.2 [Assertion Verification](#112-assertion-verification)
+    - 11.3 [What Gets Stored](#113-what-gets-stored)
+12. [Trust Envelope (Evidence Pack v2.0)](#12-trust-envelope-evidence-pack-v20)
+    - 12.1 [Purpose](#121-purpose)
+    - 12.2 [Generation Flow](#122-generation-flow)
+    - 12.3 [Complete Envelope Structure](#123-complete-envelope-structure)
+    - 12.4 [Section-by-Section Reference](#124-section-by-section-reference)
+    - 12.5 [Integrity Hash Hierarchy](#125-integrity-hash-hierarchy)
+    - 12.6 [Platform Signature](#126-platform-signature)
+13. [Proof Bundles](#13-proof-bundles)
+    - 13.1 [Structure](#131-structure)
+    - 13.2 [Per-Event vs Per-Entity Generation](#132-per-event-vs-per-entity-generation)
+    - 13.3 [Public Registries](#133-public-registries)
+14. [Verification System](#14-verification-system)
+    - 14.1 [Three Layers of Verification](#141-three-layers-of-verification)
+    - 14.2 [Full Envelope Verification — 15 Checks](#142-full-envelope-verification--15-checks)
+    - 14.3 [Standalone CLI Verifier](#143-standalone-cli-verifier)
+    - 14.4 [Web Verification Service](#144-web-verification-service)
+    - 14.5 [Proof Bundle Verification — 7 Steps](#145-proof-bundle-verification--7-steps)
+15. [Cryptographic Primitives](#15-cryptographic-primitives)
+    - 15.1 [Algorithms Used](#151-algorithms-used)
+    - 15.2 [COSE → SPKI Key Conversion](#152-cose--spki-key-conversion)
+    - 15.3 [DER Signature Encoding](#153-der-signature-encoding)
+    - 15.4 [Platform Signing Key Management](#154-platform-signing-key-management)
+16. [Evidence Attachments](#16-evidence-attachments)
+17. [API Reference](#17-api-reference)
+18. [Local Receipts (Layer 4)](#18-local-receipts-layer-4)
+    - 18.1 [Trust Model Context](#181-trust-model-context)
+    - 18.2 [Receipt Format](#182-receipt-format)
+    - 18.3 [Backend: Receipt Generation](#183-backend-receipt-generation)
+    - 18.4 [Frontend: IndexedDB Storage](#184-frontend-indexeddb-storage)
+    - 18.5 [Verification Endpoint](#185-verification-endpoint)
+    - 18.6 [My Receipts Dashboard](#186-my-receipts-dashboard)
+19. [Testing Infrastructure](#19-testing-infrastructure)
+    - 19.1 [Test Database Isolation](#191-test-database-isolation)
+    - 19.2 [Test Lifecycle](#192-test-lifecycle)
+20. [Security Considerations](#20-security-considerations)
 19. [Security Considerations](#19-security-considerations)
 
 ---
@@ -96,6 +104,8 @@ The SME Payments Platform is a B2B trade finance system that enables buyers and 
 
 - **Purchase Order Lifecycle** — Create, negotiate, approve, fulfil, verify, and settle POs with role-based guards at every transition
 - **Payment Locks** — Buyer funds are reserved on PO acceptance and released on settlement, ensuring supplier confidence
+- **Multi-Currency Architecture** — All monetary amounts stored as integer minor units (pence/halalah) with an explicit `Currency` companion field; currency is derived from organisation jurisdiction (`UK→GBP`, `KSA→SAR`) and propagated immutably from PO through every downstream record (lock, instrument, settlement, fee, dispute)
+- **Double-Payment Prevention** — Atomic `SELECT FOR UPDATE` transactions on the `PaymentInstrument` row prevent the race condition between LP funding and buyer settlement; a `settlementBeneficiary` field is the single source of truth for who receives escrow funds
 - **Early Payment** — Suppliers can request early payment; liquidity partners fund advances against locked POs
 - **Immutable Ledger** — Append-only event log with per-entity SHA-256 hash chains
 - **Merkle Tree Anchoring** — Periodic global anchors: a binary SHA-256 Merkle tree over all entity head hashes, producing a single root that commits to the entire ledger state
@@ -116,6 +126,7 @@ The SME Payments Platform is a B2B trade finance system that enables buyers and 
 | **EarlyPaymentsService** | `src/early-payments/` | Early payment request/fund lifecycle |
 | **PaymentLocksService** | `src/payment-locks/` | Payment lock lifecycle |
 | **SettlementService** | `src/settlements/` | Fund reservation, release, refund via pluggable adapters |
+| **InstrumentService** | `src/settlements/` | Payment instrument lifecycle with atomic `SELECT FOR UPDATE` transitions; owns `settlementBeneficiary` |
 | **LedgerService** | `src/ledger/` | Append-only event log with hash chain |
 | **ProofGeneratorService** | `src/proofs/` | Self-contained proof bundles per event |
 | **ProofVerifierService** | `src/proofs/` | Stateless per-bundle verification (7 steps) |
@@ -127,14 +138,16 @@ The SME Payments Platform is a B2B trade finance system that enables buyers and 
 | **RekorProvider** | `src/ledger/anchor-providers/` | External anchoring via Sigstore Rekor transparency log |
 | **NoopProvider** | `src/ledger/anchor-providers/` | No-op anchor provider for development/testing |
 | **ApprovalsService** | `src/approvals/` | Org policy-based multi-signature approval chain |
-| **PoliciesService** | `src/policies/` | Configurable business rules (PO limits, approval thresholds, LP risk) |
+| **PoliciesService** | `src/policies/` | Configurable business rules (PO limits, approval thresholds, LP risk) — currency-aware per-org limits |
+| **FraudControlsService** | `src/risk/` | Velocity checks, evidence thresholds — all limits currency-specific |
 | **DisputesService** | `src/disputes/` | Dispute lifecycle with ADMIN resolution |
 | **PasskeysService** | `src/passkeys/` | WebAuthn credential registration and assertion |
 
 ### Data Flow — Transaction Lifecycle
 
 ```
-Buyer creates PO
+Buyer creates PO (currency inherited from buyer's Organisation)
+    → Currency propagated: PO.currency = Organisation.currency
     → LedgerService.logEvent(PO_CREATED)
         → Hash chain extended (entity-scoped)
 
@@ -149,7 +162,8 @@ Buyer verifies delivery
     → LedgerService.logEvent(DELIVERY_VERIFIED)
 
 Buyer acknowledges payment obligation
-    → SettlementService.settlePO() — funds released
+    → InstrumentService.requestSettlement() — atomic SELECT FOR UPDATE; reads settlementBeneficiary
+    → SettlementService.settlePO() — funds released to beneficiary (supplier or LP)
     → LedgerService.logEvent(SETTLEMENT_COMPLETED)
     → PO → SETTLED (terminal)
 
@@ -174,8 +188,25 @@ The platform delegates actual money movement to a pluggable `SettlementAdapter` 
 
 | Adapter | Purpose |
 |---------|---------|
-| `SimulatedAdapter` | In-memory balance tracking for development/demo |
-| `KsaBankAdapter` | Saudi bank rail integration (production) |
+| `SimulatedAdapter` | In-memory balance tracking for development/demo (supports GBP + SAR) |
+| `KsaBankAdapter` | Saudi bank rail integration via SARIE (SAR only) |
+
+Each adapter declares its `supportedCurrencies` array. The settlement service validates that the transaction currency is supported by the selected adapter before execution.
+
+### Currency Propagation Rule
+
+```
+Organisation.currency (from jurisdiction)
+    → PurchaseOrder.currency (immutable after creation)
+        → PaymentLock.currency
+        → PaymentInstrument.currency
+        → Settlement.currency
+        → PlatformFee.currency
+        → EarlyPaymentRequest.currency
+        → Dispute.currency
+```
+
+Currency is set once at PO creation from the buyer's org default and **never changes**. All downstream records inherit the PO's currency. See §7 for the full multi-currency design.
 
 This means the trust/evidence layer is independent of the actual payment rail.
 
@@ -294,11 +325,12 @@ This means the trust/evidence layer is independent of the actual payment rail.
 When a buyer creates a PO:
 
 1. **Supplier validation** — The target user must exist and have the `SUPPLIER` role
-2. **Amount limits** — The platform evaluates the buyer's organisation's `PO_ORDER_LIMITS` policy rule. Defaults:
+2. **Currency assignment** — The PO's `currency` is set from `buyerOrg.currency` (which is derived from the org's jurisdiction: `UK→GBP`, `KSA→SAR`). Currency is **immutable** after creation.
+3. **Amount limits** — The platform evaluates the buyer's organisation's `PO_ORDER_LIMITS` policy rule using **currency-specific thresholds**:
    - GBP: £500 minimum, £250,000 maximum
    - SAR: ر.س1,875 minimum, ر.س937,500 maximum
-3. **Tax computation** — VAT is computed based on jurisdiction (UK 20%, KSA 15%)
-4. **Reference generation** — Unique PO reference number (e.g., `PO-ABCD1234-XY12`)
+4. **Tax computation** — VAT is computed based on jurisdiction (UK 20%, KSA 15%)
+5. **Reference generation** — Unique PO reference number (e.g., `PO-ABCD1234-XY12`)
 
 ### 3.5 Approval Chain
 
@@ -340,16 +372,26 @@ Note: `markDelivered()` can be called directly from ACCEPTED (skipping SHIPPED),
 
 When the buyer calls `acknowledgeObligation()` on a VERIFIED PO:
 
-1. **Platform fee** — 0.5% (50 basis points) deducted from the locked amount
-2. **Recipient determination**:
-   - If an early payment request exists with status `FUNDED` and a `liquidityPartnerId`, the recipient is the **LP** (they recoup their advance)
-   - Otherwise, the recipient is the **supplier**
-3. **Early payment handling**:
-   - If a `REQUESTED` (unfunded) early payment exists, it is auto-expired (`EARLY_PAY_EXPIRED` event)
-   - If a `FUNDED` early payment exists, it is marked `SETTLED`
-4. **Settlement execution** — `SettlementService.settlePO()` releases locked funds via the adapter
-5. **Records created** — `Settlement` record (COMPLETED), `PlatformFee` record, PaymentLock → RELEASED
-6. **Ledger events** — `OBLIGATION_ACKNOWLEDGED`, `PAYMENT_LOCK_RELEASED`, `SETTLEMENT_INITIATED`, `SETTLEMENT_COMPLETED`
+1. **Query the Payment Instrument** — `PaymentInstrument` is loaded by `purchaseOrderId` (instrument and payment lock are independent models that both reference the PO)
+2. **Auto-expire stale early payments** — If a `REQUESTED` (unfunded) early payment exists, it is auto-expired (`EARLY_PAY_EXPIRED` event); if the instrument was `FINANCING_REQUESTED`, it is reverted to `LOCKED` via `InstrumentService.revertFinancing()`
+3. **Read `settlementBeneficiary`** — The instrument's `settlementBeneficiary` field is the **single source of truth** for who receives escrow funds:
+   - `LIQUIDITY_PROVIDER` → LP recoup (they previously funded the supplier)
+   - `SUPPLIER` (default) → direct supplier payment
+4. **Atomic settlement gate** — `InstrumentService.requestSettlement()` transitions the instrument to `SETTLEMENT_PENDING` using `SELECT FOR UPDATE`. This atomically blocks any concurrent LP `fund()` call
+5. **Platform fee** — 0.5% (50 basis points) deducted from the locked amount
+6. **Settlement execution** — `SettlementService.settlePO()` releases locked funds via the adapter to the beneficiary
+7. **Records created** — `Settlement` record (COMPLETED), `PlatformFee` record, PaymentLock → RELEASED, instrument → confirmed SETTLED
+8. **Ledger events** — `OBLIGATION_ACKNOWLEDGED`, `SETTLEMENT_INITIATED`, `PAYMENT_LOCK_RELEASED`, `SETTLEMENT_COMPLETED`
+
+#### Double-Payment Prevention
+
+The race condition between LP `fund()` and buyer `acknowledgeObligation()` is prevented at the database level:
+
+- Both `fund()` (via `InstrumentService.confirmFinancing()`) and `acknowledgeObligation()` (via `InstrumentService.requestSettlement()`) use `SELECT ... FOR UPDATE` on the same `PaymentInstrument` row
+- PostgreSQL serializes these concurrent transactions — one wins, the other blocks until the first commits
+- If `fund()` wins: instrument becomes `FINANCING_FUNDED` with `settlementBeneficiary = LIQUIDITY_PROVIDER`; subsequent `requestSettlement()` sees the LP beneficiary and routes escrow to LP
+- If `acknowledgeObligation()` wins: instrument becomes `SETTLEMENT_PENDING`; subsequent `confirmFinancing()` rejects because `SETTLEMENT_PENDING` is not a valid source state for financing
+- If `fund()`'s bank adapter call fails after the beneficiary flip, a compensating transaction (`revertFinancing()`) atomically resets beneficiary to `SUPPLIER`
 
 ### 3.9 Dispute Resolution
 
@@ -384,10 +426,10 @@ When a dispute is raised, any unfunded early payment request is auto-expired to 
 
 | # | From | To | Trigger | Actor | Guards | Ledger Event | Side Effects |
 |---|------|-----|---------|-------|--------|-------------|--------------|
-| 1 | — | `REQUESTED` | `requestEarlyPayment()` | SUPPLIER | `po.supplierId === supplierId`; PO in {ACCEPTED, IN_PROGRESS, SHIPPED, DELIVERED}; PaymentLock is LOCKED; no existing early payment request | `EARLY_PAY_REQUESTED` | Fee calculated at 250 BPS (2.5%): `serviceFee`, `netAdvance`, `faceValue` |
-| 2 | `REQUESTED` | `FUNDED` | `fund()` | LIQUIDITY_PARTNER | LP balance ≥ netAdvance; PO in fundable state; LP funding policy passes (exposure/concentration limits) | `EARLY_PAY_FUNDED` | LP pays supplier `netAdvance`; Settlement record (EARLY_PAY_ADVANCE); PlatformFee (EARLY_PAY_FACILITATION); `fundedAt` set |
+| 1 | — | `REQUESTED` | `requestEarlyPayment()` | SUPPLIER | `po.supplierId === supplierId`; PO in {ACCEPTED, IN_PROGRESS, SHIPPED, DELIVERED}; PaymentLock is LOCKED; no existing early payment request | `EARLY_PAY_REQUESTED` | Fee calculated at 250 BPS (2.5%): `serviceFee`, `netAdvance`, `faceValue`; instrument transitions LOCKED → FINANCING_REQUESTED via `InstrumentService.requestFinancing()` |
+| 2 | `REQUESTED` | `FUNDED` | `fund()` | LIQUIDITY_PARTNER | LP balance ≥ netAdvance; PO in fundable state; LP funding policy passes (exposure/concentration limits); instrument `SELECT FOR UPDATE` succeeds (not already SETTLEMENT_PENDING) | `EARLY_PAY_FUNDED` | LP pays supplier `netAdvance`; `InstrumentService.confirmFinancing()` atomically flips `settlementBeneficiary` to LIQUIDITY_PROVIDER; Settlement record (EARLY_PAY_ADVANCE); PlatformFee (EARLY_PAY_FACILITATION); `fundedAt` set. On adapter failure: `revertFinancing()` compensating transaction resets beneficiary to SUPPLIER |
 | 3 | `REQUESTED` | `EXPIRED` | `fund()` (auto-expire) | SYSTEM | PO has left fundable state (not in ACCEPTED/IN_PROGRESS/SHIPPED/DELIVERED) | `EARLY_PAY_EXPIRED` | Stale request expired; 400 error returned to LP |
-| 4 | `REQUESTED` | `EXPIRED` | `acknowledgeObligation()` | SYSTEM | PO is settling without LP funding | `EARLY_PAY_EXPIRED` | Reason: "PO settled without LP funding" |
+| 4 | `REQUESTED` | `EXPIRED` | `acknowledgeObligation()` | SYSTEM | PO is settling without LP funding | `EARLY_PAY_EXPIRED` | Reason: "PO settled without LP funding"; instrument reverted from FINANCING_REQUESTED → LOCKED via `revertFinancing()` if applicable |
 | 5 | `REQUESTED` | `EXPIRED` | `dispute()` | SYSTEM | Buyer is disputing the PO | `EARLY_PAY_EXPIRED` | Reason: "PO disputed by buyer" |
 | 6 | `FUNDED` | `SETTLED` | `acknowledgeObligation()` | BUYER (PO settlement) | Early payment is FUNDED with `liquidityPartnerId` | (part of `SETTLEMENT_COMPLETED`) | Locked funds released to LP; Settlement record (EARLY_PAY_SETTLEMENT); `settledAt` set |
 
@@ -469,7 +511,278 @@ Payment locks represent reserved buyer funds. They are tightly coupled to the PO
 
 ---
 
-## 6. Settlement State Machine
+## 6. Payment Instrument State Machine
+
+The `PaymentInstrument` is the **financial twin** of a PO — it tracks the state of the escrow money and, critically, records **who is entitled to receive** escrow funds at settlement time via the `settlementBeneficiary` field.
+
+> **Key invariant**: `settlementBeneficiary` is the single source of truth for recipient determination. The `acknowledgeObligation()` flow reads this field to decide where escrow funds go — it never derives the recipient from the early payment status.
+
+### 6.1 Instrument States
+
+| State | Description | Terminal? |
+|-------|-------------|-----------|
+| `CREATED` | Instrument created when PO is submitted | No |
+| `LOCK_REQUESTED` | Lock request sent to the payment rail/adapter | No |
+| `LOCKED` | Buyer funds successfully reserved in escrow | No |
+| `FINANCING_REQUESTED` | Supplier has requested early payment; LP marketplace is open | No |
+| `FINANCING_FUNDED` | LP has funded the supplier; beneficiary flipped to LP | No |
+| `SETTLEMENT_PENDING` | Settlement initiated; blocks any further financing | No |
+| `SETTLED` | Escrow released to beneficiary; lifecycle complete | **Yes** |
+| `REFUNDED` | Escrow returned to buyer (dispute/cancellation) | **Yes** |
+| `FAILED` | Irrecoverable adapter failure | **Yes** |
+
+### 6.2 Settlement Beneficiary
+
+The `settlementBeneficiary` field on `PaymentInstrument` determines who receives escrow funds:
+
+| Value | Meaning | Set By |
+|-------|---------|--------|
+| `SUPPLIER` | Default — supplier receives escrow at settlement | `create()` (initial) or `revertFinancing()` (compensating) |
+| `LIQUIDITY_PROVIDER` | LP funded early payment — LP receives escrow at settlement | `confirmFinancing()` (atomic flip) |
+| `BUYER` | Escrow returned to buyer (refund scenario) | `refund()` |
+
+### 6.3 Transition Table
+
+| # | From | To | Method | Actor | Atomic? | Ledger Event | Side Effects |
+|---|------|-----|--------|-------|---------|--------------|--------------|
+| 1 | — | `CREATED` | `create()` | SYSTEM | No | `INSTRUMENT_CREATED` | `settlementBeneficiary = SUPPLIER`; `buyerOrgId`, `supplierOrgId` denormalized |
+| 2 | `CREATED` | `LOCK_REQUESTED` | `requestLock()` | SYSTEM | No | `INSTRUMENT_LOCK_REQUESTED` | Sent to payment adapter |
+| 3 | `LOCK_REQUESTED` | `LOCKED` | `confirmLock()` | SYSTEM | No | `INSTRUMENT_LOCKED` | `bankReference`, `escrowReference` stored |
+| 4 | `LOCKED` | `FINANCING_REQUESTED` | `requestFinancing()` | SUPPLIER | `SELECT FOR UPDATE` | `FINANCING_REQUESTED` | Instrument opened for LP marketplace |
+| 5 | `FINANCING_REQUESTED` | `FINANCING_FUNDED` | `confirmFinancing()` | LP | `SELECT FOR UPDATE` | `FINANCING_CONFIRMED` | `settlementBeneficiary` flipped to `LIQUIDITY_PROVIDER`; `financingPartnerId` set |
+| 6 | `FINANCING_FUNDED` / `FINANCING_REQUESTED` | `LOCKED` | `revertFinancing()` | SYSTEM | `SELECT FOR UPDATE` | `FINANCING_REVERTED` | Compensating transaction: `settlementBeneficiary` reset to `SUPPLIER`; `financingPartnerId` cleared |
+| 7 | `LOCKED` / `FINANCING_FUNDED` | `SETTLEMENT_PENDING` | `requestSettlement()` | BUYER | `SELECT FOR UPDATE` | `SETTLEMENT_INITIATED` | Atomic gate — blocks LP funding |
+| 8 | `SETTLEMENT_PENDING` | `SETTLED` | `confirmSettlement()` | SYSTEM | No | `INSTRUMENT_SETTLED` | `bankReference` stored; `settledAt` set |
+| 9 | `LOCKED` | `REFUNDED` | `refund()` | SYSTEM | No | `INSTRUMENT_REFUNDED` | `settlementBeneficiary` set to `BUYER`; `settledAt` set |
+| 10 | Any non-terminal | `FAILED` | `fail()` | SYSTEM | No | `INSTRUMENT_FAILED` | Terminal state on irrecoverable error |
+
+### 6.4 State Diagram
+
+```
+                      create()
+                         │
+                         ▼
+                    ┌─────────┐
+                    │ CREATED │
+                    └────┬────┘
+                         │ requestLock()
+                         ▼
+                  ┌──────────────┐
+                  │ LOCK_REQUESTED│
+                  └──────┬───────┘
+                         │ confirmLock()
+                         ▼
+                    ┌────────┐
+         ┌──────────│ LOCKED │──────────┐
+         │          └───┬────┘          │
+         │              │               │
+    requestFinancing()  │  requestSettlement()   refund()
+         │              │               │          │
+         ▼              │               │          ▼
+  ┌──────────────────┐  │               │   ┌──────────┐
+  │FINANCING_REQUESTED│  │               │   │ REFUNDED │
+  └───────┬──────────┘  │               │   └──────────┘
+          │             │               │
+    confirmFinancing()  │               │
+  (beneficiary → LP)    │               │
+          │             │               │
+          ▼             │               │
+  ┌──────────────────┐  │               │
+  │ FINANCING_FUNDED │──┘               │
+  └──────────────────┘                  │
+          │ requestSettlement()         │
+          │                             │
+          └──────────┐     ┌────────────┘
+                     ▼     ▼
+              ┌──────────────────┐
+              │ SETTLEMENT_PENDING│
+              └────────┬─────────┘
+                       │ confirmSettlement()
+                       ▼
+                  ┌─────────┐
+                  │ SETTLED  │
+                  └─────────┘
+
+  ── revertFinancing() ──
+  FINANCING_FUNDED/FINANCING_REQUESTED → LOCKED
+  (compensating transaction on adapter failure)
+
+  ── fail() ──
+  Any non-terminal → FAILED
+```
+
+### 6.5 Atomic Locking (`SELECT FOR UPDATE`)
+
+Four instrument transitions use PostgreSQL row-level locking to prevent race conditions:
+
+| Method | SQL Pattern | Why |
+|--------|-------------|-----|
+| `requestFinancing()` | `SELECT * FROM payment_instruments WHERE id = $1 FOR UPDATE` | Prevents concurrent financing + settlement on same PO |
+| `confirmFinancing()` | Same | Prevents two LPs funding the same request |
+| `revertFinancing()` | Same | Prevents revert racing with settlement |
+| `requestSettlement()` | Same | The **settlement gate** — atomically blocks LP funding |
+
+All four methods run inside a `prisma.$transaction()` block. The `SELECT FOR UPDATE` acquires an exclusive row lock — any concurrent transaction attempting the same row blocks until the first commits or rolls back.
+
+### 6.6 Compensating Transactions
+
+The `fund()` flow in `EarlyPaymentsService` uses a **compensating transaction** pattern:
+
+```
+1. confirmFinancing()         ← atomic SELECT FOR UPDATE
+   beneficiary: SUPPLIER → LIQUIDITY_PROVIDER
+   status: FINANCING_REQUESTED → FINANCING_FUNDED
+
+2. adapter.transferAdvance()  ← call bank rail
+
+3a. If success → commit earlyPay as FUNDED ✓
+3b. If failure → revertFinancing()  ← compensating transaction
+    beneficiary: LIQUIDITY_PROVIDER → SUPPLIER
+    status: → LOCKED
+```
+
+This ensures the database state is always consistent even if the external bank call fails after the beneficiary flip.
+
+---
+
+## 7. Multi-Currency Architecture
+
+The platform stores all monetary amounts as **integer minor units** (pence for GBP, halalah for SAR) with an explicit `currency` field on every model that holds a monetary value. Currency is derived from the organisation's jurisdiction and propagated immutably through the entire transaction lifecycle.
+
+### 7.1 Design Principles
+
+| Principle | Rule |
+|-----------|------|
+| **One currency per transaction** | A PO and all downstream records (lock, instrument, settlement, fee) share a single currency |
+| **Organisation-driven default** | Currency comes from `Organisation.currency`, which is set from `jurisdiction` (`UK→GBP`, `KSA→SAR`) |
+| **Immutable after creation** | Once a PO is created, its currency cannot change |
+| **Integer minor units** | All amounts stored as `Int` — never floating point; pence (GBP) or halalah (SAR) |
+| **No FX in v1** | No cross-currency conversions; each transaction is single-currency end-to-end |
+| **Explicit pairing** | Every `Int` amount field has a companion `Currency` column — no orphan amounts |
+
+### 7.2 Currency Enum
+
+Defined as a Prisma enum and used across all models:
+
+```prisma
+enum Currency {
+  GBP
+  SAR
+}
+```
+
+| Currency | Region | Minor Unit | Units/Major | Symbol |
+|----------|--------|------------|-------------|--------|
+| `GBP` | United Kingdom | pence | 100 | £ |
+| `SAR` | Saudi Arabia | halalah | 100 | SAR |
+
+Additional currencies (AED, USD, EUR) can be added when expanding to those markets — no schema redesign required.
+
+### 7.3 Currency Propagation Chain
+
+```
+Organisation (jurisdiction → currency)
+    │
+    ▼
+PurchaseOrder.currency ← set at creation, immutable
+    │
+    ├──► PaymentLock.currency
+    ├──► PaymentInstrument.currency
+    ├──► EarlyPaymentRequest.currency
+    ├──► Settlement.currency
+    ├──► PlatformFee.currency
+    └──► Dispute.currency
+```
+
+Every service that creates a downstream record copies `currency` from the PO. No record infers currency from context or defaults — it is always explicitly set.
+
+### 7.4 Currency-Specific Limits & Thresholds
+
+#### PO Amount Limits (per-currency)
+
+| Currency | Minimum | Maximum |
+|----------|---------|---------|
+| GBP | £500 (50,000 minor) | £250,000 (25,000,000 minor) |
+| SAR | SAR 1,875 (187,500 minor) | SAR 937,500 (93,750,000 minor) |
+
+#### Fraud Control Thresholds (per-currency)
+
+| Threshold | GBP | SAR |
+|-----------|-----|-----|
+| Max daily value per buyer | £500,000 | SAR 1,875,000 |
+| Mandatory evidence threshold | £100,000 | SAR 375,000 |
+
+Thresholds are approximately equivalent in real value; they are maintained as separate per-currency configurations.
+
+### 7.5 Settlement Adapter Currency Support
+
+| Adapter | Supported Currencies | Validation |
+|---------|---------------------|------------|
+| `SimulatedAdapter` | `GBP`, `SAR` | Accepts both; operates on simulated `User.balance` |
+| `KsaBankAdapter` | `SAR` only | Rejects non-SAR transactions; SARIE threshold at 20k SAR |
+
+Each adapter declares a `supportedCurrencies` array. The settlement service validates `request.currency ∈ adapter.supportedCurrencies` before executing any fund lock, transfer, or settlement.
+
+### 7.6 Currency Formatting
+
+The shared package provides a currency-aware formatting utility:
+
+```typescript
+CURRENCY_META: Record<string, {
+  subUnit: string;        // "pence" | "halalah"
+  subUnitsPerUnit: number; // 100
+  symbol: string;          // "£" | "SAR"
+  locale: string;          // "en-GB" | "en-SA"
+}>
+```
+
+`formatCurrency(amountMinor, currency)` converts minor units to a locale-appropriate display string:
+
+```
+formatCurrency(70000000, "SAR") → "SAR 700,000.00"
+formatCurrency(15000000, "GBP") → "£150,000.00"
+```
+
+All frontend pages pass the entity's `currency` field to this formatter — no page defaults to a hardcoded currency.
+
+### 7.7 Naming Convention — Minor Units
+
+API response fields use the `*Minor` suffix for monetary amounts (e.g., `amountMinor`, `totalAmountMinor`, `faceValueMinor`) to remain currency-neutral. Every response object that includes a `*Minor` field also includes a `currency` field at the same level.
+
+| API Field | Description | Companion |
+|-----------|-------------|-----------|
+| `amountMinor` | PO/lock/settlement amount in minor units | `currency` |
+| `totalAmountMinor` | PO gross amount (net + tax) in minor units | `currency` |
+| `faceValueMinor` | Early payment face value | `currency` |
+| `serviceFeeMinor` | Early payment service fee | `currency` |
+| `netAdvanceMinor` | Early payment net advance to supplier | `currency` |
+
+### 7.8 Admin Aggregation by Currency
+
+Admin dashboard statistics and reconciliation reports are grouped by currency:
+
+```json
+{
+  "volumeByCurrency": { "GBP": 8000000, "SAR": 43456780 },
+  "feesByCurrency":   { "GBP": 40000,   "SAR": 217283 }
+}
+```
+
+This prevents the meaningless mixing of GBP and SAR amounts into a single total. LP exposure snapshots and reconciliation reports are also per-currency.
+
+### 7.9 Future Expansion
+
+| Phase | Scope |
+|-------|-------|
+| **Current (v1)** | GBP + SAR only; single currency per transaction; no FX |
+| **Regional expansion** | Add AED, USD to `Currency` enum; per-currency escrow accounts |
+| **Cross-border trade** | FX conversion layer; multi-currency escrow; LP hedging |
+
+The schema and propagation chain already support N currencies — adding a new currency requires only an enum value addition and per-currency configuration entries.
+
+---
+
+## 8. Settlement State Machine
 
 | State | Description |
 |-------|-------------|
@@ -486,7 +799,7 @@ In the simulated adapter, settlements are created directly as `COMPLETED`. In pr
 
 ---
 
-## 7. Dispute State Machine
+## 8. Dispute State Machine
 
 | State | Description |
 |-------|-------------|
@@ -515,9 +828,9 @@ In the simulated adapter, settlements are created directly as `COMPLETED`. In pr
 
 ---
 
-## 8. The Immutable Ledger
+## 9. The Immutable Ledger
 
-### 8.1 Design Principles
+### 9.1 Design Principles
 
 | Principle | Implementation |
 |-----------|---------------|
@@ -527,7 +840,7 @@ In the simulated adapter, settlements are created directly as `COMPLETED`. In pr
 | **Deterministic hashing** | Every hash is recomputable from the stored data — no hidden inputs |
 | **Unique constraint** | `@@unique([entityId, entitySequence])` prevents duplicate sequence numbers |
 
-### 8.2 Hash Chain Algorithm
+### 9.2 Hash Chain Algorithm
 
 Each event's `eventHash` is computed from a pipe-delimited string of 9 fields:
 
@@ -541,14 +854,14 @@ eventHash = SHA-256(
 
 Where:
 - `previousHash` = the `eventHash` of the preceding event **for the same entity** (or `"GENESIS"` for the first event)
-- `canonicalStringify(payload)` = deterministic JSON serialization (see §8.3)
+- `canonicalStringify(payload)` = deterministic JSON serialization (see §9.3)
 - `timestamp` = ISO-8601 string from `Date.toISOString()`
 - All fields are joined by the pipe character `|`
 - The resulting hex digest is stored in `event_log.event_hash`
 
 **Tamper evidence**: Modifying any field in any event changes its hash, which breaks the chain for all subsequent events in that entity. An attacker would need to recompute every subsequent hash in the chain.
 
-### 8.3 Canonical JSON Serialization
+### 9.3 Canonical JSON Serialization
 
 PostgreSQL's JSONB type does not preserve key order. When we store a payload and later read it back, the keys may appear in a different order. If we hash the raw JSON string, the hash would differ. The canonical serialization algorithm ensures deterministic hashing:
 
@@ -569,7 +882,7 @@ Output: {"a":{"y":2,"z":1},"b":2}
 
 This function is used everywhere: hash chain computation, payload hashing, integrity hashing, and in the standalone verifier script.
 
-### 8.4 Concurrency & Retry Logic
+### 9.4 Concurrency & Retry Logic
 
 Because the entity-scoped chain requires reading the latest `eventHash` before inserting, two concurrent writes to the same entity could conflict. The system handles this with:
 
@@ -579,7 +892,7 @@ Because the entity-scoped chain requires reading the latest `eventHash` before i
 
 Different entities write in parallel without contention, since each has its own chain.
 
-### 8.5 Event Types Reference
+### 9.5 Event Types Reference
 
 | Event Type | Entity Type | Description |
 |------------|-------------|-------------|
@@ -605,6 +918,16 @@ Different entities write in parallel without contention, since each has its own 
 | `PAYMENT_LOCK_RELEASED` | PAYMENT_LOCK | Funds released (settlement) |
 | `PAYMENT_LOCK_REFUNDED` | PAYMENT_LOCK | Funds returned (refund) |
 | `SETTLEMENT_INITIATED` | SETTLEMENT | Settlement record created |
+| `INSTRUMENT_CREATED` | PAYMENT_INSTRUMENT | Payment instrument created for PO |
+| `INSTRUMENT_LOCK_REQUESTED` | PAYMENT_INSTRUMENT | Lock request sent to adapter |
+| `INSTRUMENT_LOCKED` | PAYMENT_INSTRUMENT | Escrow funds locked |
+| `FINANCING_REQUESTED` | PAYMENT_INSTRUMENT | Supplier requested early payment; instrument opened for LP marketplace |
+| `FINANCING_CONFIRMED` | PAYMENT_INSTRUMENT | LP funded advance; `settlementBeneficiary` flipped to LIQUIDITY_PROVIDER |
+| `FINANCING_REVERTED` | PAYMENT_INSTRUMENT | Compensating transaction: beneficiary reset to SUPPLIER (adapter failure) |
+| `SETTLEMENT_INITIATED` | PAYMENT_INSTRUMENT | Settlement gate: instrument transitioned to SETTLEMENT_PENDING |
+| `INSTRUMENT_SETTLED` | PAYMENT_INSTRUMENT | Escrow released to beneficiary |
+| `INSTRUMENT_REFUNDED` | PAYMENT_INSTRUMENT | Escrow returned to buyer |
+| `INSTRUMENT_FAILED` | PAYMENT_INSTRUMENT | Irrecoverable adapter failure |
 | `EARLY_PAY_REQUESTED` | EARLY_PAYMENT | Supplier requests early payment |
 | `EARLY_PAY_FUNDED` | EARLY_PAYMENT | LP funds advance |
 | `EARLY_PAY_EXPIRED` | EARLY_PAYMENT | Unfunded request auto-expired |
@@ -614,9 +937,9 @@ Different entities write in parallel without contention, since each has its own 
 
 ---
 
-## 9. Merkle Tree Anchoring & External Notarization
+## 10. Merkle Tree Anchoring & External Notarization
 
-### 9.1 Overview
+### 10.1 Overview
 
 The platform periodically creates **global integrity anchors** — cryptographic snapshots of the entire ledger state. Each anchor builds a binary SHA-256 Merkle tree over all entity head hashes, producing a single root that commits to every entity chain simultaneously. This root is then:
 
@@ -626,7 +949,7 @@ The platform periodically creates **global integrity anchors** — cryptographic
 
 Any external party can verify that a specific entity's events were included in a particular anchor by checking a **Merkle inclusion proof** — a compact path of sibling hashes from the entity's leaf to the root.
 
-### 9.2 Merkle Tree Algorithm
+### 10.2 Merkle Tree Algorithm
 
 **Type**: Binary SHA-256 Merkle tree  
 **Implementation**: `src/crypto/merkle-tree.ts`
@@ -671,7 +994,7 @@ Verification algorithm:
 
 The `position` indicates which side the **sibling** is on: `"left"` means the sibling hash goes on the left and the current value goes on the right.
 
-### 9.3 Anchor Creation Flow
+### 10.3 Anchor Creation Flow
 
 **Trigger**: `POST /api/ledger/anchor` (manual) or auto-anchoring scheduler (periodic)
 
@@ -716,7 +1039,7 @@ The `position` indicates which side the **sibling** is on: `"left"` means the si
 
 The **upgrade logic** ensures that if events haven't changed since the last anchor, the system doesn't create a duplicate — instead it enriches the existing anchor with external notarization if not already present.
 
-### 9.4 External Anchoring via Sigstore Rekor
+### 10.4 External Anchoring via Sigstore Rekor
 
 [Sigstore Rekor](https://rekor.sigstore.dev) is a free, open-source transparency log for software supply chain integrity. The platform uses it as a **timestamping authority** — publishing Merkle roots to produce tamper-evident, independently verifiable timestamps.
 
@@ -777,7 +1100,7 @@ The receipt stored in `externalProof` contains:
 
 **Verification URL**: `https://search.sigstore.dev/?logIndex=<logIndex>` — anyone can look up the entry directly.
 
-### 9.5 Anchor Provider Architecture
+### 10.5 Anchor Provider Architecture
 
 External anchoring uses a pluggable provider pattern via dependency injection:
 
@@ -804,7 +1127,7 @@ interface AnchorReceipt {
 
 Provider selection is via the `ANCHOR_PROVIDER` environment variable. The `NoopProvider` creates a local-only receipt (`provider: "none"`, `externalId: "local-<timestamp>"`) and its `verify()` always returns `false`.
 
-### 9.6 Inclusion Proofs
+### 10.6 Inclusion Proofs
 
 When generating a Trust Envelope, the `EvidenceService` requests a Merkle inclusion proof for the entity:
 
@@ -818,7 +1141,7 @@ AnchorService.getInclusionProof(entityId):
 
 The proof is embedded in the Trust Envelope's `notarization` section, allowing any verifier to confirm the entity was included in a specific global anchor without access to the full ledger.
 
-### 9.7 Anchor Chain Verification
+### 10.7 Anchor Chain Verification
 
 Anchors form their own chain — each anchor's `previousAnchorHash` links to the prior anchor's `anchorHash`.
 
@@ -831,7 +1154,7 @@ Anchors form their own chain — each anchor's `previousAnchorHash` links to the
 5. Count externally anchored entries
 6. Return `{ valid, anchorCount, externallyAnchored, details[] }`
 
-### 9.8 Auto-Anchoring Scheduler
+### 10.8 Auto-Anchoring Scheduler
 
 **Implementation**: `src/ledger/anchor-scheduler.service.ts`
 
@@ -848,7 +1171,7 @@ When enabled (`> 0`):
 
 When disabled (`0` or unset): anchoring is manual only via `POST /api/ledger/anchor`.
 
-### 9.9 LedgerAnchor Schema
+### 10.9 LedgerAnchor Schema
 
 ```prisma
 model LedgerAnchor {
@@ -874,11 +1197,11 @@ model LedgerAnchor {
 
 ---
 
-## 10. Passkey Signing (WebAuthn)
+## 11. Passkey Signing (WebAuthn)
 
 For high-trust actions (accepting a PO, funding an early payment, acknowledging obligation), the user's passkey produces a real ECDSA P-256 signature bound to the specific business action. This is a two-step flow.
 
-### 10.1 Challenge Generation
+### 11.1 Challenge Generation
 
 ```
 POST /api/ledger/challenge
@@ -897,7 +1220,7 @@ The backend returns:
 - The intent hash
 - WebAuthn `PublicKeyCredentialRequestOptions` (with the intent hash as the challenge)
 
-### 10.2 Assertion Verification
+### 11.2 Assertion Verification
 
 The frontend presents the challenge to the user's authenticator (Touch ID, Face ID, Windows Hello). The authenticator produces:
 
@@ -921,7 +1244,7 @@ The backend:
 2. Extracts the raw signature, authenticator data, and public key
 3. Calls `LedgerService.logEvent()` with all cryptographic materials
 
-### 10.3 What Gets Stored
+### 11.3 What Gets Stored
 
 Every ledger event row includes:
 
@@ -938,9 +1261,9 @@ For unsigned events (system-triggered, or before the user has registered a passk
 
 ---
 
-## 11. Trust Envelope (Evidence Pack v2.0)
+## 12. Trust Envelope (Evidence Pack v2.0)
 
-### 11.1 Purpose
+### 12.1 Purpose
 
 A Trust Envelope is a **self-contained, cryptographically verifiable JSON document** that proves the complete lifecycle of a purchase order. It packages:
 
@@ -955,7 +1278,7 @@ A Trust Envelope is a **self-contained, cryptographically verifiable JSON docume
 
 **Any external party (bank, regulator, auditor) can verify the envelope without trusting the platform.** The verification can be done using the public API endpoint, the standalone CLI script, or manually using any FIDO2/WebAuthn library.
 
-### 11.2 Generation Flow
+### 12.2 Generation Flow
 
 ```
 GET /api/evidence/po/:poId/pack
@@ -965,14 +1288,16 @@ Assembly steps inside `EvidenceService.buildEvidencePack()`:
 
 ```
 1. Load PO with all relations (buyer, supplier, paymentLock,
-   settlements, disputes, earlyPaymentRequest, revisions)
+   settlements, disputes, earlyPaymentRequest, revisions,
+   paymentInstrument)
 
 2. Load all evidence attachments for the PO
 
 3. Collect all related entity IDs:
-   PO + paymentLock + earlyPaymentRequest + all settlements + all disputes
+   PO + paymentLock + paymentInstrument + earlyPaymentRequest + all settlements + all disputes
 
 4. Load ALL ledger events across all related entities
+   (includes FINANCING_REQUESTED, FINANCING_CONFIRMED, INSTRUMENT_SETTLED, etc.)
 
 5. Verify file integrity:
    For each attachment, recompute SHA-256 of file on disk vs stored hash
@@ -990,20 +1315,25 @@ Assembly steps inside `EvidenceService.buildEvidencePack()`:
 
 10. Build ledger section — group events by entityId into entityChains
 
-11. Compute integrity hashes:
+11. Build paymentInstrument section:
+    - Instrument ID, status, amount, currency
+    - settlementBeneficiary (SUPPLIER | LIQUIDITY_PROVIDER | BUYER)
+    - Lifecycle: CREATED → LOCKED → SETTLED (verified against ledger events)
+
+12. Compute integrity hashes:
     ledgerRootHash  = SHA-256(eventHash₁ | eventHash₂ | ... | eventHashₙ)
     attachmentsHash = SHA-256(fileHash₁ | fileHash₂ | ...) or SHA-256("NONE")
     envelopeHash    = SHA-256(documentHash | ledgerRootHash | attachmentsHash)
 
-12. Platform signature:
+13. Platform signature:
     Sign envelopeHash with platform's ECDSA P-256 private key
 
-13. Check for ledger anchor (Merkle inclusion proof + external notarization via Rekor)
+14. Check for ledger anchor (Merkle inclusion proof + external notarization via Rekor)
 
-14. Assemble all sections into the final Trust Envelope JSON
+15. Assemble all sections into the final Trust Envelope JSON
 ```
 
-### 11.3 Complete Envelope Structure
+### 12.3 Complete Envelope Structure
 
 ```json
 {
@@ -1017,6 +1347,7 @@ Assembly steps inside `EvidenceService.buildEvidencePack()`:
     "entityChains": { ... },
     "events": [ ... ]
   },
+  "paymentInstrument": { ... },
   "approvals": [ ... ],
   "proofBundles": [ ... ],
   "integrity": { ... },
@@ -1026,7 +1357,7 @@ Assembly steps inside `EvidenceService.buildEvidencePack()`:
 }
 ```
 
-### 11.4 Section-by-Section Reference
+### 12.4 Section-by-Section Reference
 
 #### metadata
 
@@ -1176,6 +1507,31 @@ The immutable event history, grouped by entity and also provided flat:
 
 The `entityChains` map provides a summary for each entity's chain (event count, first/last hash). The flat `events` array contains all events across all related entities.
 
+#### paymentInstrument
+
+The payment instrument section records the escrow state and settlement beneficiary:
+
+```json
+{
+  "id": "instrument-uuid",
+  "status": "SETTLED",
+  "amount": 700000,
+  "currency": "SAR",
+  "settlementBeneficiary": "SUPPLIER",
+  "lifecycle": "CREATED → LOCKED → SETTLED",
+  "settledAt": "ISO-8601"
+}
+```
+
+| Field | Purpose |
+|-------|---------|
+| `id` | Payment instrument ID |
+| `status` | Final instrument status at envelope generation time |
+| `amount` / `currency` | Escrow amount and currency |
+| `settlementBeneficiary` | Who received (or will receive) escrow: `SUPPLIER`, `LIQUIDITY_PROVIDER`, or `BUYER` — the **single source of truth** for settlement routing |
+| `lifecycle` | Human-readable state progression derived from ledger events |
+| `settledAt` | Timestamp of settlement (if settled) |
+
 #### approvals
 
 Passkey-signed events extracted as explicit approval records:
@@ -1200,7 +1556,7 @@ This makes it easy for a bank to see which human approvals occurred without pars
 
 #### proofBundles
 
-Full standalone proof bundles for every event (see §11 for detailed structure). These contain all the raw cryptographic materials needed for independent verification.
+Full standalone proof bundles for every event (see §13 for detailed structure). These contain all the raw cryptographic materials needed for independent verification.
 
 #### integrity
 
@@ -1243,6 +1599,8 @@ Human-readable verification instructions:
     "Verify ECDSA P-256 signatures against embedded public keys",
     "Verify integrity root hashes",
     "Verify attachment content hashes",
+    "Verify payment instrument lifecycle (CREATED → LOCKED → SETTLED)",
+    "Verify settlementBeneficiary matches instrument state",
     "Cross-check actor identities via public registry URIs"
   ]
 }
@@ -1306,7 +1664,7 @@ Merkle tree anchor with optional external notarization via Sigstore Rekor:
 }
 ```
 
-### 11.5 Integrity Hash Hierarchy
+### 12.5 Integrity Hash Hierarchy
 
 ```
 envelopeHash = SHA-256(documentHash | ledgerRootHash | attachmentsHash)
@@ -1328,7 +1686,7 @@ platformSignature = ECDSA-P256(envelopeHash)
 
 **Consequence**: Modifying any single field, event, or file anywhere in the envelope cascades upward and invalidates the platform signature.
 
-### 11.6 Platform Signature
+### 12.6 Platform Signature
 
 The platform holds an ECDSA P-256 key pair used exclusively to seal Trust Envelopes:
 
@@ -1344,9 +1702,9 @@ The public key is embedded in the envelope itself, making the pack self-verifyin
 
 ---
 
-## 12. Proof Bundles
+## 13. Proof Bundles
 
-### 12.1 Structure
+### 13.1 Structure
 
 A proof bundle is a **self-contained JSON document** for a single event. It contains everything needed to verify that event independently, without database access:
 
@@ -1428,7 +1786,7 @@ A proof bundle is a **self-contained JSON document** for a single event. It cont
 
 For unsigned events (where `actorSignature === "SYSTEM"`), the `assertion` section is null and `verification.steps` contains only the hash chain check.
 
-### 12.2 Per-Event vs Per-Entity Generation
+### 13.2 Per-Event vs Per-Entity Generation
 
 | API | Description |
 |-----|-------------|
@@ -1437,7 +1795,7 @@ For unsigned events (where `actorSignature === "SYSTEM"`), the `assertion` secti
 
 The entity-level generation also returns `chainValid: true/false` and a summary of the chain verification.
 
-### 12.3 Public Registries
+### 13.3 Public Registries
 
 Two **public, unauthenticated** endpoints allow external verifiers to independently confirm identities:
 
@@ -1450,9 +1808,9 @@ These enable verification without platform trust — the verifier can fetch the 
 
 ---
 
-## 13. Verification System
+## 14. Verification System
 
-### 13.1 Three Layers of Verification
+### 14.1 Three Layers of Verification
 
 | Layer | Scope | API | Auth |
 |-------|-------|-----|------|
@@ -1460,7 +1818,7 @@ These enable verification without platform trust — the verifier can fetch the 
 | **Per-entity chain** | Hash chain for one entity | `GET /api/ledger/verify/:entityId` | JWT |
 | **Full envelope** | All 15 checks on the Trust Envelope | `POST /api/verify` or CLI script | Public |
 
-### 13.2 Full Envelope Verification — 15 Checks
+### 14.2 Full Envelope Verification — 15 Checks
 
 The `VerifyService` (and the equivalent CLI script) performs these checks on a Trust Envelope:
 
@@ -1487,7 +1845,7 @@ The `VerifyService` (and the equivalent CLI script) performs these checks on a T
 - `PASSED_WITH_WARNINGS` — No failures, but some warnings
 - `FAILED` — One or more checks failed
 
-### 13.3 Standalone CLI Verifier
+### 14.3 Standalone CLI Verifier
 
 **File**: `scripts/verify-evidence-pack.mjs`  
 **Lines**: ~1,297  
@@ -1542,7 +1900,7 @@ The CLI script is a **complete reimplementation** of the verification pipeline i
 
 **COSE/CBOR Parsing**: The script includes a minimal hand-rolled CBOR parser that extracts P-256 EC key coordinates from COSE format. This avoids any external CBOR library dependency.
 
-### 13.4 Web Verification Service
+### 14.4 Web Verification Service
 
 **Backend Endpoint**:
 
@@ -1568,7 +1926,7 @@ Features:
 - "Verify Another Pack" reset button
 - Also accessible from the LP dashboard sidebar ("Verify Evidence" link)
 
-### 13.5 Proof Bundle Verification — 7 Steps
+### 14.5 Proof Bundle Verification — 7 Steps
 
 The `ProofVerifierService` verifies a single proof bundle with up to 7 steps:
 
@@ -1590,9 +1948,9 @@ Endpoints:
 
 ---
 
-## 14. Cryptographic Primitives
+## 15. Cryptographic Primitives
 
-### 14.1 Algorithms Used
+### 15.1 Algorithms Used
 
 | Purpose | Algorithm | Standard |
 |---------|-----------|----------|
@@ -1611,7 +1969,7 @@ Endpoints:
 
 All cryptographic operations use Node.js's native `crypto` module, which binds to OpenSSL.
 
-### 14.2 COSE → SPKI Key Conversion
+### 15.2 COSE → SPKI Key Conversion
 
 WebAuthn stores public keys in COSE format (CBOR-encoded). Node.js `crypto.createVerify()` expects SPKI DER. The conversion process:
 
@@ -1621,7 +1979,7 @@ WebAuthn stores public keys in COSE format (CBOR-encoded). Node.js `crypto.creat
 
 The same conversion is implemented in both the backend `NodeCryptoService` and the standalone verifier script.
 
-### 14.3 DER Signature Encoding
+### 15.3 DER Signature Encoding
 
 WebAuthn produces signatures in IEEE P1363 format (`r || s`, 64 bytes for P-256). OpenSSL expects DER-encoded signatures. The conversion:
 
@@ -1630,7 +1988,7 @@ WebAuthn produces signatures in IEEE P1363 format (`r || s`, 64 bytes for P-256)
 3. Encode as ASN.1 DER: `SEQUENCE { INTEGER r, INTEGER s }`
 4. Already-DER-encoded signatures are detected and passed through
 
-### 14.4 Platform Signing Key Management
+### 15.4 Platform Signing Key Management
 
 | Environment | Key Source |
 |-------------|-----------|
@@ -1641,7 +1999,7 @@ The public key is derived from the private key as SPKI DER and embedded in every
 
 ---
 
-## 15. Evidence Attachments
+## 16. Evidence Attachments
 
 Physical evidence files (PDFs, images, spreadsheets) can be uploaded and linked to a PO.
 
@@ -1682,7 +2040,7 @@ Re-reads the file from disk, recomputes SHA-256, compares to stored hash. Return
 
 ---
 
-## 16. API Reference
+## 17. API Reference
 
 ### Ledger APIs (JWT required)
 
@@ -1729,20 +2087,20 @@ Re-reads the file from disk, recomputes SHA-256, compares to stored hash. Return
 
 ---
 
-## 17. Local Receipts (Layer 4)
+## 18. Local Receipts (Layer 4)
 
 Local receipts complete the four-layer trust model by ensuring the platform **"can't omit"** events. At the moment a user performs a signed action, the platform returns a cryptographically signed receipt that the client stores locally in IndexedDB. If the platform were to later remove or alter an event, the user holds irrefutable proof of the platform's prior commitment.
 
-### 17.1 Trust Model Context
+### 18.1 Trust Model Context
 
 | Layer | Property | Mechanism | Section |
 |-------|----------|-----------|---------|
-| 1 | Self-contained proof (can't deny) | WebAuthn ECDSA P-256 signatures | §10 |
-| 2 | Hash chain (can't reorder) | Per-entity SHA-256 chain | §8 |
-| 3 | Merkle anchor (can't alter after) | Binary Merkle tree + Sigstore Rekor | §9 |
-| **4** | **Local receipts (can't omit)** | **Platform-signed receipts in IndexedDB** | **§17** |
+| 1 | Self-contained proof (can't deny) | WebAuthn ECDSA P-256 signatures | §11 |
+| 2 | Hash chain (can't reorder) | Per-entity SHA-256 chain | §9 |
+| 3 | Merkle anchor (can't alter after) | Binary Merkle tree + Sigstore Rekor | §10 |
+| **4** | **Local receipts (can't omit)** | **Platform-signed receipts in IndexedDB** | **§18** |
 
-### 17.2 Receipt Format
+### 18.2 Receipt Format
 
 Each `EventReceipt` has version `"1.0"` and contains:
 
@@ -1777,7 +2135,7 @@ eventId|entityId|entityType|eventType|entitySequence|eventHash|previousHash|acto
 
 The platform signs this hash with its ECDSA P-256 private key, creating a non-repudiable commitment.
 
-### 17.3 Backend: Receipt Generation
+### 18.3 Backend: Receipt Generation
 
 `LedgerService.buildReceipt(event)` constructs and signs a receipt from a raw event record:
 
@@ -1803,7 +2161,7 @@ return { ...formatPO(entity), _receipt: this.ledger.buildReceipt(event) };
 
 System-generated events (auto-approval, settlement completion, expiry) do **not** generate receipts — they are platform-initiated and do not require client-side non-repudiation.
 
-### 17.4 Frontend: IndexedDB Storage
+### 18.4 Frontend: IndexedDB Storage
 
 The receipt store (`frontend/src/lib/receipt-store.ts`) provides:
 
@@ -1826,7 +2184,7 @@ All functions are SSR-safe (check `typeof window`). Storage failures never block
 - Purchase Order detail page (`makeSignedAction` helper, 12 mutation types)
 - Early Payments page (`requestMutation`, `fundMutation`)
 
-### 17.5 Verification Endpoint
+### 18.5 Verification Endpoint
 
 ```
 POST /api/ledger/receipts/verify
@@ -1875,7 +2233,7 @@ POST /api/ledger/receipts/verify
 
 The endpoint performs a bulk lookup of events by ID and compares hashes and sequence numbers against the stored receipt stubs.
 
-### 17.6 My Receipts Dashboard
+### 18.6 My Receipts Dashboard
 
 The `/dashboard/receipts` page provides:
 
@@ -1888,9 +2246,9 @@ The `/dashboard/receipts` page provides:
 
 ---
 
-## 18. Testing Infrastructure
+## 19. Testing Infrastructure
 
-### 18.1 Test Database Isolation
+### 19.1 Test Database Isolation
 
 Tests execute against a dedicated `sme_payments_test` database, completely isolated from the development database. The lifecycle is managed by Jest hooks:
 
@@ -1902,7 +2260,7 @@ Tests execute against a dedicated `sme_payments_test` database, completely isola
 
 **No `.env.test` file** — all test environment variables are hardcoded in the setup files to ensure deterministic behaviour.
 
-### 18.2 Anchor Configuration in Tests
+### 19.2 Anchor Configuration in Tests
 
 | Variable | Test Value | Production Value |
 |----------|------------|-----------------|
@@ -1911,23 +2269,23 @@ Tests execute against a dedicated `sme_payments_test` database, completely isola
 
 The `NoopProvider` returns a synthetic anchor response without making any external network calls, keeping tests fast and deterministic.
 
-### 18.3 Test Suite Inventory
+### 19.3 Test Suite Inventory
 
 | Category | Suites | Tests |
 |----------|--------|-------|
-| **Unit tests** (`.spec.ts`) | 8 | 85 |
-| **E2E tests** (`.e2e-spec.ts`) | 11 | 238 |
-| **Total** | **19** | **323** |
+| **Unit tests** (`.spec.ts`) | 11 | 138 |
+| **E2E tests** (`.e2e-spec.ts`) | 14 | 293 |
+| **Total** | **25** | **431** |
 
 Both Jest configs (`jest.config.ts` and `test/jest-e2e.config.ts`) share the same `globalSetup`, `globalTeardown`, and `setupFiles` entries.
 
-### 18.4 Shell Integration Test
+### 19.4 Shell Integration Test
 
 `e2e-test.sh` is a separate **curl-based** integration script that exercises a running backend (port 3001) and frontend (port 3002) through 18 sequential steps: multi-user login → PO creation → negotiation → early payment → LP funding → delivery → settlement → verification → admin statistics → frontend page checks.
 
 ---
 
-## 19. Security Considerations
+## 20. Security Considerations
 
 | Area | Approach |
 |------|----------|
@@ -1941,6 +2299,9 @@ Both Jest configs (`jest.config.ts` and `test/jest-e2e.config.ts`) share the sam
 | **PO ownership** | Every PO operation validates `po.buyerId === actorId` or `po.supplierId === actorId` |
 | **Fund reservation** | Buyer balance checked before PO acceptance; funds locked atomically with acceptance |
 | **Early payment guards** | PO must be in fundable state for LP funding; stale requests auto-expire |
+| **Double-payment prevention** | `SELECT FOR UPDATE` on `PaymentInstrument` row serializes concurrent LP funding and buyer settlement; `settlementBeneficiary` is the single source of truth for escrow routing; compensating transaction (`revertFinancing()`) rolls back beneficiary on adapter failure |
+| **Settlement gate** | `requestSettlement()` atomically transitions instrument to `SETTLEMENT_PENDING` — once in this state, no LP can call `confirmFinancing()` because `SETTLEMENT_PENDING` is not a valid source state for financing |
+| **Beneficiary immutability at settlement** | Once `requestSettlement()` commits, the `settlementBeneficiary` value is locked — it cannot be changed by any subsequent operation |
 | **Dispute window** | Configurable dispute window (default 72h) after delivery |
 | **Approval policies** | Configurable per-org thresholds, multi-signature support, auto-approve for low-value |
 | **LP risk controls** | Exposure ceilings, per-buyer/per-supplier concentration limits, whitelist enforcement |
@@ -1955,4 +2316,4 @@ Both Jest configs (`jest.config.ts` and `test/jest-e2e.config.ts`) share the sam
 
 ---
 
-*Generated 11 March 2026. This document reflects the current production codebase (312 tests, 19 suites, all passing). Updated for Layer 4 (Local Receipts) implementation.*
+*Generated 12 March 2026. This document reflects the current production codebase (431 tests, 25 suites, all passing). Updated for double-payment prevention (`settlementBeneficiary` + `SELECT FOR UPDATE` atomic locking on `PaymentInstrument`).*

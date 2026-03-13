@@ -31,7 +31,7 @@ import { Separator } from "@/components/ui/separator";
 
 /* ── Helpers ───────────────────────────────────────────────── */
 
-/** Keys in event payload that represent pennies → format as GBP */
+/** Keys in event payload that represent minor units → format as currency */
 const CURRENCY_KEYS = new Set([
   "amount",
   "faceValue",
@@ -42,9 +42,13 @@ const CURRENCY_KEYS = new Set([
   "recipientReceives",
 ]);
 
-function formatPayloadValue(key: string, value: unknown): string {
+function formatPayloadValue(
+  key: string,
+  value: unknown,
+  currencyHint?: string,
+): string {
   if (CURRENCY_KEYS.has(key) && typeof value === "number") {
-    return formatCurrency(value);
+    return formatCurrency(value, (currencyHint as "GBP" | "SAR") ?? "GBP");
   }
   if (typeof value === "boolean") return value ? "Yes" : "No";
   if (
@@ -164,7 +168,12 @@ function EventDetailDialog({
                           {payloadLabel(key)}
                         </span>
                         <span className="font-mono font-semibold text-sm">
-                          {formatPayloadValue(key, value)}
+                          {formatPayloadValue(
+                            key,
+                            value,
+                            (payload as Record<string, unknown>)
+                              .currency as string,
+                          )}
                         </span>
                       </div>
                     ))}
@@ -194,7 +203,12 @@ function EventDetailDialog({
                           {payloadLabel(key)}
                         </span>
                         <span className="font-mono text-xs text-right truncate max-w-[250px]">
-                          {formatPayloadValue(key, value)}
+                          {formatPayloadValue(
+                            key,
+                            value,
+                            (payload as Record<string, unknown>)
+                              .currency as string,
+                          )}
                         </span>
                       </div>
                     ))}

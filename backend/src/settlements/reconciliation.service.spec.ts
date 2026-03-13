@@ -14,6 +14,7 @@ describe("ReconciliationService", () => {
     paymentInstrument: {
       findMany: jest.fn(),
       aggregate: jest.fn(),
+      groupBy: jest.fn(),
     },
     settlement: {
       findMany: jest.fn(),
@@ -58,6 +59,9 @@ describe("ReconciliationService", () => {
 
     // Default: no admin user (avoids ledger event requirement in most tests)
     mockPrisma.user.findFirst.mockResolvedValue(null);
+
+    // Default: empty per-currency groupBy (all tests need this)
+    mockPrisma.paymentInstrument.groupBy.mockResolvedValue([]);
   });
 
   // ── runReconciliation: empty state ──────────────────────

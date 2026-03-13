@@ -103,6 +103,7 @@ export interface PurchaseOrder {
   supplierId: string;
   status: string;
   totalAmountPennies: number;
+  totalAmountMinor: number;
   currency?: string;
   lineItems: LineItem[];
   description: string | null;
@@ -143,6 +144,8 @@ export interface PaymentLock {
   id: string;
   purchaseOrderId: string;
   amountPennies: number;
+  amountMinor: number;
+  currency?: string;
   status: string;
   lockedAt: string | null;
   releasedAt: string | null;
@@ -168,6 +171,10 @@ export interface EarlyPaymentRequest {
   faceValuePennies: number;
   serviceFeePennies: number;
   netAdvancePennies: number;
+  faceValueMinor: number;
+  serviceFeeMinor: number;
+  netAdvanceMinor: number;
+  currency?: string;
   status: string;
   riskAcknowledged: boolean;
   fundedAt: string | null;
@@ -178,9 +185,15 @@ export interface EarlyPaymentRequest {
     reference: string;
     status: string;
     totalAmountPennies: number;
+    totalAmountMinor: number;
+    currency?: string;
     buyer?: User;
     supplier?: User;
-    paymentLock?: { status: string; amountPennies: number };
+    paymentLock?: {
+      status: string;
+      amountPennies: number;
+      amountMinor: number;
+    };
   };
   supplier?: User;
   liquidityPartner?: User;
@@ -192,6 +205,8 @@ export interface PaymentLockEntry {
   purchaseOrderId: string;
   buyerId: string;
   amountPennies: number;
+  amountMinor: number;
+  currency?: string;
   status: string;
   lockedAt: string | null;
   releasedAt: string | null;
@@ -200,6 +215,7 @@ export interface PaymentLockEntry {
     id: string;
     reference: string;
     totalAmountPennies: number;
+    totalAmountMinor: number;
     status: string;
     buyer?: { id: string; name: string; companyName: string };
     supplier?: { id: string; name: string; companyName: string };
@@ -507,17 +523,50 @@ export const usersApi = {
   balance: () => api.get<{ balance: number }>("/users/balance"),
 };
 
+export interface EscrowAccount {
+  id: string;
+  label: string;
+  bank: string;
+  country: string;
+  currency: string;
+  balanceMinor: number;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+  _count?: { instruments: number; reconciliationReports?: number };
+}
+
 export const adminApi = {
   stats: () =>
     api.get<{
       totalPOs: number;
       settledPOs: number;
       totalVolumePennies: number;
+      totalVolumeMinor: number;
       activeLocks: number;
       earlyPayments: number;
       totalFeesPennies: number;
+      totalFeesMinor: number;
       totalUsers: number;
+      volumeByCurrency?: Record<string, number>;
+      feesByCurrency?: Record<string, number>;
+      escrowBalanceByCurrency?: Record<string, number>;
+      lockedAmountByCurrency?: Record<string, number>;
     }>("/admin/stats"),
+
+  listEscrowAccounts: () => api.get<EscrowAccount[]>("/admin/escrow-accounts"),
+  getEscrowAccount: (id: string) =>
+    api.get<EscrowAccount>(`/admin/escrow-accounts/${id}`),
+  createEscrowAccount: (data: {
+    label: string;
+    bank: string;
+    country: string;
+    currency: string;
+  }) => api.post<EscrowAccount>("/admin/escrow-accounts", data),
+  updateEscrowAccount: (
+    id: string,
+    data: { label?: string; active?: boolean },
+  ) => api.patch<EscrowAccount>(`/admin/escrow-accounts/${id}`, data),
 };
 
 // ── Approvals ─────────────────────────────────────────────────
@@ -765,8 +814,10 @@ export interface ReconciliationReport {
   mismatches: number;
   alerts: ReconciliationAlert[];
   ledgerBalance: number | null;
+  ledgerBalanceByCurrency?: Record<string, number>;
   bankBalance: number | null;
   variance: number | null;
+  currency?: "GBP" | "SAR";
   createdAt: string;
 }
 
@@ -849,6 +900,16 @@ export interface FraudConfig {
   mandatoryEvidenceThreshold: number;
   supplierWhitelist: string[];
   maxPOsPerSupplierPerDay: number;
+  configByCurrency?: Record<
+    string,
+    {
+      maxPOsPerBuyerPerDay: number;
+      maxDailyValuePerBuyer: number;
+      mandatoryEvidenceThreshold: number;
+      supplierWhitelist: string[];
+      maxPOsPerSupplierPerDay: number;
+    }
+  >;
 }
 
 export interface FraudFlag {
@@ -872,7 +933,9 @@ export interface FraudFlag {
 
 export interface ExposureReport {
   liquidityPartnerId: string;
+  currency?: "GBP" | "SAR";
   totalExposure: number;
+  exposureByCurrency?: Record<string, number>;
   fundingLimit: number | null;
   utilisationPct: number | null;
   buyerConcentration: Record<string, number>;

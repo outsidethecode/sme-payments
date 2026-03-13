@@ -226,13 +226,16 @@ function SupplierView() {
                         </Badge>
                       </TableCell>
                       <TableCell className="font-medium">
-                        {formatCurrency(po.totalAmountPennies)}
+                        {formatCurrency(
+                          po.totalAmountPennies,
+                          po.currency as "GBP" | "SAR",
+                        )}
                       </TableCell>
                       <TableCell className="text-destructive">
-                        -{formatCurrency(fee)}
+                        -{formatCurrency(fee, po.currency as "GBP" | "SAR")}
                       </TableCell>
                       <TableCell className="font-medium text-green-600">
-                        {formatCurrency(net)}
+                        {formatCurrency(net, po.currency as "GBP" | "SAR")}
                       </TableCell>
                       <TableCell>
                         <Button
@@ -282,12 +285,24 @@ function SupplierView() {
                     <TableCell className="font-mono text-sm">
                       {ep.purchaseOrder?.reference ?? "—"}
                     </TableCell>
-                    <TableCell>{formatCurrency(ep.faceValuePennies)}</TableCell>
+                    <TableCell>
+                      {formatCurrency(
+                        ep.faceValuePennies,
+                        ep.currency as "GBP" | "SAR",
+                      )}
+                    </TableCell>
                     <TableCell className="text-destructive">
-                      -{formatCurrency(ep.serviceFeePennies)}
+                      -
+                      {formatCurrency(
+                        ep.serviceFeePennies,
+                        ep.currency as "GBP" | "SAR",
+                      )}
                     </TableCell>
                     <TableCell className="font-medium text-green-600">
-                      {formatCurrency(ep.netAdvancePennies)}
+                      {formatCurrency(
+                        ep.netAdvancePennies,
+                        ep.currency as "GBP" | "SAR",
+                      )}
                     </TableCell>
                     <TableCell>
                       <Badge variant={statusVariant(ep.status)}>
@@ -608,7 +623,10 @@ function LPView() {
                     <div>
                       <p className="text-muted-foreground">Face Value</p>
                       <p className="font-medium">
-                        {formatCurrency(ep.faceValuePennies)}
+                        {formatCurrency(
+                          ep.faceValuePennies,
+                          ep.currency as "GBP" | "SAR",
+                        )}
                       </p>
                     </div>
                     <div>
@@ -616,13 +634,20 @@ function LPView() {
                         Service Fee (2.5%)
                       </p>
                       <p className="font-medium text-green-600">
-                        +{formatCurrency(ep.serviceFeePennies)}
+                        +
+                        {formatCurrency(
+                          ep.serviceFeePennies,
+                          ep.currency as "GBP" | "SAR",
+                        )}
                       </p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">You Advance</p>
                       <p className="font-medium">
-                        {formatCurrency(ep.netAdvancePennies)}
+                        {formatCurrency(
+                          ep.netAdvancePennies,
+                          ep.currency as "GBP" | "SAR",
+                        )}
                       </p>
                     </div>
                   </div>
@@ -703,10 +728,17 @@ function LPView() {
                     </TableCell>
                     <TableCell>{ep.supplier?.companyName ?? "—"}</TableCell>
                     <TableCell>
-                      {formatCurrency(ep.netAdvancePennies)}
+                      {formatCurrency(
+                        ep.netAdvancePennies,
+                        ep.currency as "GBP" | "SAR",
+                      )}
                     </TableCell>
                     <TableCell className="text-green-600">
-                      +{formatCurrency(ep.serviceFeePennies)}
+                      +
+                      {formatCurrency(
+                        ep.serviceFeePennies,
+                        ep.currency as "GBP" | "SAR",
+                      )}
                     </TableCell>
                     <TableCell>
                       <Badge variant={statusVariant(ep.status)}>
@@ -779,9 +811,17 @@ function AdminView() {
                     <TableCell>
                       {ep.liquidityPartner?.companyName ?? "—"}
                     </TableCell>
-                    <TableCell>{formatCurrency(ep.faceValuePennies)}</TableCell>
                     <TableCell>
-                      {formatCurrency(ep.serviceFeePennies)}
+                      {formatCurrency(
+                        ep.faceValuePennies,
+                        ep.currency as "GBP" | "SAR",
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {formatCurrency(
+                        ep.serviceFeePennies,
+                        ep.currency as "GBP" | "SAR",
+                      )}
                     </TableCell>
                     <TableCell>
                       <Badge variant={statusVariant(ep.status)}>

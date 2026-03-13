@@ -105,6 +105,13 @@ export interface TrustEnvelope {
     settlementBeneficiary: string;
     escrowReference: string | null;
     bankReference: string | null;
+    escrowAccount: null | {
+      id: string;
+      label: string;
+      bank: string;
+      country: string;
+      currency: string;
+    };
     lifecycle: { status: string; at: string; bankRef?: string | null }[];
   };
   reconciliation: null | {
@@ -792,6 +799,28 @@ export class EvidenceService {
       });
     }
 
+    // Load escrow account if linked
+    let escrowAccount: {
+      id: string;
+      label: string;
+      bank: string;
+      country: string;
+      currency: string;
+    } | null = null;
+    if (instrument.escrowAccountId) {
+      const ea = await this.prisma.escrowAccount.findUnique({
+        where: { id: instrument.escrowAccountId },
+        select: {
+          id: true,
+          label: true,
+          bank: true,
+          country: true,
+          currency: true,
+        },
+      });
+      if (ea) escrowAccount = { ...ea, currency: ea.currency as string };
+    }
+
     return {
       instrumentId: instrument.id,
       type: instrument.type,
@@ -801,6 +830,7 @@ export class EvidenceService {
       settlementBeneficiary: instrument.settlementBeneficiary ?? "SUPPLIER",
       escrowReference: instrument.escrowReference,
       bankReference: instrument.bankReference,
+      escrowAccount,
       lifecycle,
     };
   }

@@ -118,7 +118,10 @@ export default function PurchaseOrdersPage() {
                         : (po.buyer?.companyName ?? "—")}
                     </TableCell>
                     <TableCell className="font-medium">
-                      {formatCurrency(po.totalAmountPennies)}
+                      {formatCurrency(
+                        po.totalAmountPennies,
+                        po.currency as "GBP" | "SAR",
+                      )}
                     </TableCell>
                     <TableCell>
                       <Badge variant={statusVariant(po.status)}>

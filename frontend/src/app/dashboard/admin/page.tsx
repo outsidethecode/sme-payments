@@ -13,23 +13,29 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   FileText,
-  PoundSterling,
+  Coins,
   Lock,
   Zap,
   Users,
   TrendingUp,
-  BadgePoundSterling,
+  Banknote,
   ShieldCheck,
 } from "lucide-react";
+
+const CURRENCIES: Array<"GBP" | "SAR"> = ["GBP", "SAR"];
 
 interface AdminStats {
   totalPOs: number;
   settledPOs: number;
   totalVolumePennies: number;
+  totalVolumeMinor: number;
   activeLocks: number;
   earlyPayments: number;
   totalFeesPennies: number;
+  totalFeesMinor: number;
   totalUsers: number;
+  volumeByCurrency?: Record<string, number>;
+  feesByCurrency?: Record<string, number>;
 }
 
 export default function AdminPage() {
@@ -37,6 +43,19 @@ export default function AdminPage() {
     queryKey: ["admin-stats"],
     queryFn: () => adminApi.stats().then((r) => r.data),
   });
+
+  // Build per-currency volume/fee entries
+  const volumeEntries = stats?.volumeByCurrency
+    ? CURRENCIES.filter((c) => (stats.volumeByCurrency?.[c] ?? 0) > 0).map(
+        (c) => ({ currency: c, amount: stats.volumeByCurrency![c] ?? 0 }),
+      )
+    : [{ currency: "GBP" as const, amount: stats?.totalVolumeMinor ?? 0 }];
+
+  const feeEntries = stats?.feesByCurrency
+    ? CURRENCIES.filter((c) => (stats.feesByCurrency?.[c] ?? 0) > 0).map(
+        (c) => ({ currency: c, amount: stats.feesByCurrency![c] ?? 0 }),
+      )
+    : [{ currency: "GBP" as const, amount: stats?.totalFeesMinor ?? 0 }];
 
   return (
     <div className="space-y-6">
@@ -62,12 +81,15 @@ export default function AdminPage() {
               value={stats.totalPOs.toString()}
               description={`${stats.settledPOs} settled`}
             />
-            <StatCard
-              icon={PoundSterling}
-              label="Total Volume"
-              value={formatCurrency(stats.totalVolumePennies)}
-              description="All PO value"
-            />
+            {volumeEntries.map(({ currency, amount }) => (
+              <StatCard
+                key={`vol-${currency}`}
+                icon={Coins}
+                label={`Volume (${currency})`}
+                value={formatCurrency(amount, currency)}
+                description="PO value"
+              />
+            ))}
             <StatCard
               icon={Lock}
               label="Active Locks"
@@ -83,12 +105,15 @@ export default function AdminPage() {
           </div>
 
           <div className="grid gap-4 md:grid-cols-3">
-            <StatCard
-              icon={BadgePoundSterling}
-              label="Platform Fees"
-              value={formatCurrency(stats.totalFeesPennies)}
-              description="Revenue collected"
-            />
+            {feeEntries.map(({ currency, amount }) => (
+              <StatCard
+                key={`fee-${currency}`}
+                icon={Banknote}
+                label={`Fees (${currency})`}
+                value={formatCurrency(amount, currency)}
+                description="Revenue collected"
+              />
+            ))}
             <StatCard
               icon={Users}
               label="Total Users"
@@ -131,15 +156,53 @@ export default function AdminPage() {
                 </span>
               </div>
               <div className="flex items-center justify-between border-b pb-2">
-                <span>PO Limits</span>
+                <span>PO Limits (GBP)</span>
                 <span className="font-medium text-foreground">
-                  £500 – £250,000
+                  {formatCurrency(500_00, "GBP")} –{" "}
+                  {formatCurrency(250_000_00, "GBP")}
                 </span>
               </div>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between border-b pb-2">
+                <span>PO Limits (SAR)</span>
+                <span className="font-medium text-foreground">
+                  {formatCurrency(1_875_00, "SAR")} –{" "}
+                  {formatCurrency(937_500_00, "SAR")}
+                </span>
+              </div>
+              <div className="flex items-center justify-between border-b pb-2">
                 <span>Acceptance Window</span>
                 <span className="font-medium text-foreground">48 hours</span>
               </div>
+              {stats.volumeByCurrency && (
+                <>
+                  {Object.entries(stats.volumeByCurrency).map(([ccy, vol]) => (
+                    <div
+                      key={ccy}
+                      className="flex items-center justify-between border-b pb-2"
+                    >
+                      <span>Volume ({ccy})</span>
+                      <span className="font-medium text-foreground">
+                        {formatCurrency(vol, ccy as "GBP" | "SAR")}
+                      </span>
+                    </div>
+                  ))}
+                </>
+              )}
+              {stats.feesByCurrency && (
+                <>
+                  {Object.entries(stats.feesByCurrency).map(([ccy, fee]) => (
+                    <div
+                      key={`fee-${ccy}`}
+                      className="flex items-center justify-between border-b pb-2"
+                    >
+                      <span>Fees ({ccy})</span>
+                      <span className="font-medium text-foreground">
+                        {formatCurrency(fee, ccy as "GBP" | "SAR")}
+                      </span>
+                    </div>
+                  ))}
+                </>
+              )}
             </CardContent>
           </Card>
         </>

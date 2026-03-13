@@ -30,6 +30,7 @@ import {
   Scale,
   AlertTriangle,
   Receipt,
+  Building2,
 } from "lucide-react";
 import { PasskeyBanner } from "@/components/passkey-banner";
 import { HealthIndicator } from "@/components/health-indicator";
@@ -111,6 +112,12 @@ const NAV_ITEMS = [
     href: "/dashboard/admin/reconciliation",
     label: "Reconciliation",
     icon: ArrowRightLeft,
+    roles: ["ADMIN"],
+  },
+  {
+    href: "/dashboard/admin/escrow-accounts",
+    label: "Escrow Accounts",
+    icon: Building2,
     roles: ["ADMIN"],
   },
   {

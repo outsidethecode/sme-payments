@@ -2,7 +2,7 @@
 
 import { useAuth } from "@/lib/auth-context";
 import { useQuery } from "@tanstack/react-query";
-import { poApi, usersApi } from "@/lib/api";
+import { poApi, usersApi, adminApi } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 import {
   Card,
@@ -19,10 +19,10 @@ import {
   FileText,
   Lock,
   Zap,
-  PoundSterling,
+  Coins,
   Plus,
   ArrowRight,
-  Globe,
+  ShieldAlert,
 } from "lucide-react";
 
 export default function DashboardPage() {
@@ -38,6 +38,14 @@ export default function DashboardPage() {
     queryFn: () => usersApi.balance().then((r) => r.data),
   });
 
+  const isAdmin = user?.role === "ADMIN";
+
+  const { data: adminStats, isLoading: adminStatsLoading } = useQuery({
+    queryKey: ["admin-stats"],
+    queryFn: () => adminApi.stats().then((r) => r.data),
+    enabled: isAdmin,
+  });
+
   if (!user) return null;
 
   const greeting = `Welcome, ${user.name.split(" ")[0]}`;
@@ -49,8 +57,13 @@ export default function DashboardPage() {
       ["SENT", "ACCEPTED", "IN_PROGRESS", "DELIVERED"].includes(p.status),
     ).length ?? 0;
   const pendingPOs = pos?.filter((p) => p.status === "SENT").length ?? 0;
-  const totalValuePennies =
-    pos?.reduce((sum, p) => sum + p.totalAmountPennies, 0) ?? 0;
+  // Per-currency value totals
+  const valueByCurrency: Record<string, number> = {};
+  for (const p of pos ?? []) {
+    const ccy = (p.currency as string) || user.currency || "GBP";
+    valueByCurrency[ccy] = (valueByCurrency[ccy] ?? 0) + p.totalAmountPennies;
+  }
+  const valueEntries = Object.entries(valueByCurrency);
 
   return (
     <div className="space-y-6">
@@ -87,23 +100,24 @@ export default function DashboardPage() {
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          title="Account Balance"
-          icon={
-            user.currency === "SAR" ? (
-              <span className="text-sm font-medium text-muted-foreground">
-                ﷼
-              </span>
-            ) : (
-              <PoundSterling className="h-4 w-4 text-muted-foreground" />
-            )
-          }
-          loading={balanceLoading}
+          title={isAdmin ? "Escrow Balance" : "Account Balance"}
+          icon={<Coins className="h-4 w-4 text-muted-foreground" />}
+          loading={isAdmin ? adminStatsLoading : balanceLoading}
           value={
-            balanceData
-              ? formatCurrency(balanceData.balance, user.currency ?? "GBP")
-              : "—"
+            isAdmin
+              ? adminStats?.escrowBalanceByCurrency &&
+                Object.keys(adminStats.escrowBalanceByCurrency).length > 0
+                ? Object.entries(adminStats.escrowBalanceByCurrency)
+                    .map(([ccy, amt]) =>
+                      formatCurrency(amt, ccy as "GBP" | "SAR"),
+                    )
+                    .join(" / ")
+                : formatCurrency(0, "GBP")
+              : balanceData
+                ? formatCurrency(balanceData.balance, user.currency ?? "GBP")
+                : "—"
           }
-          description="Available funds"
+          description={isAdmin ? "Platform escrow" : "Available funds"}
         />
         <StatCard
           title="Total POs"
@@ -113,20 +127,106 @@ export default function DashboardPage() {
           description={`${activePOs} active`}
         />
         <StatCard
-          title="Pending Action"
-          icon={<Lock className="h-4 w-4 text-muted-foreground" />}
-          loading={posLoading}
-          value={pendingPOs.toString()}
-          description="Awaiting response"
+          title={isAdmin ? "Locked Amount" : "Pending Action"}
+          icon={
+            isAdmin ? (
+              <ShieldAlert className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <Lock className="h-4 w-4 text-muted-foreground" />
+            )
+          }
+          loading={isAdmin ? adminStatsLoading : posLoading}
+          value={
+            isAdmin
+              ? adminStats?.lockedAmountByCurrency &&
+                Object.keys(adminStats.lockedAmountByCurrency).length > 0
+                ? Object.entries(adminStats.lockedAmountByCurrency)
+                    .map(([ccy, amt]) =>
+                      formatCurrency(amt, ccy as "GBP" | "SAR"),
+                    )
+                    .join(" / ")
+                : formatCurrency(0, "GBP")
+              : pendingPOs.toString()
+          }
+          description={
+            isAdmin ? "Funds locked against POs" : "Awaiting response"
+          }
         />
         <StatCard
           title="Total Value"
           icon={<Zap className="h-4 w-4 text-muted-foreground" />}
-          loading={posLoading}
-          value={formatCurrency(totalValuePennies, user.currency ?? "GBP")}
+          loading={isAdmin ? adminStatsLoading : posLoading}
+          value={
+            isAdmin
+              ? adminStats?.volumeByCurrency &&
+                Object.keys(adminStats.volumeByCurrency).length > 0
+                ? Object.entries(adminStats.volumeByCurrency)
+                    .map(([ccy, amt]) =>
+                      formatCurrency(amt, ccy as "GBP" | "SAR"),
+                    )
+                    .join(" / ")
+                : formatCurrency(adminStats?.totalVolumeMinor ?? 0, "GBP")
+              : valueEntries.length === 0
+                ? formatCurrency(0, user.currency ?? "GBP")
+                : valueEntries
+                    .map(([ccy, amt]) =>
+                      formatCurrency(amt, ccy as "GBP" | "SAR"),
+                    )
+                    .join(" / ")
+          }
           description="All purchase orders"
         />
       </div>
+
+      {/* Reconciliation discrepancy alert (admin only) */}
+      {isAdmin &&
+        adminStats &&
+        (() => {
+          const escrow = adminStats.escrowBalanceByCurrency ?? {};
+          const locked = adminStats.lockedAmountByCurrency ?? {};
+          const allCurrencies = new Set([
+            ...Object.keys(escrow),
+            ...Object.keys(locked),
+          ]);
+          const mismatches: string[] = [];
+          for (const ccy of allCurrencies) {
+            const e = escrow[ccy] ?? 0;
+            const l = locked[ccy] ?? 0;
+            if (e !== l) {
+              const diff = e - l;
+              mismatches.push(
+                `${ccy}: escrow ${formatCurrency(e, ccy as "GBP" | "SAR")} vs locked ${formatCurrency(l, ccy as "GBP" | "SAR")} (${diff > 0 ? "+" : ""}${formatCurrency(diff, ccy as "GBP" | "SAR")})`,
+              );
+            }
+          }
+          if (mismatches.length === 0) return null;
+          return (
+            <Card className="border-amber-500/50 bg-amber-50 dark:bg-amber-950/20">
+              <CardHeader className="flex flex-row items-center gap-2 pb-2">
+                <ShieldAlert className="h-5 w-5 text-amber-600" />
+                <CardTitle className="text-sm font-medium text-amber-800 dark:text-amber-400">
+                  Escrow / Locked Amount Discrepancy
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-1">
+                {mismatches.map((m, i) => (
+                  <p
+                    key={i}
+                    className="text-sm text-amber-700 dark:text-amber-300"
+                  >
+                    {m}
+                  </p>
+                ))}
+                <Link
+                  href="/dashboard/admin/reconciliation"
+                  className="inline-flex items-center gap-1 text-sm font-medium text-amber-800 underline underline-offset-2 hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-300"
+                >
+                  Run reconciliation <ArrowRight className="h-3 w-3" />
+                </Link>
+              </CardContent>
+            </Card>
+          );
+        })()}
 
       {/* Quick Actions by Role */}
       <div className="grid gap-4 md:grid-cols-2">

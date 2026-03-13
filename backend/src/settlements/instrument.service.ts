@@ -1,6 +1,7 @@
 import { Injectable, Logger, BadRequestException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { LedgerService } from "../ledger/ledger.service";
+import { Currency } from "@prisma/client";
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -92,7 +93,7 @@ export class InstrumentService {
       data: {
         purchaseOrderId: input.purchaseOrderId,
         amount: input.amount,
-        currency: input.currency,
+        currency: input.currency as Currency,
         payerAccountRef: input.payerAccountRef ?? null,
         status: "CREATED",
         settlementBeneficiary: "SUPPLIER",

@@ -539,6 +539,7 @@ export default function PurchaseOrderDetailPage() {
                     (sum, li) => sum + li.quantity * li.unitPricePennies,
                     0,
                   ),
+                  po.currency as "GBP" | "SAR",
                 )}
               </span>
             </div>
@@ -645,10 +646,16 @@ export default function PurchaseOrderDetailPage() {
                     {item.unitOfMeasure || "EACH"}
                   </TableCell>
                   <TableCell className="text-right">
-                    {formatCurrency(item.unitPricePennies)}
+                    {formatCurrency(
+                      item.unitPricePennies,
+                      po.currency as "GBP" | "SAR",
+                    )}
                   </TableCell>
                   <TableCell className="text-right font-medium">
-                    {formatCurrency(item.quantity * item.unitPricePennies)}
+                    {formatCurrency(
+                      item.quantity * item.unitPricePennies,
+                      po.currency as "GBP" | "SAR",
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
@@ -658,7 +665,10 @@ export default function PurchaseOrderDetailPage() {
           <div className="flex justify-between text-sm">
             <span className="font-medium">Total</span>
             <span className="text-lg font-bold">
-              {formatCurrency(po.totalAmountPennies)}
+              {formatCurrency(
+                po.totalAmountPennies,
+                po.currency as "GBP" | "SAR",
+              )}
             </span>
           </div>
         </CardContent>
@@ -677,7 +687,10 @@ export default function PurchaseOrderDetailPage() {
             <div className="flex justify-between">
               <span>Amount</span>
               <span className="font-medium">
-                {formatCurrency(po.paymentLock.amountPennies)}
+                {formatCurrency(
+                  po.paymentLock.amountPennies,
+                  po.currency as "GBP" | "SAR",
+                )}
               </span>
             </div>
             <div className="flex justify-between">
@@ -776,12 +789,20 @@ export default function PurchaseOrderDetailPage() {
                 </div>
                 <div className="flex justify-between">
                   <span>Tax Amount</span>
-                  <span>{formatCurrency(po.taxAmount ?? 0)}</span>
+                  <span>
+                    {formatCurrency(
+                      po.taxAmount ?? 0,
+                      po.currency as "GBP" | "SAR",
+                    )}
+                  </span>
                 </div>
                 <div className="flex justify-between font-medium">
                   <span>Gross Amount</span>
                   <span>
-                    {formatCurrency(po.grossAmount ?? po.totalAmountPennies)}
+                    {formatCurrency(
+                      po.grossAmount ?? po.totalAmountPennies,
+                      po.currency as "GBP" | "SAR",
+                    )}
                   </span>
                 </div>
               </>
@@ -848,7 +869,10 @@ export default function PurchaseOrderDetailPage() {
                   </Badge>
                 </div>
                 <div className="flex justify-between text-muted-foreground">
-                  <span>Amount: {formatCurrency(rev.amount)}</span>
+                  <span>
+                    Amount:{" "}
+                    {formatCurrency(rev.amount, po.currency as "GBP" | "SAR")}
+                  </span>
                   <span>{formatDateTime(rev.createdAt)}</span>
                 </div>
                 {rev.notes && (

@@ -7,7 +7,7 @@ import { LedgerService } from "../ledger/ledger.service";
 export interface FraudRuleConfig {
   /** Max POs a buyer can create per day */
   maxPOsPerBuyerPerDay: number;
-  /** Max total PO value a buyer can create per day (in smallest currency unit) */
+  /** Max total PO value a buyer can create per day (in minor units) */
   maxDailyValuePerBuyer: number;
   /** PO amount above which evidence attachments are mandatory */
   mandatoryEvidenceThreshold: number;
@@ -17,13 +17,25 @@ export interface FraudRuleConfig {
   maxPOsPerSupplierPerDay: number;
 }
 
-const DEFAULT_FRAUD_CONFIG: FraudRuleConfig = {
-  maxPOsPerBuyerPerDay: 50,
-  maxDailyValuePerBuyer: 50_000_000, // 500,000 GBP/SAR
-  mandatoryEvidenceThreshold: 10_000_000, // 100,000 GBP/SAR
-  supplierWhitelist: [],
-  maxPOsPerSupplierPerDay: 100,
+/** Per-currency fraud thresholds (minor units) */
+const FRAUD_CONFIG_BY_CURRENCY: Record<string, FraudRuleConfig> = {
+  GBP: {
+    maxPOsPerBuyerPerDay: 50,
+    maxDailyValuePerBuyer: 50_000_000, // £500,000
+    mandatoryEvidenceThreshold: 10_000_000, // £100,000
+    supplierWhitelist: [],
+    maxPOsPerSupplierPerDay: 100,
+  },
+  SAR: {
+    maxPOsPerBuyerPerDay: 50,
+    maxDailyValuePerBuyer: 187_500_000, // SAR 1,875,000 (~£500k equiv)
+    mandatoryEvidenceThreshold: 37_500_000, // SAR 375,000 (~£100k equiv)
+    supplierWhitelist: [],
+    maxPOsPerSupplierPerDay: 100,
+  },
 };
+
+const DEFAULT_FRAUD_CONFIG: FraudRuleConfig = FRAUD_CONFIG_BY_CURRENCY["GBP"];
 
 // ── Service ──────────────────────────────────────────────────
 
@@ -46,9 +58,23 @@ export class FraudControlsService {
     return this.config;
   }
 
-  /** Get current fraud configuration */
-  getConfig(): FraudRuleConfig {
-    return { ...this.config };
+  /** Get current fraud configuration (includes per-currency map) */
+  getConfig(): FraudRuleConfig & {
+    configByCurrency: Record<string, FraudRuleConfig>;
+  } {
+    return { ...this.config, configByCurrency: this.getAllConfigs() };
+  }
+
+  /** Get fraud configs for all supported currencies */
+  getAllConfigs(): Record<string, FraudRuleConfig> {
+    return Object.fromEntries(
+      Object.entries(FRAUD_CONFIG_BY_CURRENCY).map(([k, v]) => [k, { ...v }]),
+    );
+  }
+
+  /** Get fraud config for a specific currency */
+  getConfigForCurrency(currency: string): FraudRuleConfig {
+    return { ...(FRAUD_CONFIG_BY_CURRENCY[currency] ?? this.config) };
   }
 
   /**
@@ -59,11 +85,13 @@ export class FraudControlsService {
     buyerId: string,
     supplierId: string,
     amount: number,
+    currency: string = "GBP",
   ): Promise<{ passed: boolean; warnings: string[]; flags: string[] }> {
     const warnings: string[] = [];
     const flags: string[] = [];
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const cfg = this.getConfigForCurrency(currency);
 
     // ── 1. Buyer daily PO count velocity check ──
     const buyerDailyCount = await this.prisma.purchaseOrder.count({
@@ -73,26 +101,27 @@ export class FraudControlsService {
       },
     });
 
-    if (buyerDailyCount >= this.config.maxPOsPerBuyerPerDay) {
+    if (buyerDailyCount >= cfg.maxPOsPerBuyerPerDay) {
       const flag = await this.createFlag(
         buyerId,
         "VELOCITY_DAILY_PO_COUNT",
         "HIGH",
         {
-          limit: this.config.maxPOsPerBuyerPerDay,
+          limit: cfg.maxPOsPerBuyerPerDay,
           actual: buyerDailyCount,
           window: "24h",
+          currency,
         },
       );
       flags.push(flag.id);
       throw new BadRequestException(
-        `Velocity limit exceeded: ${buyerDailyCount} POs created today (limit: ${this.config.maxPOsPerBuyerPerDay})`,
+        `Velocity limit exceeded: ${buyerDailyCount} POs created today (limit: ${cfg.maxPOsPerBuyerPerDay})`,
       );
     }
 
-    if (buyerDailyCount >= this.config.maxPOsPerBuyerPerDay * 0.8) {
+    if (buyerDailyCount >= cfg.maxPOsPerBuyerPerDay * 0.8) {
       warnings.push(
-        `Approaching daily PO limit: ${buyerDailyCount}/${this.config.maxPOsPerBuyerPerDay}`,
+        `Approaching daily PO limit: ${buyerDailyCount}/${cfg.maxPOsPerBuyerPerDay}`,
       );
     }
 
@@ -106,33 +135,34 @@ export class FraudControlsService {
     });
 
     const totalDailyValue = (buyerDailyValue._sum.amount ?? 0) + amount;
-    if (totalDailyValue > this.config.maxDailyValuePerBuyer) {
+    if (totalDailyValue > cfg.maxDailyValuePerBuyer) {
       const flag = await this.createFlag(
         buyerId,
         "VELOCITY_DAILY_VALUE",
         "HIGH",
         {
-          limit: this.config.maxDailyValuePerBuyer,
+          limit: cfg.maxDailyValuePerBuyer,
           actual: totalDailyValue,
           window: "24h",
+          currency,
         },
       );
       flags.push(flag.id);
       throw new BadRequestException(
-        `Daily value limit exceeded: ${totalDailyValue} (limit: ${this.config.maxDailyValuePerBuyer})`,
+        `Daily value limit exceeded: ${totalDailyValue} (limit: ${cfg.maxDailyValuePerBuyer})`,
       );
     }
 
-    if (totalDailyValue > this.config.maxDailyValuePerBuyer * 0.8) {
+    if (totalDailyValue > cfg.maxDailyValuePerBuyer * 0.8) {
       warnings.push(
-        `Approaching daily value limit: ${totalDailyValue}/${this.config.maxDailyValuePerBuyer}`,
+        `Approaching daily value limit: ${totalDailyValue}/${cfg.maxDailyValuePerBuyer}`,
       );
     }
 
     // ── 3. Supplier whitelist check ──
     if (
-      this.config.supplierWhitelist.length > 0 &&
-      !this.config.supplierWhitelist.includes(supplierId)
+      cfg.supplierWhitelist.length > 0 &&
+      !cfg.supplierWhitelist.includes(supplierId)
     ) {
       const flag = await this.createFlag(
         buyerId,
@@ -154,20 +184,21 @@ export class FraudControlsService {
       },
     });
 
-    if (supplierDailyCount >= this.config.maxPOsPerSupplierPerDay) {
+    if (supplierDailyCount >= cfg.maxPOsPerSupplierPerDay) {
       const flag = await this.createFlag(
         supplierId,
         "VELOCITY_SUPPLIER_DAILY_COUNT",
         "MEDIUM",
         {
-          limit: this.config.maxPOsPerSupplierPerDay,
+          limit: cfg.maxPOsPerSupplierPerDay,
           actual: supplierDailyCount,
           window: "24h",
+          currency,
         },
       );
       flags.push(flag.id);
       throw new BadRequestException(
-        `Supplier daily PO limit exceeded: ${supplierDailyCount} (limit: ${this.config.maxPOsPerSupplierPerDay})`,
+        `Supplier daily PO limit exceeded: ${supplierDailyCount} (limit: ${cfg.maxPOsPerSupplierPerDay})`,
       );
     }
 
@@ -177,8 +208,9 @@ export class FraudControlsService {
   /**
    * Check if evidence is mandatory for a PO of the given amount.
    */
-  isEvidenceMandatory(amount: number): boolean {
-    return amount >= this.config.mandatoryEvidenceThreshold;
+  isEvidenceMandatory(amount: number, currency: string = "GBP"): boolean {
+    const cfg = this.getConfigForCurrency(currency);
+    return amount >= cfg.mandatoryEvidenceThreshold;
   }
 
   /**
@@ -188,8 +220,9 @@ export class FraudControlsService {
   async enforceEvidenceRequirement(
     purchaseOrderId: string,
     amount: number,
+    currency: string = "GBP",
   ): Promise<void> {
-    if (!this.isEvidenceMandatory(amount)) return;
+    if (!this.isEvidenceMandatory(amount, currency)) return;
 
     const evidenceCount = await this.prisma.evidenceAttachment.count({
       where: { purchaseOrderId },

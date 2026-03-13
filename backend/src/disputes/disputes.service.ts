@@ -94,6 +94,7 @@ export class DisputesService {
           purchaseOrderId: input.purchaseOrderId,
           raisedById: input.buyerId,
           reason: input.reason,
+          currency: po.currency as any,
           status: "OPEN",
           buyerEvidence: input.evidenceIds ?? [],
         },

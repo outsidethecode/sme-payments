@@ -72,6 +72,7 @@ export default function ApprovalsPage() {
         {
           reference: string;
           totalAmountPennies: number;
+          currency?: string;
           description: string | null;
           buyer?: { companyName: string };
           supplier?: { companyName: string };
@@ -105,7 +106,8 @@ export default function ApprovalsPage() {
     },
   });
 
-  const currency = user?.currency || "GBP";
+  const userCurrency: "GBP" | "SAR" =
+    (user?.currency as "GBP" | "SAR") || "GBP";
 
   if (!user) return null;
 
@@ -169,7 +171,10 @@ export default function ApprovalsPage() {
                             Amount
                           </p>
                           <p className="font-semibold">
-                            {formatCurrency(po.totalAmountPennies, currency)}
+                            {formatCurrency(
+                              po.totalAmountPennies,
+                              (po.currency as "GBP" | "SAR") ?? userCurrency,
+                            )}
                           </p>
                         </div>
                         <div>

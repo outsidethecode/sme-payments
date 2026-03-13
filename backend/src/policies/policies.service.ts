@@ -199,7 +199,7 @@ export class PoliciesService {
     { minAmount: number; maxAmount: number }
   > = {
     GBP: { minAmount: 500_00, maxAmount: 250_000_00 },
-    SAR: { minAmount: 1_875_00, maxAmount: 93_750_000 },
+    SAR: { minAmount: 1_875_00, maxAmount: 937_500_00 },
   };
 
   /**

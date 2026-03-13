@@ -85,52 +85,120 @@ export default function RiskPage() {
               Fraud Control Configuration
             </CardTitle>
             <CardDescription>
-              Current velocity limits and thresholds
+              Per-currency velocity limits and thresholds
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 gap-4 text-sm md:grid-cols-2 lg:grid-cols-3">
-              <div className="rounded border p-3">
-                <div className="text-muted-foreground">
-                  Max POs / Buyer / Day
+          <CardContent className="space-y-6">
+            {fraudConfig.configByCurrency ? (
+              Object.entries(
+                fraudConfig.configByCurrency as Record<
+                  string,
+                  typeof fraudConfig
+                >,
+              ).map(([ccy, cfg]) => (
+                <div key={ccy}>
+                  <h3 className="mb-3 text-sm font-semibold">{ccy}</h3>
+                  <div className="grid grid-cols-1 gap-4 text-sm md:grid-cols-2 lg:grid-cols-3">
+                    <div className="rounded border p-3">
+                      <div className="text-muted-foreground">
+                        Max POs / Buyer / Day
+                      </div>
+                      <div className="text-lg font-semibold">
+                        {cfg.maxPOsPerBuyerPerDay}
+                      </div>
+                    </div>
+                    <div className="rounded border p-3">
+                      <div className="text-muted-foreground">
+                        Max Daily Value / Buyer
+                      </div>
+                      <div className="text-lg font-semibold">
+                        {formatCurrency(
+                          cfg.maxDailyValuePerBuyer,
+                          ccy as "GBP" | "SAR",
+                        )}
+                      </div>
+                    </div>
+                    <div className="rounded border p-3">
+                      <div className="text-muted-foreground">
+                        Mandatory Evidence Threshold
+                      </div>
+                      <div className="text-lg font-semibold">
+                        {formatCurrency(
+                          cfg.mandatoryEvidenceThreshold,
+                          ccy as "GBP" | "SAR",
+                        )}
+                      </div>
+                    </div>
+                    <div className="rounded border p-3">
+                      <div className="text-muted-foreground">
+                        Max POs / Supplier / Day
+                      </div>
+                      <div className="text-lg font-semibold">
+                        {cfg.maxPOsPerSupplierPerDay}
+                      </div>
+                    </div>
+                    <div className="rounded border p-3">
+                      <div className="text-muted-foreground">
+                        Supplier Whitelist
+                      </div>
+                      <div className="text-lg font-semibold">
+                        {(cfg.supplierWhitelist ?? []).length > 0
+                          ? `${cfg.supplierWhitelist.length} entries`
+                          : "Not enforced"}
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div className="text-lg font-semibold">
-                  {fraudConfig.maxPOsPerBuyerPerDay}
+              ))
+            ) : (
+              <div className="grid grid-cols-1 gap-4 text-sm md:grid-cols-2 lg:grid-cols-3">
+                <div className="rounded border p-3">
+                  <div className="text-muted-foreground">
+                    Max POs / Buyer / Day
+                  </div>
+                  <div className="text-lg font-semibold">
+                    {fraudConfig.maxPOsPerBuyerPerDay}
+                  </div>
+                </div>
+                <div className="rounded border p-3">
+                  <div className="text-muted-foreground">
+                    Max Daily Value / Buyer
+                  </div>
+                  <div className="text-lg font-semibold">
+                    {formatCurrency(fraudConfig.maxDailyValuePerBuyer, "GBP")}
+                  </div>
+                </div>
+                <div className="rounded border p-3">
+                  <div className="text-muted-foreground">
+                    Mandatory Evidence Threshold
+                  </div>
+                  <div className="text-lg font-semibold">
+                    {formatCurrency(
+                      fraudConfig.mandatoryEvidenceThreshold,
+                      "GBP",
+                    )}
+                  </div>
+                </div>
+                <div className="rounded border p-3">
+                  <div className="text-muted-foreground">
+                    Max POs / Supplier / Day
+                  </div>
+                  <div className="text-lg font-semibold">
+                    {fraudConfig.maxPOsPerSupplierPerDay}
+                  </div>
+                </div>
+                <div className="rounded border p-3">
+                  <div className="text-muted-foreground">
+                    Supplier Whitelist
+                  </div>
+                  <div className="text-lg font-semibold">
+                    {fraudConfig.supplierWhitelist.length > 0
+                      ? `${fraudConfig.supplierWhitelist.length} entries`
+                      : "Not enforced"}
+                  </div>
                 </div>
               </div>
-              <div className="rounded border p-3">
-                <div className="text-muted-foreground">
-                  Max Daily Value / Buyer
-                </div>
-                <div className="text-lg font-semibold">
-                  {formatCurrency(fraudConfig.maxDailyValuePerBuyer)}
-                </div>
-              </div>
-              <div className="rounded border p-3">
-                <div className="text-muted-foreground">
-                  Mandatory Evidence Threshold
-                </div>
-                <div className="text-lg font-semibold">
-                  {formatCurrency(fraudConfig.mandatoryEvidenceThreshold)}
-                </div>
-              </div>
-              <div className="rounded border p-3">
-                <div className="text-muted-foreground">
-                  Max POs / Supplier / Day
-                </div>
-                <div className="text-lg font-semibold">
-                  {fraudConfig.maxPOsPerSupplierPerDay}
-                </div>
-              </div>
-              <div className="rounded border p-3">
-                <div className="text-muted-foreground">Supplier Whitelist</div>
-                <div className="text-lg font-semibold">
-                  {fraudConfig.supplierWhitelist.length > 0
-                    ? `${fraudConfig.supplierWhitelist.length} entries`
-                    : "Not enforced"}
-                </div>
-              </div>
-            </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -224,22 +292,53 @@ export default function RiskPage() {
 
           {exposure && (
             <div className="space-y-4">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+              {/* Per-currency exposure breakdown */}
+              {exposure.exposureByCurrency &&
+              Object.keys(exposure.exposureByCurrency).length > 0 ? (
+                <div className="space-y-2">
+                  <h3 className="text-sm font-semibold">
+                    Exposure by Currency
+                  </h3>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    {Object.entries(exposure.exposureByCurrency).map(
+                      ([ccy, amt]) => (
+                        <div key={ccy} className="rounded border p-3">
+                          <div className="text-muted-foreground text-sm">
+                            Total Exposure ({ccy})
+                          </div>
+                          <div className="text-xl font-bold">
+                            {formatCurrency(amt, ccy as "GBP" | "SAR")}
+                          </div>
+                        </div>
+                      ),
+                    )}
+                  </div>
+                </div>
+              ) : (
                 <div className="rounded border p-3">
                   <div className="text-muted-foreground text-sm">
                     Total Exposure
                   </div>
                   <div className="text-xl font-bold">
-                    {formatCurrency(exposure.totalExposure)}
+                    {formatCurrency(
+                      exposure.totalExposure,
+                      (exposure.currency ?? "GBP") as "GBP" | "SAR",
+                    )}
                   </div>
                 </div>
+              )}
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div className="rounded border p-3">
                   <div className="text-muted-foreground text-sm">
                     Funding Limit
                   </div>
                   <div className="text-xl font-bold">
                     {exposure.fundingLimit
-                      ? formatCurrency(exposure.fundingLimit)
+                      ? formatCurrency(
+                          exposure.fundingLimit,
+                          (exposure.currency ?? "GBP") as "GBP" | "SAR",
+                        )
                       : "No limit set"}
                   </div>
                 </div>
@@ -303,7 +402,12 @@ export default function RiskPage() {
                             <span className="font-mono text-xs">
                               {id.slice(0, 8)}…
                             </span>
-                            <span>{formatCurrency(amount as number)}</span>
+                            <span>
+                              {formatCurrency(
+                                amount as number,
+                                (exposure.currency ?? "GBP") as "GBP" | "SAR",
+                              )}
+                            </span>
                           </div>
                         ),
                       )}
@@ -329,7 +433,12 @@ export default function RiskPage() {
                             <span className="font-mono text-xs">
                               {id.slice(0, 8)}…
                             </span>
-                            <span>{formatCurrency(amount as number)}</span>
+                            <span>
+                              {formatCurrency(
+                                amount as number,
+                                (exposure.currency ?? "GBP") as "GBP" | "SAR",
+                              )}
+                            </span>
                           </div>
                         ),
                       )}

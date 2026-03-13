@@ -333,7 +333,7 @@ model PurchaseOrder {
   description           String
   lineItems             Json           @map("line_items")
   amount                Int            // in smallest currency unit
-  currency              String         @default("GBP")
+  currency              Currency       @default(GBP)
 
   // ── Standard PO header fields ──
   expectedDeliveryDate  DateTime?      @map("expected_delivery_date")
@@ -479,6 +479,7 @@ model Dispute {
   purchaseOrderId String         @map("purchase_order_id")
   raisedById      String         @map("raised_by_id")          // buyer who raised the dispute
   reason          String
+  currency        Currency       @default(GBP)
   status          DisputeStatus  @default(OPEN)
   outcome         DisputeOutcome?
   resolvedById    String?        @map("resolved_by_id")        // admin who resolved
@@ -532,6 +533,7 @@ model LpExposureSnapshot {
   id                  String   @id @default(uuid())
   liquidityPartnerId  String   @map("liquidity_partner_id")
   totalExposure       Int      @map("total_exposure")          // outstanding funded amount
+  currency            Currency @default(GBP)
   buyerConcentration  Json     @map("buyer_concentration")     // { buyerId: amount }
   supplierConcentration Json   @map("supplier_concentration")  // { supplierId: amount }
   fundingSuspended    Boolean  @default(false) @map("funding_suspended")
@@ -559,6 +561,7 @@ model PaymentLock {
   purchaseOrderId String            @unique @map("purchase_order_id")
   buyerId         String            @map("buyer_id")
   amount          Int
+  currency        Currency          @default(GBP)
   status          PaymentLockStatus @default(PENDING)
   openBankingRef  String?           @map("open_banking_ref")
   lockedAt        DateTime?         @map("locked_at")
@@ -603,7 +606,7 @@ model PaymentInstrument {
   purchaseOrderId       String                @unique @map("purchase_order_id")
   type                  InstrumentType        @default(ESCROW_LOCK)
   amount                Int
-  currency              String                @default("GBP")
+  currency              Currency              @default(GBP)
   status                InstrumentStatus      @default(CREATED)
   settlementBeneficiary SettlementBeneficiary @default(SUPPLIER) @map("settlement_beneficiary")
   escrowReference       String?               @map("escrow_reference")       // bank escrow account ref
@@ -613,16 +616,19 @@ model PaymentInstrument {
   buyerOrgId            String?               @map("buyer_org_id")
   supplierOrgId         String?               @map("supplier_org_id")
   financingPartnerId    String?               @map("financing_partner_id")   // LP user id
+  escrowAccountId       String?               @map("escrow_account_id")      // links to EscrowAccount
   failureReason         String?               @map("failure_reason")
   createdAt             DateTime              @default(now()) @map("created_at")
   lockedAt              DateTime?             @map("locked_at")
   settledAt             DateTime?             @map("settled_at")
 
-  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  purchaseOrder  PurchaseOrder  @relation(fields: [purchaseOrderId], references: [id])
+  escrowAccount  EscrowAccount? @relation(fields: [escrowAccountId], references: [id])
 
   @@index([status])
   @@index([bankReference])
   @@index([settlementBeneficiary])
+  @@index([escrowAccountId])
   @@map("payment_instruments")
 }
 
@@ -646,6 +652,7 @@ model EarlyPaymentRequest {
   faceValue          Int                @map("face_value")
   serviceFee         Int                @map("service_fee") // flat service fee (ujrah)
   netAdvance         Int                @map("net_advance")
+  currency           Currency           @default(GBP)
   status             EarlyPaymentStatus @default(REQUESTED)
   riskAcknowledged   Boolean            @default(false) @map("risk_acknowledged")
   fundedAt           DateTime?          @map("funded_at")
@@ -680,7 +687,7 @@ model Settlement {
   fromUserId      String           @map("from_user_id")
   toUserId        String           @map("to_user_id")
   amount          Int
-  currency        String           @default("GBP")      // GBP | SAR
+  currency        Currency         @default(GBP)
   type            SettlementType
   status          SettlementStatus @default(PENDING)
   settlementRail  String?          @map("settlement_rail") // SIMULATED | KSA_BANK
@@ -770,6 +777,7 @@ model PlatformFee {
   purchaseOrderId String   @map("purchase_order_id")
   feeType         FeeType  @map("fee_type")
   amount          Int
+  currency        Currency @default(GBP)
   createdAt       DateTime @default(now()) @map("created_at")
 
   purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
@@ -782,6 +790,7 @@ model PlatformFee {
 model ReconciliationReport {
   id            String   @id @default(uuid())
   runAt         DateTime @map("run_at")
+  currency      Currency @default(GBP)
   totalChecked  Int      @map("total_checked")
   matched       Int
   mismatches    Int
@@ -791,6 +800,31 @@ model ReconciliationReport {
   variance      Int?                              // ledgerBalance - bankBalance
   createdAt     DateTime @default(now()) @map("created_at")
 
+  // Escrow account (added in multi-currency step)
+  escrowAccountId String?        @map("escrow_account_id")
+  escrowAccount   EscrowAccount? @relation(fields: [escrowAccountId], references: [id])
+
   @@index([runAt])
+  @@index([escrowAccountId])
   @@map("reconciliation_reports")
+}
+
+// ── Escrow Accounts ─────────────────────────────────────────
+
+model EscrowAccount {
+  id            String   @id @default(uuid())
+  label         String                                // e.g. "UK GBP Escrow (Simulated)"
+  bank          String                                // bank name
+  country       String                                // ISO country code (GB, SA)
+  currency      Currency @default(GBP)
+  balanceMinor  Int      @default(0) @map("balance_minor")  // shadow balance in minor units
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  instruments          PaymentInstrument[]
+  reconciliationReports ReconciliationReport[]
+
+  @@unique([country, currency])
+  @@map("escrow_accounts")
 }

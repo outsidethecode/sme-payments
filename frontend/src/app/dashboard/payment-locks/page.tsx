@@ -80,7 +80,10 @@ export default function PaymentLocksPage() {
               </CardHeader>
               <CardContent>
                 <p className="text-2xl font-bold">
-                  {formatCurrency(totalLockedPennies)}
+                  {formatCurrency(
+                    totalLockedPennies,
+                    activeLocks[0]?.currency as "GBP" | "SAR",
+                  )}
                 </p>
               </CardContent>
             </Card>
@@ -146,7 +149,10 @@ export default function PaymentLocksPage() {
                             : (lock.purchaseOrder?.buyer?.companyName ?? "—")}
                         </TableCell>
                         <TableCell className="font-medium">
-                          {formatCurrency(lock.amountPennies)}
+                          {formatCurrency(
+                            lock.amountPennies,
+                            lock.currency as "GBP" | "SAR",
+                          )}
                         </TableCell>
                         <TableCell>
                           <Badge variant={statusVariant(lock.status)}>

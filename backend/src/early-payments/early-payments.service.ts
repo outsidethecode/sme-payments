@@ -104,6 +104,7 @@ export class EarlyPaymentsService {
         faceValue: po.amount,
         serviceFee: feeAmount,
         netAdvance,
+        currency: po.currency as any,
         status: "REQUESTED",
       },
       include: {
@@ -496,6 +497,7 @@ export class EarlyPaymentsService {
           purchaseOrderId: request.purchaseOrderId,
           feeType: "EARLY_PAY_FACILITATION",
           amount: request.serviceFee,
+          currency: request.currency as any,
         },
       });
 
@@ -594,6 +596,10 @@ export class EarlyPaymentsService {
       faceValuePennies: ep.faceValue,
       serviceFeePennies: ep.serviceFee,
       netAdvancePennies: ep.netAdvance,
+      faceValueMinor: ep.faceValue,
+      serviceFeeMinor: ep.serviceFee,
+      netAdvanceMinor: ep.netAdvance,
+      currency: ep.currency || "GBP",
       status: ep.status,
       riskAcknowledged: ep.riskAcknowledged,
       fundedAt: ep.fundedAt,
@@ -605,12 +611,15 @@ export class EarlyPaymentsService {
             reference: ep.purchaseOrder.referenceNumber,
             status: ep.purchaseOrder.status,
             totalAmountPennies: ep.purchaseOrder.amount,
+            totalAmountMinor: ep.purchaseOrder.amount,
+            currency: ep.purchaseOrder.currency || "GBP",
             buyer: ep.purchaseOrder.buyer || undefined,
             supplier: ep.purchaseOrder.supplier || undefined,
             paymentLock: ep.purchaseOrder.paymentLock
               ? {
                   status: ep.purchaseOrder.paymentLock.status,
                   amountPennies: ep.purchaseOrder.paymentLock.amount,
+                  amountMinor: ep.purchaseOrder.paymentLock.amount,
                 }
               : undefined,
           }
