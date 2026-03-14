@@ -26,6 +26,7 @@ import { Type } from "class-transformer";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RolesGuard } from "../auth/roles.guard";
 import { Roles } from "../auth/roles.decorator";
+import { Idempotent } from "../idempotency/idempotent.decorator";
 import { PurchaseOrdersService } from "./purchase-orders.service";
 
 class LineItemDto {
@@ -220,6 +221,28 @@ export class PurchaseOrdersController {
     return this.poService.accept(id, req.user.id, body?.signatureData);
   }
 
+  @Patch(":id/fund")
+  @Roles("BUYER")
+  @Idempotent()
+  @ApiOperation({ summary: "Fund escrow for an accepted PO (Buyer only)" })
+  async fundEscrow(
+    @Param("id") id: string,
+    @Request() req: any,
+    @Body() body?: { signatureData?: any },
+  ) {
+    return this.poService.fundEscrow(id, req.user.id, body?.signatureData);
+  }
+
+  @Patch(":id/confirm-escrow")
+  @Roles("ADMIN")
+  @ApiOperation({
+    summary: "Manually confirm escrow funding (Admin / bank callback)",
+  })
+  async confirmEscrow(@Param("id") id: string) {
+    await this.poService.confirmEscrowFunding(id);
+    return { ok: true };
+  }
+
   @Patch(":id/reject")
   @Roles("SUPPLIER")
   @ApiOperation({ summary: "Reject a PO (Supplier only)" })
@@ -312,6 +335,7 @@ export class PurchaseOrdersController {
 
   @Patch(":id/acknowledge")
   @Roles("BUYER")
+  @Idempotent()
   @ApiOperation({
     summary: "Acknowledge obligation & trigger settlement (Buyer only)",
   })

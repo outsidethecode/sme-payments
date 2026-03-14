@@ -28,6 +28,8 @@ import { PdpaModule } from "./pdpa/pdpa.module";
 import { ProofsModule } from "./proofs/proofs.module";
 import { CryptoModule } from "./crypto/crypto.module";
 import { VerifyModule } from "./verify/verify.module";
+import { IdempotencyModule } from "./idempotency/idempotency.module";
+import { FeatureFlagModule } from "./config/feature-flags.module";
 import { CorrelationIdMiddleware } from "./common/correlation-id.middleware";
 
 @Module({
@@ -71,6 +73,8 @@ import { CorrelationIdMiddleware } from "./common/correlation-id.middleware";
     PdpaModule,
     ProofsModule,
     VerifyModule,
+    IdempotencyModule,
+    FeatureFlagModule,
   ],
 })
 export class AppModule implements NestModule {

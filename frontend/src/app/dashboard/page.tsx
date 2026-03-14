@@ -54,7 +54,7 @@ export default function DashboardPage() {
   const totalPOs = pos?.length ?? 0;
   const activePOs =
     pos?.filter((p) =>
-      ["SENT", "ACCEPTED", "IN_PROGRESS", "DELIVERED"].includes(p.status),
+      ["SENT", "ACCEPTED", "FULFILLMENT", "DELIVERED"].includes(p.status),
     ).length ?? 0;
   const pendingPOs = pos?.filter((p) => p.status === "SENT").length ?? 0;
   // Per-currency value totals

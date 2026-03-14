@@ -7,6 +7,7 @@ import {
   SettlementAdapter,
   TransferStatus,
 } from "./settlement-adapter.interface";
+import { EscrowAccountingService } from "./escrow-accounting.service";
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -36,6 +37,13 @@ export interface ReconciliationReportResult {
   ledgerBalanceByCurrency: Record<string, number>;
   bankBalance: number | null;
   variance: number | null;
+  escrowJournalVerification: Array<{
+    escrowAccountId: string;
+    shadowBalance: number;
+    computedBalance: number;
+    match: boolean;
+    transactionCount: number;
+  }>;
 }
 
 // ── Configurable constants ───────────────────────────────────
@@ -55,6 +63,7 @@ export class ReconciliationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ledger: LedgerService,
+    private readonly escrowAccounting: EscrowAccountingService,
     @Inject(SETTLEMENT_ADAPTER)
     private readonly adapter: SettlementAdapter,
   ) {}
@@ -237,6 +246,31 @@ export class ReconciliationService {
     const bankBalance: number | null = null;
     const variance = bankBalance !== null ? ledgerBalance - bankBalance : null;
 
+    // ── Step 3b: verify escrow journal balances ──────────────
+
+    const activeEscrowAccounts = await this.prisma.escrowAccount.findMany({
+      where: { active: true },
+      select: { id: true },
+    });
+
+    const escrowJournalVerification = await Promise.all(
+      activeEscrowAccounts.map((a) =>
+        this.escrowAccounting.verifyBalance(a.id),
+      ),
+    );
+
+    for (const v of escrowJournalVerification) {
+      if (!v.match) {
+        mismatches++;
+        alerts.push({
+          expected: `shadow=${v.shadowBalance}`,
+          actual: `journal=${v.computedBalance}`,
+          externalRef: v.escrowAccountId,
+          reason: `Escrow journal mismatch: shadow balance ${v.shadowBalance} ≠ computed ${v.computedBalance} (${v.transactionCount} txs)`,
+        });
+      }
+    }
+
     // ── Step 4: persist report ───────────────────────────────
 
     const report = await this.prisma.reconciliationReport.create({
@@ -296,6 +330,7 @@ export class ReconciliationService {
       ledgerBalanceByCurrency,
       bankBalance,
       variance,
+      escrowJournalVerification,
     };
   }
 

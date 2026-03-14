@@ -400,6 +400,34 @@ async function main() {
     priority: 1,
   });
 
+  // ── Escrow Accounts ─────────────────────────────────────────
+  const escrowGBP = await prisma.escrowAccount.upsert({
+    where: { country_currency: { country: "GB", currency: "GBP" } },
+    update: {},
+    create: {
+      label: "UK GBP Escrow (Simulated)",
+      bank: "Barclays (Simulated)",
+      iban: "GB29BARC20035394427492",
+      country: "GB",
+      currency: "GBP",
+      balanceMinor: 0,
+      active: true,
+    },
+  });
+  const escrowSAR = await prisma.escrowAccount.upsert({
+    where: { country_currency: { country: "SA", currency: "SAR" } },
+    update: {},
+    create: {
+      label: "KSA SAR Escrow (Simulated)",
+      bank: "Al Rajhi Bank (Simulated)",
+      iban: "SA0380000000608010167519",
+      country: "SA",
+      currency: "SAR",
+      balanceMinor: 0,
+      active: true,
+    },
+  });
+
   // ── Summary ─────────────────────────────────────────────────
   console.log("✅ Seeded UK users + organisations:");
   console.log(`   Buyer 1:    ${buyer1.email}  → ${orgBuyer1.name} (UK/GBP)`);
@@ -422,6 +450,10 @@ async function main() {
   console.log(`   LP:         ${ksaLP.email}  → ${orgKsaLP.name} (KSA/SAR)`);
   console.log("");
   console.log(`✅ Admin:      ${admin.email}`);
+  console.log("");
+  console.log("✅ Escrow accounts:");
+  console.log(`   GBP: ${escrowGBP.label} (${escrowGBP.id})`);
+  console.log(`   SAR: ${escrowSAR.label} (${escrowSAR.id})`);
   console.log("");
   console.log("✅ Seeded policy rules:");
   console.log(

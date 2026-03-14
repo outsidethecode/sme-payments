@@ -1,9 +1,9 @@
 # SME Payments Platform — Technical Reference
 
-**Version:** 2.3  
-**Date:** 12 March 2026  
+**Version:** 2.9  
+**Date:** 14 March 2026  
 **Audience:** Engineering team, auditors, integration partners, regulators  
-**Status:** Production-ready (431/431 tests passing, 25 test suites, isolated test database)
+**Status:** Production-ready (501/501 tests passing, 30 test suites, isolated test database)
 
 ---
 
@@ -20,6 +20,7 @@
    - 3.6 [Negotiation (Counter-Proposals)](#36-negotiation-counter-proposals)
    - 3.7 [Fulfilment Flow](#37-fulfilment-flow)
    - 3.8 [Settlement Flow](#38-settlement-flow)
+   - 3.8.1 [Settlement Router Service](#381-settlement-router-service)
    - 3.9 [Dispute Resolution](#39-dispute-resolution)
 4. [Early Payment State Machine](#4-early-payment-state-machine)
    - 4.1 [All Early Payment States](#41-all-early-payment-states)
@@ -90,9 +91,40 @@
     - 18.6 [My Receipts Dashboard](#186-my-receipts-dashboard)
 19. [Testing Infrastructure](#19-testing-infrastructure)
     - 19.1 [Test Database Isolation](#191-test-database-isolation)
-    - 19.2 [Test Lifecycle](#192-test-lifecycle)
+    - 19.2 [Test Configuration](#192-test-configuration)
 20. [Security Considerations](#20-security-considerations)
-19. [Security Considerations](#19-security-considerations)
+21. [Financial Integrity Checker](#21-financial-integrity-checker)
+    - 21.1 [Invariant Catalogue](#211-invariant-catalogue)
+    - 21.2 [IntegrityService Architecture](#212-integrityservice-architecture)
+    - 21.3 [Admin Endpoint & Frontend](#213-admin-endpoint--frontend)
+    - 21.4 [Scheduled Cron](#214-scheduled-cron)
+22. [Idempotent Financial Operations](#22-idempotent-financial-operations)
+    - 22.1 [Design Overview](#221-design-overview)
+    - 22.2 [IdempotencyRecord Schema](#222-idempotencyrecord-schema)
+    - 22.3 [IdempotencyService](#223-idempotencyservice)
+    - 22.4 [HTTP-Level Idempotency (Interceptor)](#224-http-level-idempotency-interceptor)
+    - 22.5 [Service-Level Idempotency Guards](#225-service-level-idempotency-guards)
+    - 22.6 [Protected Endpoints](#226-protected-endpoints)
+    - 22.7 [Client Integration Guide](#227-client-integration-guide)
+    - 22.8 [Configuration](#228-configuration)
+23. [Escrow Transaction Journal](#23-escrow-transaction-journal)
+    - 23.1 [EscrowTransaction Model](#231-escrowtransaction-model)
+    - 23.2 [EscrowAccountingService](#232-escrowaccountingservice)
+    - 23.3 [Integration Points](#233-integration-points)
+    - 23.4 [Admin Endpoints](#234-admin-endpoints)
+    - 23.5 [Reconciliation Enhancement](#235-reconciliation-enhancement)
+    - 23.6 [Frontend Statement View](#236-frontend-statement-view)
+24. [Lifecycle Stress Testing](#24-lifecycle-stress-testing)
+    - 24.1 [Scenario Runner](#241-scenario-runner)
+    - 24.2 [Stress Orchestrator](#242-stress-orchestrator)
+    - 24.3 [Race Condition E2E Tests](#243-race-condition-e2e-tests)
+    - 24.4 [npm Scripts](#244-npm-scripts)
+25. [Feature Flag & Pilot Gating](#25-feature-flag--pilot-gating)
+    - 25.1 [Architecture](#251-architecture)
+    - 25.2 [Flag Catalogue](#252-flag-catalogue)
+    - 25.3 [Admin API](#253-admin-api)
+    - 25.4 [Frontend Page](#254-frontend-page)
+    - 25.5 [Guard Integration Points](#255-guard-integration-points)
 
 ---
 
@@ -103,6 +135,7 @@ The SME Payments Platform is a B2B trade finance system that enables buyers and 
 ### Key Capabilities
 
 - **Purchase Order Lifecycle** — Create, negotiate, approve, fulfil, verify, and settle POs with role-based guards at every transition
+- **2-Step Escrow Funding** — Buyer initiates escrow funding (sees bank details: bank name, IBAN, reference); a simulated bank callback (configurable delay via `ESCROW_CONFIRM_DELAY_MS`) confirms the deposit; only then does the PO advance to FULFILLMENT. The simulation is swap-ready for real bank API integration.
 - **Payment Locks** — Buyer funds are reserved on PO acceptance and released on settlement, ensuring supplier confidence
 - **Multi-Currency Architecture** — All monetary amounts stored as integer minor units (pence/halalah) with an explicit `Currency` companion field; currency is derived from organisation jurisdiction (`UK→GBP`, `KSA→SAR`) and propagated immutably from PO through every downstream record (lock, instrument, settlement, fee, dispute)
 - **Double-Payment Prevention** — Atomic `SELECT FOR UPDATE` transactions on the `PaymentInstrument` row prevent the race condition between LP funding and buyer settlement; a `settlementBeneficiary` field is the single source of truth for who receives escrow funds
@@ -138,6 +171,8 @@ The SME Payments Platform is a B2B trade finance system that enables buyers and 
 | **RekorProvider** | `src/ledger/anchor-providers/` | External anchoring via Sigstore Rekor transparency log |
 | **NoopProvider** | `src/ledger/anchor-providers/` | No-op anchor provider for development/testing |
 | **ApprovalsService** | `src/approvals/` | Org policy-based multi-signature approval chain |
+| **IdempotencyService** | `src/idempotency/` | Request-level idempotency: cache check, response recording, TTL-based cleanup |
+| **EscrowAccountingService** | `src/settlements/` | Escrow transaction journal: per-account statements, balance verification, audit trail |
 | **PoliciesService** | `src/policies/` | Configurable business rules (PO limits, approval thresholds, LP risk) — currency-aware per-org limits |
 | **FraudControlsService** | `src/risk/` | Velocity checks, evidence thresholds — all limits currency-specific |
 | **DisputesService** | `src/disputes/` | Dispute lifecycle with ADMIN resolution |
@@ -152,9 +187,21 @@ Buyer creates PO (currency inherited from buyer's Organisation)
         → Hash chain extended (entity-scoped)
 
 Supplier accepts PO
-    → SettlementService.reserveForPO() — funds locked
     → LedgerService.logEvent(PO_ACCEPTED)
     → If passkey: WebAuthn signature stored with event
+
+Buyer initiates escrow funding (fundEscrow — Step 1)
+    → SettlementService.reserveForPO() — funds reserved from buyer balance
+    → PaymentLock created (LOCKED, status PENDING until bank confirms)
+    → LedgerService.logEvent(ESCROW_FUNDING_INITIATED)
+    → Returns escrow account details (bank, IBAN, label, currency, country)
+    → Simulated bank callback scheduled (configurable delay)
+
+Bank confirms deposit (confirmEscrowFunding — Step 2)
+    → Escrow account balance credited
+    → PO transitions ACCEPTED → FULFILLMENT
+    → LedgerService.logEvent(ESCROW_FUNDED)
+    → Production: replace setTimeout with real bank webhook
 
 Supplier ships/delivers → ledger events
 
@@ -223,7 +270,7 @@ This means the trust/evidence layer is independent of the actual payment rail.
 | `SENT` | Sent to supplier, ready for acceptance | No |
 | `NEGOTIATION` | Counter-proposal in progress | No |
 | `ACCEPTED` | Supplier accepted; payment locked | No |
-| `IN_PROGRESS` | Work underway (also used after REWORK dispute resolution) | No |
+| `FULFILLMENT` | Work underway; escrow funded and confirmed (also used after REWORK dispute resolution) | No |
 | `SHIPPED` | Goods shipped by supplier | No |
 | `DELIVERED` | Goods delivered; buyer can verify or dispute | No |
 | `VERIFIED` | Buyer confirmed delivery | No |
@@ -239,14 +286,16 @@ This means the trust/evidence layer is independent of the actual payment rail.
 | 2 | `DRAFT` | `PENDING_APPROVAL` | `send()` | BUYER | `po.buyerId === actorId`; org policy requires approval and does NOT auto-approve | `PO_APPROVAL_REQUESTED` | `ApprovalRequest` created with 7-day expiry |
 | 3 | `DRAFT` | `SENT` | `send()` | BUYER | `po.buyerId === actorId`; no policy match OR policy auto-approves | `PO_AUTO_APPROVED` (if auto) + `PO_SENT` | — |
 | 4 | `PENDING_APPROVAL` | `SENT` | `onApprovalComplete()` | SYSTEM (approval chain) | All required approvals received | `PO_APPROVAL_GRANTED` + `PO_SENT` | — |
-| 5 | `SENT` | `ACCEPTED` | `accept()` | SUPPLIER | `po.supplierId === actorId`; buyer balance ≥ PO amount | `PO_ACCEPTED` | **Payment lock created** (buyer funds reserved); PaymentLock record (LOCKED); `PAYMENT_LOCK_CONFIRMED` event |
+| 5 | `SENT` | `ACCEPTED` | `accept()` | SUPPLIER | `po.supplierId === actorId` | `PO_ACCEPTED` | PO accepted; buyer can now initiate escrow funding |
+| 5a | `ACCEPTED` | `ACCEPTED` | `fundEscrow()` (Step 1) | BUYER | `po.buyerId === actorId`; buyer balance ≥ PO amount; no existing lock | `ESCROW_FUNDING_INITIATED` | Buyer funds reserved; PaymentLock created (LOCKED); escrow bank details returned (bank, IBAN, reference); simulated bank callback scheduled |
+| 5b | `ACCEPTED` | `FULFILLMENT` | `confirmEscrowFunding()` (Step 2) | SYSTEM (bank callback) | PO is ACCEPTED; lock is LOCKED | `ESCROW_FUNDED` | Escrow account balance credited; PO → FULFILLMENT; `paymentLocked = true` |
 | 6 | `SENT` | `CANCELLED` | `reject()` | SUPPLIER | `po.supplierId === actorId` | `PO_CANCELLED` | — |
 | 7 | `SENT` | `NEGOTIATION` | `counterPropose()` | SUPPLIER | `po.supplierId === actorId` | `PO_COUNTER_PROPOSED` | `PORevision` record created |
 | 8 | `NEGOTIATION` | `NEGOTIATION` | `counterPropose()` | OTHER PARTY | Cannot counter own latest proposal; actor must be a PO party | `PO_COUNTER_PROPOSED` | Prior PENDING revision marked SUPERSEDED; new `PORevision` created |
 | 9 | `NEGOTIATION` | `SENT` | `acceptCounter()` | OTHER PARTY | Latest revision is PENDING; cannot accept own proposal | `PO_COUNTER_ACCEPTED` | Revision's lineItems/amount/terms applied to PO; revision marked ACCEPTED |
 | 10 | `NEGOTIATION` | `CANCELLED` | `rejectCounter()` | OTHER PARTY | Latest revision is PENDING; cannot reject own proposal | `PO_COUNTER_REJECTED` | Revision marked REJECTED |
-| 11 | `ACCEPTED` / `IN_PROGRESS` | `SHIPPED` | `markShipped()` | SUPPLIER | `po.supplierId === actorId`; status is ACCEPTED or IN_PROGRESS | `GOODS_SHIPPED` | `shippedAt` set |
-| 12 | `ACCEPTED` / `IN_PROGRESS` / `SHIPPED` | `DELIVERED` | `markDelivered()` | SUPPLIER | `po.supplierId === actorId`; status is ACCEPTED, IN_PROGRESS, or SHIPPED | `DELIVERY_MARKED` | `deliveredAt` set |
+| 11 | `FULFILLMENT` | `SHIPPED` | `markShipped()` | SUPPLIER | `po.supplierId === actorId`; status is FULFILLMENT; PaymentLock must be LOCKED | `GOODS_SHIPPED` | `shippedAt` set |
+| 12 | `SHIPPED` | `DELIVERED` | `markDelivered()` | SUPPLIER | `po.supplierId === actorId`; status is SHIPPED | `DELIVERY_MARKED` | `deliveredAt` set |
 | 13 | `DELIVERED` | `VERIFIED` | `verifyDelivery()` | BUYER | `po.buyerId === actorId` | `DELIVERY_VERIFIED` | `verifiedAt` set |
 | 14 | `VERIFIED` | `SETTLED` | `acknowledgeObligation()` | BUYER | `po.buyerId === actorId` | `OBLIGATION_ACKNOWLEDGED` + `SETTLEMENT_COMPLETED` | Settlement executed (see §3.8) |
 | 15 | `DELIVERED` | `DISPUTED` | `dispute()` | BUYER | `po.buyerId === actorId` | `DELIVERY_DISPUTED` | Unfunded early payment auto-expired if exists |
@@ -254,7 +303,7 @@ This means the trust/evidence layer is independent of the actual payment rail.
 | 17 | `DISPUTED` | `CANCELLED` | `resolve(FULL_REFUND)` | ADMIN | Dispute exists and not RESOLVED | `DISPUTE_RESOLVED` | Full refund to buyer; PaymentLock → REFUNDED |
 | 18 | `DISPUTED` | `SETTLED` | `resolve(PARTIAL_REFUND)` | ADMIN | `refundAmount > 0 && < po.amount` | `DISPUTE_RESOLVED` | Partial refund to buyer |
 | 19 | `DISPUTED` | `VERIFIED` | `resolve(RELEASE_TO_SUPPLIER)` | ADMIN | Dispute exists | `DISPUTE_RESOLVED` | Full settlement to supplier (0.5% fee) |
-| 20 | `DISPUTED` | `IN_PROGRESS` | `resolve(REWORK)` | ADMIN | Dispute exists | `DISPUTE_RESOLVED` | No settlement; supplier redoes work |
+| 20 | `DISPUTED` | `FULFILLMENT` | `resolve(REWORK)` | ADMIN | Dispute exists | `DISPUTE_RESOLVED` | No settlement; supplier redoes work |
 
 ### 3.3 PO State Diagram
 
@@ -281,43 +330,56 @@ This means the trust/evidence layer is independent of the actual payment rail.
             ├──► PENDING_APPROVAL ──────► SENT  │
             │    (org policy gate)              │
             │                                   │
-            │                   markShipped()   │
-            │   ACCEPTED / IN_PROGRESS ───► SHIPPED
-            │          │                      │
-            │          │ markDelivered()       │ markDelivered()
-            │          ▼                      ▼
-            │       DELIVERED ◄───────────────┘
-            │       │        │
+            │          fundEscrow() (Step 1)    │
+            │          ───────► (funds reserved,│
+            │           escrow details shown)   │
+            │                                   │
+            │          confirmEscrowFunding()    │
+            │          (Step 2: bank callback)  │
+            │                    │              │
+            │                    ▼              │
+            │              FULFILLMENT          │
+            │                    │              │
+            │           markShipped()           │
+            │                    │              │
+            │                    ▼              │
+            │                SHIPPED            │
+            │                    │              │
+            │           markDelivered()         │
+            │                    │              │
+            │                    ▼              │
+            │                DELIVERED          │
+            │               │        │          │
             │  verifyDelivery()  dispute() / raise()
-            │       │        │
-            │       ▼        ▼
-            │    VERIFIED   DISPUTED
-            │       │       │   │   │   │
-            │ acknowledge() │   │   │   │
-            │       │       │   │   │   │
-            │       ▼       │   │   │   │
-            │    SETTLED    │   │   │   │
-            │   (terminal)  │   │   │   │
-            │               │   │   │   │
-            │    ┌──────────┘   │   │   │
-            │    │  FULL_REFUND │   │   │
-            │    ▼              │   │   │
-            │ CANCELLED         │   │   │
-            │                   │   │   │
-            │    ┌──────────────┘   │   │
-            │    │ PARTIAL_REFUND   │   │
-            │    ▼                  │   │
-            │ SETTLED               │   │
-            │                       │   │
-            │    ┌──────────────────┘   │
-            │    │ RELEASE_TO_SUPPLIER  │
-            │    ▼                      │
-            │ VERIFIED ──► SETTLED      │
-            │                           │
-            │    ┌──────────────────────┘
+            │               │        │
+            │               ▼        ▼
+            │            VERIFIED   DISPUTED
+            │               │       │   │   │   │
+            │     acknowledge()     │   │   │   │
+            │               │       │   │   │   │
+            │               ▼       │   │   │   │
+            │            SETTLED    │   │   │   │
+            │           (terminal)  │   │   │   │
+            │                       │   │   │   │
+            │    ┌──────────────────┘   │   │   │
+            │    │  FULL_REFUND         │   │   │
+            │    ▼                      │   │   │
+            │ CANCELLED                 │   │   │
+            │                           │   │   │
+            │    ┌──────────────────────┘   │   │
+            │    │ PARTIAL_REFUND           │   │
+            │    ▼                          │   │
+            │ SETTLED                       │   │
+            │                               │   │
+            │    ┌──────────────────────────┘   │
+            │    │ RELEASE_TO_SUPPLIER          │
+            │    ▼                              │
+            │ VERIFIED ──► SETTLED              │
+            │                                   │
+            │    ┌──────────────────────────────┘
             │    │ REWORK
             │    ▼
-            │ IN_PROGRESS ──► SHIPPED ──► DELIVERED ──► ... (cycle)
+            │ FULFILLMENT ──► SHIPPED ──► DELIVERED ──► ... (cycle)
 ```
 
 ### 3.4 PO Creation & Validation
@@ -358,30 +420,100 @@ The negotiation system supports multi-round counter-proposals:
 
 ### 3.7 Fulfilment Flow
 
-After acceptance, the supplier progresses the PO through fulfilment:
+After acceptance, the buyer funds the escrow (2-step flow), then the supplier progresses through fulfilment:
+
+#### 3.7.1 Escrow Funding (2-Step Async Flow)
+
+The escrow funding process is designed as a **simulation-first architecture** — the current implementation uses a configurable `setTimeout` that can be swapped for a real bank API (e.g., webhook from SARIE/ACH rail) without changing the frontend or PO state machine.
+
+| Step | Method | Actor | Input State | Output State | Description |
+|------|--------|-------|-------------|--------------|-------------|
+| 1 | `fundEscrow()` | BUYER | ACCEPTED | ACCEPTED (unchanged) | Reserves buyer funds, creates PaymentLock (LOCKED), returns escrow bank details (bank, IBAN, label, currency, country). Schedules simulated bank callback. |
+| 2 | `confirmEscrowFunding()` | SYSTEM (bank callback) | ACCEPTED + Lock LOCKED | FULFILLMENT | Credits escrow account balance, sets `paymentLocked = true`, transitions PO to FULFILLMENT. |
+
+**Escrow details returned by Step 1:**
+```json
+{
+  "escrowDetails": {
+    "bank": "Barclays Bank UK",
+    "iban": "GB29BARC20035394427492",
+    "label": "UK Escrow – GBP",
+    "currency": "GBP",
+    "country": "UK"
+  },
+  "fundingPending": true
+}
+```
+
+**Simulation configuration:**
+- `ESCROW_CONFIRM_DELAY_MS` — delay before auto-confirm (default: 4000ms, tests: 999999ms to disable)
+- `PATCH /api/purchase-orders/:id/confirm-escrow` — admin endpoint for manual/test triggering
+
+**Idempotency:** If `fundEscrow()` is called again on a PO that has progressed past ACCEPTED (e.g. already in FULFILLMENT), the service-level guard returns the existing PO state with a 200 response instead of throwing an error. Additionally, if the PO is still ACCEPTED but already has a LOCKED PaymentLock, it returns the existing escrow details without creating a duplicate lock. See §22 for the full idempotency framework.
+
+**Production integration path:** Replace `scheduleEscrowConfirmation()` (setTimeout) with a webhook handler on the existing `POST /api/settlements/webhooks/bank-callback` endpoint (HMAC-SHA256 verified).
+
+#### 3.7.2 Supplier Fulfilment Steps
 
 | Action | Method | Allowed From | Result |
 |--------|--------|--------------|--------|
-| Ship goods | `markShipped()` | ACCEPTED, IN_PROGRESS | SHIPPED |
-| Deliver goods | `markDelivered()` | ACCEPTED, IN_PROGRESS, SHIPPED | DELIVERED |
+| Ship goods | `markShipped()` | FULFILLMENT | SHIPPED |
+| Deliver goods | `markDelivered()` | SHIPPED | DELIVERED |
 | Buyer verifies | `verifyDelivery()` | DELIVERED | VERIFIED |
 
-Note: `markDelivered()` can be called directly from ACCEPTED (skipping SHIPPED), which supports digital/service POs where shipping doesn't apply.
+**Strict state guards:**
+- `markShipped()` requires PO status `FULFILLMENT` **and** PaymentLock status `LOCKED` (payment must be secured before shipping)
+- `markDelivered()` requires PO status `SHIPPED` only (no skip from FULFILLMENT to DELIVERED)
+- This enforces the linear progression: **FULFILLMENT → SHIPPED → DELIVERED**
 
 ### 3.8 Settlement Flow
 
 When the buyer calls `acknowledgeObligation()` on a VERIFIED PO:
 
+0. **Idempotency guard** — If the PO is already `SETTLED`, the method returns the existing PO state (200) without re-executing settlement. See §22 for the full idempotency framework.
 1. **Query the Payment Instrument** — `PaymentInstrument` is loaded by `purchaseOrderId` (instrument and payment lock are independent models that both reference the PO)
 2. **Auto-expire stale early payments** — If a `REQUESTED` (unfunded) early payment exists, it is auto-expired (`EARLY_PAY_EXPIRED` event); if the instrument was `FINANCING_REQUESTED`, it is reverted to `LOCKED` via `InstrumentService.revertFinancing()`
-3. **Read `settlementBeneficiary`** — The instrument's `settlementBeneficiary` field is the **single source of truth** for who receives escrow funds:
-   - `LIQUIDITY_PROVIDER` → LP recoup (they previously funded the supplier)
-   - `SUPPLIER` (default) → direct supplier payment
+3. **Resolve settlement plan** — `SettlementRouterService.resolveSettlement(poId)` returns a `SettlementPlan` containing:
+   - The **recipient** (`SUPPLIER` or `LIQUIDITY_PROVIDER`), determined by the instrument's `settlementBeneficiary` field
+   - **Fee breakdown**: `grossAmount`, `platformFee` (50 BPS / 0.5%), `netAmount`, `feeBps`
+   - **Currency** and recipient bank account reference
+   - **`earlyPaymentRequestId`** if the recipient is the LP (for recoup tracking)
 4. **Atomic settlement gate** — `InstrumentService.requestSettlement()` transitions the instrument to `SETTLEMENT_PENDING` using `SELECT FOR UPDATE`. This atomically blocks any concurrent LP `fund()` call
-5. **Platform fee** — 0.5% (50 basis points) deducted from the locked amount
-6. **Settlement execution** — `SettlementService.settlePO()` releases locked funds via the adapter to the beneficiary
-7. **Records created** — `Settlement` record (COMPLETED), `PlatformFee` record, PaymentLock → RELEASED, instrument → confirmed SETTLED
-8. **Ledger events** — `OBLIGATION_ACKNOWLEDGED`, `SETTLEMENT_INITIATED`, `PAYMENT_LOCK_RELEASED`, `SETTLEMENT_COMPLETED`
+5. **Settlement execution** — `SettlementService.settlePO()` receives the plan's values and releases locked funds via the adapter to the beneficiary
+6. **Records created** — `Settlement` record (COMPLETED), `PlatformFee` record, PaymentLock → RELEASED, instrument → confirmed SETTLED
+7. **Ledger events** — `OBLIGATION_ACKNOWLEDGED` (includes `recipient`, `feeBps`), `SETTLEMENT_INITIATED`, `PAYMENT_LOCK_RELEASED`, `SETTLEMENT_COMPLETED`
+
+#### 3.8.1 Settlement Router Service
+
+`SettlementRouterService` (`backend/src/settlements/settlement-router.service.ts`) is the **single source of truth** for settlement routing decisions. It centralises:
+
+- **Recipient resolution** — determines who gets paid based on the instrument's `settlementBeneficiary` field
+- **Fee calculation** — uses the `PLATFORM_TRANSACTION_FEE_BPS` constant (50 BPS), replacing previously hardcoded inline values
+- **Dispute outcome mapping** — translates dispute outcomes into ordered settlement action lists
+
+```
+┌─────────────────────────────────┐
+│     SettlementRouterService     │
+│                                 │
+│  resolveSettlement(poId)        │──→ SettlementPlan
+│    → recipient (SUPPLIER / LP)  │      { recipient, recipientUserId,
+│    → fee breakdown              │        grossAmount, platformFee,
+│    → currency, account ref      │        netAmount, feeBps, currency }
+│                                 │
+│  resolveDisputeSettlement(      │──→ DisputeSettlementPlan
+│    poId, outcome, refundAmt?)   │      { outcome, newPoStatus,
+│    → ordered action list        │        actions: (REFUND|SETTLE|NOOP)[] }
+│                                 │
+│  resolveRecipient() [private]   │
+│    → SUPPLIER / LP / BUYER      │
+└─────────────────────────────────┘
+         ▲                ▲
+         │                │
+  PurchaseOrdersService   DisputesService
+  acknowledgeObligation() executeDisputeSettlement()
+```
+
+**Module registration:** `SettlementRouterService` lives in `SettlementsModule` (providers + exports). `OrganisationsModule` is imported for bank IBAN lookups. Both `PurchaseOrdersModule` and `DisputesModule` import `SettlementsModule` and receive the router automatically.
 
 #### Double-Payment Prevention
 
@@ -399,10 +531,14 @@ Buyers can dispute a delivered PO within the dispute window (default 72 hours):
 
 | Resolution Outcome | PO Status | Financial Effect |
 |--------------------|-----------|------------------|
-| `FULL_REFUND` | CANCELLED | All locked funds returned to buyer |
-| `PARTIAL_REFUND` | SETTLED | Specified amount returned to buyer; remainder settled |
-| `RELEASE_TO_SUPPLIER` | VERIFIED (→ SETTLED) | Full amount settled to supplier (0.5% fee) |
-| `REWORK` | IN_PROGRESS | No financial action; supplier repeats fulfilment cycle |
+| `FULL_REFUND` | CANCELLED | All locked funds returned to buyer via `REFUND` action |
+| `PARTIAL_REFUND` | SETTLED | Specified amount returned to buyer via `REFUND` action |
+| `RELEASE_TO_SUPPLIER` | VERIFIED (→ SETTLED) | Full amount settled to supplier via `SETTLE` action (0.5% fee) |
+| `REWORK` | FULFILLMENT | `NOOP` action; supplier redoes work |
+
+When a dispute is resolved, `DisputesService.executeDisputeSettlement()` delegates to `SettlementRouterService.resolveDisputeSettlement()`, which returns a `DisputeSettlementPlan` containing an ordered list of typed actions (`REFUND`, `SETTLE`, or `NOOP`). The disputes service executes each action sequentially via `SettlementService.refundPO()` or `settlePO()`.
+
+**Known gap (Phase 3+):** `PARTIAL_REFUND` currently refunds the partial amount to the buyer but does not settle the remainder to the supplier in the same operation. This is because `refundPO()` marks the payment lock as `REFUNDED`, which prevents a subsequent `settlePO()` call. A future `PARTIALLY_REFUNDED` lock state will enable this two-step flow.
 
 When a dispute is raised, any unfunded early payment request is auto-expired to prevent an LP from funding a disputed PO.
 
@@ -426,9 +562,9 @@ When a dispute is raised, any unfunded early payment request is auto-expired to 
 
 | # | From | To | Trigger | Actor | Guards | Ledger Event | Side Effects |
 |---|------|-----|---------|-------|--------|-------------|--------------|
-| 1 | — | `REQUESTED` | `requestEarlyPayment()` | SUPPLIER | `po.supplierId === supplierId`; PO in {ACCEPTED, IN_PROGRESS, SHIPPED, DELIVERED}; PaymentLock is LOCKED; no existing early payment request | `EARLY_PAY_REQUESTED` | Fee calculated at 250 BPS (2.5%): `serviceFee`, `netAdvance`, `faceValue`; instrument transitions LOCKED → FINANCING_REQUESTED via `InstrumentService.requestFinancing()` |
+| 1 | — | `REQUESTED` | `requestEarlyPayment()` | SUPPLIER | `po.supplierId === supplierId`; PO in {ACCEPTED, FULFILLMENT, SHIPPED, DELIVERED}; PaymentLock is LOCKED; no existing early payment request | `EARLY_PAY_REQUESTED` | Fee calculated at 250 BPS (2.5%): `serviceFee`, `netAdvance`, `faceValue`; instrument transitions LOCKED → FINANCING_REQUESTED via `InstrumentService.requestFinancing()` |
 | 2 | `REQUESTED` | `FUNDED` | `fund()` | LIQUIDITY_PARTNER | LP balance ≥ netAdvance; PO in fundable state; LP funding policy passes (exposure/concentration limits); instrument `SELECT FOR UPDATE` succeeds (not already SETTLEMENT_PENDING) | `EARLY_PAY_FUNDED` | LP pays supplier `netAdvance`; `InstrumentService.confirmFinancing()` atomically flips `settlementBeneficiary` to LIQUIDITY_PROVIDER; Settlement record (EARLY_PAY_ADVANCE); PlatformFee (EARLY_PAY_FACILITATION); `fundedAt` set. On adapter failure: `revertFinancing()` compensating transaction resets beneficiary to SUPPLIER |
-| 3 | `REQUESTED` | `EXPIRED` | `fund()` (auto-expire) | SYSTEM | PO has left fundable state (not in ACCEPTED/IN_PROGRESS/SHIPPED/DELIVERED) | `EARLY_PAY_EXPIRED` | Stale request expired; 400 error returned to LP |
+| 3 | `REQUESTED` | `EXPIRED` | `fund()` (auto-expire) | SYSTEM | PO has left fundable state (not in ACCEPTED/FULFILLMENT/SHIPPED/DELIVERED) | `EARLY_PAY_EXPIRED` | Stale request expired; 400 error returned to LP |
 | 4 | `REQUESTED` | `EXPIRED` | `acknowledgeObligation()` | SYSTEM | PO is settling without LP funding | `EARLY_PAY_EXPIRED` | Reason: "PO settled without LP funding"; instrument reverted from FINANCING_REQUESTED → LOCKED via `revertFinancing()` if applicable |
 | 5 | `REQUESTED` | `EXPIRED` | `dispute()` | SYSTEM | Buyer is disputing the PO | `EARLY_PAY_EXPIRED` | Reason: "PO disputed by buyer" |
 | 6 | `FUNDED` | `SETTLED` | `acknowledgeObligation()` | BUYER (PO settlement) | Early payment is FUNDED with `liquidityPartnerId` | (part of `SETTLEMENT_COMPLETED`) | Locked funds released to LP; Settlement record (EARLY_PAY_SETTLEMENT); `settledAt` set |
@@ -486,7 +622,7 @@ Three scenarios cause automatic expiration of unfunded (`REQUESTED`) early payme
 | PO disputed by buyer | `dispute()` in PO service | "PO disputed by buyer" |
 | LP tries to fund stale PO | `fund()` in early payments service | "Cannot fund — PO is already {status}" |
 
-Additionally, the LP marketplace (`getMarketplace()`) filters out requests where the PO is not in a fundable state (`ACCEPTED`, `IN_PROGRESS`, `SHIPPED`, `DELIVERED`), so expired/stale requests don't appear.
+Additionally, the LP marketplace (`getMarketplace()`) filters out requests where the PO is not in a fundable state (`ACCEPTED`, `FULFILLMENT`, `SHIPPED`, `DELIVERED`), so expired/stale requests don't appear.
 
 ---
 
@@ -505,7 +641,7 @@ Payment locks represent reserved buyer funds. They are tightly coupled to the PO
 
 | From | To | Trigger | Ledger Event |
 |------|-----|---------|-------------|
-| — | `LOCKED` | Supplier accepts PO → `SettlementService.reserveForPO()` | `PAYMENT_LOCK_CONFIRMED` |
+| — | `LOCKED` | Buyer initiates escrow funding → `SettlementService.reserveForPO()` (Step 1 of 2-step flow) | `PAYMENT_LOCK_CONFIRMED` |
 | `LOCKED` | `RELEASED` | PO settlement → `SettlementService.settlePO()` | `PAYMENT_LOCK_RELEASED` + `SETTLEMENT_INITIATED` |
 | `LOCKED` | `REFUNDED` | Dispute resolution (FULL_REFUND / PARTIAL_REFUND) → `SettlementService.refundPO()` | `PAYMENT_LOCK_REFUNDED` |
 
@@ -824,7 +960,7 @@ In the simulated adapter, settlements are created directly as `COMPLETED`. In pr
 | `FULL_REFUND` | `CANCELLED` | All locked funds → buyer |
 | `PARTIAL_REFUND` | `SETTLED` | `refundAmount` → buyer; remainder → supplier |
 | `RELEASE_TO_SUPPLIER` | `VERIFIED` | All locked funds → supplier (0.5% fee) |
-| `REWORK` | `IN_PROGRESS` | No financial action; supplier redoes work |
+| `REWORK` | `FULFILLMENT` | No financial action; supplier redoes work |
 
 ---
 
@@ -904,6 +1040,8 @@ Different entities write in parallel without contention, since each has its own 
 | `PO_APPROVAL_GRANTED` | PURCHASE_ORDER | All required approvals received |
 | `PO_APPROVAL_REJECTED` | PURCHASE_ORDER | Approval chain rejected |
 | `PO_ACCEPTED` | PURCHASE_ORDER | Supplier accepts PO |
+| `ESCROW_FUNDING_INITIATED` | PURCHASE_ORDER | Buyer initiates escrow funding (Step 1 — funds reserved, bank details shown) |
+| `ESCROW_FUNDED` | PURCHASE_ORDER | Bank confirms escrow deposit (Step 2 — PO → FULFILLMENT) |
 | `PO_CANCELLED` | PURCHASE_ORDER | Supplier rejects PO |
 | `PO_COUNTER_PROPOSED` | PURCHASE_ORDER | Counter-proposal submitted |
 | `PO_COUNTER_ACCEPTED` | PURCHASE_ORDER | Counter-proposal accepted |
@@ -2042,6 +2180,27 @@ Re-reads the file from disk, recomputes SHA-256, compares to stored hash. Return
 
 ## 17. API Reference
 
+### Purchase Order APIs (JWT required)
+
+| Method | Route | Role | Description |
+|--------|-------|------|-------------|
+| `POST` | `/api/purchase-orders` | BUYER | Create a new PO |
+| `PATCH` | `/api/purchase-orders/:id/send` | BUYER | Send PO to supplier |
+| `PATCH` | `/api/purchase-orders/:id/accept` | SUPPLIER | Accept PO |
+| `PATCH` | `/api/purchase-orders/:id/reject` | SUPPLIER | Reject PO |
+| `PATCH` | `/api/purchase-orders/:id/counter` | BUYER/SUPPLIER | Submit counter-proposal |
+| `PATCH` | `/api/purchase-orders/:id/accept-counter` | BUYER/SUPPLIER | Accept counter-proposal |
+| `PATCH` | `/api/purchase-orders/:id/reject-counter` | BUYER/SUPPLIER | Reject counter-proposal |
+| `PATCH` | `/api/purchase-orders/:id/fund-escrow` | BUYER | **Step 1**: Initiate escrow funding (returns bank details) |
+| `PATCH` | `/api/purchase-orders/:id/confirm-escrow` | **ADMIN** | **Step 2**: Confirm bank deposit (simulates bank callback) |
+| `PATCH` | `/api/purchase-orders/:id/ship` | SUPPLIER | Mark shipped |
+| `PATCH` | `/api/purchase-orders/:id/deliver` | SUPPLIER | Mark delivered |
+| `PATCH` | `/api/purchase-orders/:id/verify` | BUYER | Verify delivery |
+| `PATCH` | `/api/purchase-orders/:id/acknowledge` | BUYER | Acknowledge payment obligation → settle |
+| `PATCH` | `/api/purchase-orders/:id/dispute` | BUYER | Dispute delivery |
+| `GET` | `/api/purchase-orders` | Any | List POs (filtered by role) |
+| `GET` | `/api/purchase-orders/:id` | Any | Get PO details |
+
 ### Ledger APIs (JWT required)
 
 | Method | Route | Description |
@@ -2077,6 +2236,14 @@ Re-reads the file from disk, recomputes SHA-256, compares to stored hash. Return
 | `GET` | `/api/evidence/:id/download` | Download attachment |
 | `GET` | `/api/evidence/:id/verify` | Verify file integrity |
 | `GET` | `/api/evidence/po/:poId/pack` | **Generate Trust Envelope** |
+
+### Admin APIs (JWT + ADMIN role required)
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `GET` | `/api/admin/integrity-check` | Run financial integrity checker (12 invariants) |
+| `GET` | `/api/admin/stats` | Platform statistics |
+| `GET` | `/api/admin/reconciliation` | Reconciliation dashboard data |
 
 ### Verification APIs (public)
 
@@ -2145,12 +2312,12 @@ The platform signs this hash with its ECDSA P-256 private key, creating a non-re
 4. Signs with `ICryptoService.signWithPlatformKey(receiptHash)`
 5. Returns the complete `EventReceipt`
 
-Every user-signed service method (14 across PO + early payment services) now returns the receipt alongside the entity:
+Every user-signed service method (15 across PO + early payment services) now returns the receipt alongside the entity:
 
 ```typescript
-// PurchaseOrdersService — 12 methods:
+// PurchaseOrdersService — 13 methods:
 // send (2 paths), accept, reject, counterPropose, acceptCounter,
-// rejectCounter, markShipped, markDelivered, verifyDelivery,
+// rejectCounter, fundEscrow, markShipped, markDelivered, verifyDelivery,
 // acknowledgeObligation, dispute
 
 // EarlyPaymentsService — 2 methods:
@@ -2255,17 +2422,19 @@ Tests execute against a dedicated `sme_payments_test` database, completely isola
 | Phase | File | Action |
 |-------|------|--------|
 | **Global Setup** | `test/global-setup.ts` | Creates `sme_payments_test` database (idempotent — checks `pg_database` catalogue first). Runs `prisma migrate deploy` and `ts-node prisma/seed.ts` against the test DB. |
-| **Before Each File** | `test/set-test-env.ts` (via `setupFiles`) | Sets `DATABASE_URL=postgresql://sme_user:sme_password@localhost:5433/sme_payments_test`, `ANCHOR_PROVIDER=noop`, `ANCHOR_INTERVAL_MINUTES=0` |
+| **Before Each File** | `test/set-test-env.ts` (via `setupFiles`) | Sets `DATABASE_URL=postgresql://sme_user:sme_password@localhost:5433/sme_payments_test`, `ANCHOR_PROVIDER=noop`, `ANCHOR_INTERVAL_MINUTES=0`, `IDEMPOTENCY_CLEANUP_INTERVAL_MINUTES=0` |
 | **Global Teardown** | `test/global-teardown.ts` | Terminates all active connections via `pg_terminate_backend`, then `DROP DATABASE IF EXISTS sme_payments_test` |
 
 **No `.env.test` file** — all test environment variables are hardcoded in the setup files to ensure deterministic behaviour.
 
-### 19.2 Anchor Configuration in Tests
+### 19.2 Test Configuration
 
 | Variable | Test Value | Production Value |
 |----------|------------|-----------------|
 | `ANCHOR_PROVIDER` | `noop` | `rekor` (Sigstore Rekor) |
 | `ANCHOR_INTERVAL_MINUTES` | `0` (disabled) | Non-zero (auto-anchoring cron) |
+| `IDEMPOTENCY_CLEANUP_INTERVAL_MINUTES` | `0` (disabled) | `60` (hourly cleanup) |
+| `INTEGRITY_CHECK_INTERVAL_MINUTES` | `0` (disabled) | `60` (hourly check) |
 
 The `NoopProvider` returns a synthetic anchor response without making any external network calls, keeping tests fast and deterministic.
 
@@ -2273,9 +2442,9 @@ The `NoopProvider` returns a synthetic anchor response without making any extern
 
 | Category | Suites | Tests |
 |----------|--------|-------|
-| **Unit tests** (`.spec.ts`) | 11 | 138 |
-| **E2E tests** (`.e2e-spec.ts`) | 14 | 293 |
-| **Total** | **25** | **431** |
+| **Unit tests** (`.spec.ts`) | 12 | 154 |
+| **E2E tests** (`.e2e-spec.ts`) | 16 | 328 |
+| **Total** | **28** | **482** |
 
 Both Jest configs (`jest.config.ts` and `test/jest-e2e.config.ts`) share the same `globalSetup`, `globalTeardown`, and `setupFiles` entries.
 
@@ -2297,7 +2466,9 @@ Both Jest configs (`jest.config.ts` and `test/jest-e2e.config.ts`) share the sam
 | **File integrity** | SHA-256 computed on upload; re-verified on download and in evidence packs |
 | **Role-based access** | Every state transition validates the actor's role (BUYER, SUPPLIER, ADMIN, LIQUIDITY_PARTNER) |
 | **PO ownership** | Every PO operation validates `po.buyerId === actorId` or `po.supplierId === actorId` |
-| **Fund reservation** | Buyer balance checked before PO acceptance; funds locked atomically with acceptance |
+| **Fund reservation** | Buyer balance checked during escrow funding initiation (Step 1); funds reserved atomically; bank confirmation required before PO advances to FULFILLMENT (Step 2) |
+| **Escrow funding simulation** | Configurable `ESCROW_CONFIRM_DELAY_MS` environment variable; production swap-in: replace `setTimeout` with real bank webhook; admin `confirm-escrow` endpoint for manual/test triggering |
+| **Strict fulfilment guards** | `markShipped()` requires FULFILLMENT status AND PaymentLock LOCKED; `markDelivered()` requires SHIPPED only; prevents shipping without secured payment |
 | **Early payment guards** | PO must be in fundable state for LP funding; stale requests auto-expire |
 | **Double-payment prevention** | `SELECT FOR UPDATE` on `PaymentInstrument` row serializes concurrent LP funding and buyer settlement; `settlementBeneficiary` is the single source of truth for escrow routing; compensating transaction (`revertFinancing()`) rolls back beneficiary on adapter failure |
 | **Settlement gate** | `requestSettlement()` atomically transitions instrument to `SETTLEMENT_PENDING` — once in this state, no LP can call `confirmFinancing()` because `SETTLEMENT_PENDING` is not a valid source state for financing |
@@ -2312,8 +2483,586 @@ Both Jest configs (`jest.config.ts` and `test/jest-e2e.config.ts`) share the sam
 | **Anchor chain integrity** | Each `LedgerAnchor` hashes the previous anchor's hash, forming an ordered chain; gaps or reordering are detectable |
 | **Local receipt non-repudiation** | Platform-signed ECDSA P-256 receipts stored client-side in IndexedDB; if platform omits an event, user holds cryptographic proof of prior commitment |
 | **Receipt verification** | Bulk `POST /ledger/receipts/verify` compares local receipt stubs against live ledger; detects omissions, hash mismatches, and sequence gaps |
-| **Test isolation** | Dedicated `sme_payments_test` database created/destroyed per test run; `ANCHOR_PROVIDER=noop` prevents external calls during tests |
+| **Test isolation** | Dedicated `sme_payments_test` database created/destroyed per test run; `ANCHOR_PROVIDER=noop` prevents external calls; `ESCROW_CONFIRM_DELAY_MS=999999` prevents auto-confirm interference in tests |
+| **Settlement routing centralisation** | All settlement recipient and fee decisions go through `SettlementRouterService` — no hardcoded fee BPS or recipient IDs in calling code; single source of truth for who gets paid |
+| **Financial integrity checker** | `IntegrityService` verifies 12 cross-state-machine invariants on demand and via hourly cron; admin dashboard card shows violation count and severity |
+| **Idempotent financial operations** | Two-layer idempotency: HTTP-level `Idempotency-Key` header caching via interceptor + service-level state guards on all financial endpoints; `IdempotencyRecord` table with 24h TTL prevents double-execution of fund, acknowledge, and early-payment operations |
 
 ---
 
-*Generated 12 March 2026. This document reflects the current production codebase (431 tests, 25 suites, all passing). Updated for double-payment prevention (`settlementBeneficiary` + `SELECT FOR UPDATE` atomic locking on `PaymentInstrument`).*
+## 21. Financial Integrity Checker
+
+The `IntegrityService` (`backend/src/admin/integrity.service.ts`) continuously verifies that the platform's financial state machines are consistent. It detects orphaned records, mismatched amounts, and impossible state combinations that could indicate bugs, data corruption, or incomplete settlement flows.
+
+### 21.1 Invariant Catalogue
+
+| ID | Rule | Severity | Relationship |
+|----|------|----------|-------------|
+| INV-001 | FULFILLMENT+ PO requires LOCKED PaymentLock | CRITICAL | PO ↔ Lock |
+| INV-002 | SETTLED PO requires RELEASED PaymentLock | CRITICAL | PO ↔ Lock |
+| INV-003 | SETTLED PO requires SETTLED PaymentInstrument | CRITICAL | PO ↔ Instrument |
+| INV-004 | CANCELLED PO (FULL_REFUND) requires REFUNDED PaymentLock | HIGH | PO ↔ Lock ↔ Dispute |
+| INV-005 | FUNDED EarlyPayment requires LP beneficiary on Instrument | CRITICAL | EarlyPay ↔ Instrument |
+| INV-006 | PaymentLock amount must equal PO amount | HIGH | PO ↔ Lock |
+| INV-007 | PaymentLock currency must match PO currency | HIGH | PO ↔ Lock |
+| INV-008 | PaymentInstrument amount must equal PO amount | HIGH | PO ↔ Instrument |
+| INV-009 | PaymentInstrument currency must match PO currency | HIGH | PO ↔ Instrument |
+| INV-010 | SHIPPED PO requires LOCKED PaymentLock | CRITICAL | PO ↔ Lock |
+| INV-011 | DELIVERED PO requires LOCKED PaymentLock | CRITICAL | PO ↔ Lock |
+| INV-012 | VERIFIED PO requires LOCKED PaymentLock | CRITICAL | PO ↔ Lock |
+
+Full definitions with rationale: `documentation/financial-state-consistency-rules.md`
+
+### 21.2 IntegrityService Architecture
+
+```
+IntegrityService.verifyAllInvariants()
+    │
+    ├─ Query all POs in {FULFILLMENT, SHIPPED, DELIVERED, VERIFIED, SETTLED, CANCELLED}
+    │   with includes: paymentLock, paymentInstrument, earlyPaymentRequests, disputes
+    │
+    ├─ For each PO, check INV-001 through INV-012
+    │   Each check: compare actual state vs expected state
+    │   On mismatch: push InvariantViolation { invariantId, purchaseOrderId, expected, actual, severity }
+    │
+    └─ Return IntegrityCheckResult { checkedAt, totalChecked, valid, violations[] }
+```
+
+**Response shape:**
+
+```json
+{
+  "checkedAt": "2026-03-13T14:00:00.000Z",
+  "totalChecked": 42,
+  "valid": 41,
+  "violations": [
+    {
+      "invariantId": "INV-001",
+      "purchaseOrderId": "po-abc123",
+      "expected": "PaymentLock exists with status LOCKED",
+      "actual": "No PaymentLock found",
+      "severity": "CRITICAL"
+    }
+  ]
+}
+```
+
+### 21.3 Admin Endpoint & Frontend
+
+| Method | Route | Auth | Description |
+|--------|-------|------|-------------|
+| `GET` | `/api/admin/integrity-check` | JWT + ADMIN | Run all 12 invariants, return violations |
+
+The admin dashboard includes a **Financial Integrity Check** card with:
+- A "Run Integrity Check" button triggering the endpoint
+- Violation count with severity badges (CRITICAL = red, HIGH = orange, MEDIUM = yellow)
+- "All systems healthy" indicator when no violations are found
+
+### 21.4 Scheduled Cron
+
+The integrity check runs automatically via `@Cron(CronExpression.EVERY_HOUR)`. The schedule is gated by the `INTEGRITY_CHECK_INTERVAL_MINUTES` environment variable:
+
+| Variable | Default | Test Value | Effect |
+|----------|---------|------------|--------|
+| `INTEGRITY_CHECK_INTERVAL_MINUTES` | `60` | `0` (disabled) | Controls whether the cron fires; `0` disables to keep tests fast |
+
+When violations are found, they are logged at `WARN` level with the full violation details.
+
+---
+
+## 22. Idempotent Financial Operations
+
+The platform provides a **two-layer idempotency framework** to prevent double-execution of financial operations. This protects against network retries, client bugs, and infrastructure-level request duplication that could cause duplicate escrow reservations, double settlements, or repeated early-payment disbursements.
+
+### 22.1 Design Overview
+
+```
+Client sends request with Idempotency-Key header
+         │
+         ▼
+┌────────────────────────────┐
+│  Layer 1: HTTP Interceptor │  ← IdempotencyInterceptor
+│                            │
+│  Reads Idempotency-Key     │
+│  header from request       │
+│                            │
+│  Cache HIT? ──► Return     │
+│  cached response (200)     │
+│                            │
+│  Cache MISS? ──► Proceed   │
+│  to controller + service   │
+│  ──► Cache response via    │
+│      tap() after success   │
+└────────────────────────────┘
+         │ (cache miss)
+         ▼
+┌────────────────────────────┐
+│  Layer 2: Service Guards   │  ← Per-method state checks
+│                            │
+│  Already settled? ──►      │
+│  Return existing state     │
+│                            │
+│  Already funded? ──►       │
+│  Return existing state     │
+│                            │
+│  Not in expected state? ─► │
+│  Return idempotent 200     │
+│  (no side effects)         │
+└────────────────────────────┘
+         │ (first execution)
+         ▼
+   Normal business logic
+   (escrow, settlement, etc.)
+```
+
+**Layer 1 (HTTP)** handles exact request replays using the `Idempotency-Key` header — the same key always returns the same cached response body and status code. **Layer 2 (Service)** handles cases where the key differs but the operation has already been performed (e.g., a PO is already settled), returning the current state instead of throwing an error.
+
+### 22.2 IdempotencyRecord Schema
+
+```prisma
+model IdempotencyRecord {
+  id           String   @id @default(uuid())
+  key          String   @unique          // caller-supplied Idempotency-Key
+  endpoint     String                    // "PATCH /purchase-orders/:id/fund"
+  statusCode   Int                       // HTTP status code of original response
+  responseBody Json                      // full JSON response body
+  createdAt    DateTime @default(now())
+  expiresAt    DateTime                  // TTL-based expiry (default 24h)
+
+  @@index([expiresAt])                   // efficient cleanup queries
+  @@map("idempotency_records")
+}
+```
+
+- **Unique key constraint** — prevents duplicate cache entries; concurrent writes are handled via upsert (first writer wins)
+- **Expiry index** — enables efficient TTL-based cleanup without full table scans
+- **JSON response body** — stores the complete response, not just a hash, enabling exact replay
+
+### 22.3 IdempotencyService
+
+`IdempotencyService` (`backend/src/idempotency/idempotency.service.ts`) provides three operations:
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `check()` | `check(key: string): Promise<CachedResponse \| null>` | Looks up a record by key. Returns `{ statusCode, body }` if found and not expired. If expired, deletes the record and returns `null`. |
+| `record()` | `record(key, endpoint, statusCode, body): Promise<void>` | Upserts a record — first writer wins. Concurrent calls with the same key do not throw; the second is a no-op. TTL is set to `now + TTL_HOURS`. |
+| `cleanup()` | `cleanup(): Promise<void>` | `@Cron(CronExpression.EVERY_HOUR)` — deletes all records where `expiresAt < now`. Gated by `IDEMPOTENCY_CLEANUP_INTERVAL_MINUTES` env var (0 disables). |
+
+**First-writer-wins semantics:** The `record()` method uses Prisma's `upsert` with `where: { key }` and a no-op `update: {}`. If two concurrent requests race to cache the same key, the first insert wins and the second becomes an update that changes nothing. This avoids both duplicate records and errors.
+
+### 22.4 HTTP-Level Idempotency (Interceptor)
+
+`IdempotencyInterceptor` (`backend/src/idempotency/idempotency.interceptor.ts`) is registered as a **global `APP_INTERCEPTOR`** via the `@Global()` `IdempotencyModule`. It activates only on endpoints decorated with `@Idempotent()`.
+
+#### Request Flow
+
+```
+1. Check for @Idempotent() metadata via NestJS Reflector
+   └─ Not present? → pass through (no idempotency logic)
+
+2. Read Idempotency-Key header
+   └─ Not present? → pass through (backwards compatible)
+
+3. Call IdempotencyService.check(key)
+   └─ Cache HIT → return cached response body immediately (no controller called)
+
+4. Cache MISS → proceed to controller
+   └─ On success: cache response via tap() operator
+      └─ IdempotencyService.record(key, endpoint, statusCode, body)
+```
+
+#### `@Idempotent()` Decorator
+
+```typescript
+import { SetMetadata } from "@nestjs/common";
+
+export const IDEMPOTENT_KEY = "idempotent";
+export const Idempotent = () => SetMetadata(IDEMPOTENT_KEY, true);
+```
+
+Applied directly to controller methods. Only endpoints with this decorator participate in idempotency caching.
+
+### 22.5 Service-Level Idempotency Guards
+
+In addition to HTTP-level caching, each financial service method includes **state-based guards** that return success when the operation has already been performed, regardless of whether the same `Idempotency-Key` was used:
+
+| Service Method | Guard Condition | Idempotent Response |
+|----------------|-----------------|---------------------|
+| `fundEscrow()` | PO status is past ACCEPTED (e.g. FULFILLMENT, SHIPPED, etc.) | Returns existing PO state (200) |
+| `fundEscrow()` | PO is ACCEPTED but PaymentLock already LOCKED | Returns existing escrow details (200) |
+| `acknowledgeObligation()` | PO status is already SETTLED | Returns existing SETTLED PO (200) |
+| `requestEarlyPayment()` | Active early payment request already exists for PO | Returns existing request (201) |
+| `fund()` (early payment) | Request already FUNDED by same LP | Returns existing FUNDED request (200) |
+
+These guards prevent the service from throwing `BadRequestException` on repeat calls. Instead, the caller receives the same response they would have received on the first successful call. This is critical because:
+
+- A retry may use a **different** `Idempotency-Key` (or none at all) — the HTTP cache would miss, but the service guard catches it
+- The PO may have advanced further (e.g., already settled) — the guard returns the current state without erroring
+
+### 22.6 Protected Endpoints
+
+| Endpoint | Controller Method | Layer 1 (HTTP) | Layer 2 (Service) |
+|----------|-------------------|----------------|-------------------|
+| `PATCH /purchase-orders/:id/fund` | `fundEscrow()` | ✅ `@Idempotent()` | ✅ State guard |
+| `PATCH /purchase-orders/:id/acknowledge` | `acknowledge()` | ✅ `@Idempotent()` | ✅ State guard |
+| `POST /early-payments` | `request()` | ✅ `@Idempotent()` | ✅ Duplicate check |
+| `PATCH /early-payments/:id/fund` | `fund()` | ✅ `@Idempotent()` | ✅ State guard |
+
+### 22.7 Client Integration Guide
+
+To use HTTP-level idempotency, clients include the `Idempotency-Key` header with a unique value per logical operation:
+
+```http
+PATCH /api/purchase-orders/abc-123/fund HTTP/1.1
+Authorization: Bearer <token>
+Idempotency-Key: fund-abc-123-1710350400000
+Content-Type: application/json
+```
+
+**Key generation guidance:**
+
+| Strategy | Example | Use Case |
+|----------|---------|----------|
+| UUID v4 | `550e8400-e29b-41d4-a716-446655440000` | General purpose |
+| Action + Entity + Timestamp | `fund-{poId}-{timestamp}` | Deterministic retries within same session |
+| Client-generated nonce | `client-session-{nonce}` | Mobile/offline-first clients |
+
+**Behaviour summary:**
+
+| Scenario | Result |
+|----------|--------|
+| First request with key | Executes normally; response cached for 24h |
+| Replay with same key (within TTL) | Returns cached response — no side effects |
+| Same operation, different key | Service-level guard returns existing state if already performed |
+| No `Idempotency-Key` header | Proceeds normally; no caching (backwards compatible) |
+| Key on non-`@Idempotent()` endpoint | Header ignored; proceeds normally |
+
+### 22.8 Configuration
+
+| Variable | Default | Test Value | Effect |
+|----------|---------|------------|--------|
+| `IDEMPOTENCY_TTL_HOURS` | `24` | `24` | TTL for cached responses |
+| `IDEMPOTENCY_CLEANUP_INTERVAL_MINUTES` | `60` | `0` (disabled) | Cron cleanup interval; `0` disables |
+
+---
+
+## 23. Escrow Transaction Journal
+
+Every escrow balance mutation is individually recorded as an `EscrowTransaction`, creating a complete audit trail that enables trivial reconciliation and independent balance verification.
+
+### 23.1 EscrowTransaction Model
+
+```prisma
+enum EscrowTxType {
+  DEPOSIT           // buyer funds escrow (confirmEscrowFunding)
+  RELEASE_SUPPLIER  // settlement to supplier
+  RELEASE_LP        // settlement to LP (early payment recoup)
+  REFUND_BUYER      // dispute refund to buyer
+  FEE_DEDUCTION     // platform fee
+}
+
+model EscrowTransaction {
+  id              String         @id @default(uuid())
+  escrowAccountId String
+  escrowAccount   EscrowAccount  @relation(fields: [escrowAccountId], references: [id])
+  type            EscrowTxType
+  amountMinor     Int
+  currency        Currency
+  balanceAfter    Int            // running balance snapshot after this tx
+  purchaseOrderId String?
+  purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
+  counterpartyId  String?        // buyer/supplier/LP user ID
+  reference       String         // human-readable ref (e.g., "DEPOSIT PO-ABCD1234-XY12")
+  ledgerEventId   String?        // link back to immutable ledger event
+  createdAt       DateTime       @default(now())
+
+  @@index([escrowAccountId, createdAt])
+  @@index([purchaseOrderId])
+  @@map("escrow_transactions")
+}
+```
+
+**Key fields:**
+
+| Field | Purpose |
+|-------|----------|
+| `type` | Categorises the mutation (5 types) |
+| `balanceAfter` | Running balance snapshot — enables statement rendering without recalculation |
+| `counterpartyId` | The buyer, supplier, or LP involved in this transaction |
+| `reference` | Human-readable string (e.g., `DEPOSIT PO-REF-1234`) |
+| `ledgerEventId` | Optional link back to the immutable ledger event |
+
+### 23.2 EscrowAccountingService
+
+**File:** `src/settlements/escrow-accounting.service.ts`
+
+Central service for all escrow journal operations. All record methods accept an optional `Prisma.TransactionClient` parameter so they can participate in existing `$transaction` blocks.
+
+| Method | Description |
+|--------|-------------|
+| `recordDeposit(input, tx?)` | Creates DEPOSIT transaction after buyer funding confirmation |
+| `recordRelease(input, tx?)` | Creates RELEASE_SUPPLIER or RELEASE_LP transaction during settlement |
+| `recordRefund(input, tx?)` | Creates REFUND_BUYER transaction during dispute refund |
+| `recordFee(input, tx?)` | Creates FEE_DEDUCTION transaction for platform fee |
+| `getStatement(escrowAccountId)` | Returns ordered list of all transactions for an account |
+| `verifyBalance(escrowAccountId)` | Sums all transactions and compares to shadow `balanceMinor` |
+
+**Recording flow (private `record()` core):**
+
+```
+record(input, tx?) ─► read current escrowAccount.balanceMinor
+                    ─► create EscrowTransaction with balanceAfter = current balance
+                    ─► return { id, balanceAfter }
+```
+
+**Balance verification logic:**
+
+```
+computed = sum(DEPOSIT amounts) - sum(RELEASE + REFUND + FEE amounts)
+matches = (computed === escrowAccount.balanceMinor)
+return { escrowAccountId, shadowBalance, computedBalance, matches, transactionCount }
+```
+
+### 23.3 Integration Points
+
+The service is called from 3 mutation points that modify escrow balances:
+
+| Mutation | Service | Method | Tx Client |
+|----------|---------|--------|-----------|
+| `confirmEscrowFunding()` | PurchaseOrdersService | `recordDeposit()` | No (separate operation) |
+| `settlePO()` | SettlementService | `recordRelease()` + `recordFee()` | Yes (`tx` from `$transaction`) |
+| `refundPO()` | SettlementService | `recordRefund()` | No (separate operation) |
+
+**settlePO() detail:** Inside the existing `$transaction` block, after the escrow balance decrement, the service records:
+1. A RELEASE transaction (type depends on whether an early payment LP is involved: `RELEASE_LP` or `RELEASE_SUPPLIER`)
+2. A FEE_DEDUCTION transaction if the platform fee is > 0 (at `PLATFORM_TRANSACTION_FEE_BPS` = 50 = 0.5%)
+
+Both calls pass the `tx` client to ensure the journal entries are atomic with the settlement.
+
+### 23.4 Admin Endpoints
+
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/admin/escrow-accounts/:id/statement` | GET | JWT + ADMIN | Returns full transaction history for an escrow account |
+| `/admin/escrow-accounts/:id/verify-balance` | GET | JWT + ADMIN | Returns balance verification result (shadow vs computed) |
+
+### 23.5 Reconciliation Enhancement
+
+`ReconciliationService` now includes an additional **Step 3b** that verifies escrow journal integrity:
+
+1. Query all active escrow accounts (`isActive: true`)
+2. For each account, call `verifyBalance()`
+3. Any mismatch is added to the reconciliation `alerts` array
+4. Return `escrowJournalVerification[]` in the report
+
+This ensures the cron-driven reconciliation automatically detects journal/balance drift.
+
+### 23.6 Frontend Statement View
+
+**Route:** `/dashboard/admin/escrow-accounts/:id/statement`
+
+Admin-only page displaying:
+- **Summary cards:** Current balance, total transaction count, journal verification status (checkmark or X)
+- **Transaction table:** Type (coloured badge), amount with sign indicator (+/-), currency, running balance, counterparty, reference, timestamp
+- **Type colours:** Green = Deposit, Blue = Release Supplier, Indigo = Release LP, Orange = Refund, Purple = Fee
+
+Linked from the escrow accounts list page via a "Statement" button per account.
+
+---
+
+## 24. Lifecycle Stress Testing
+
+Phase 5 of the operational hardening plan. Exercises concurrent operations, race conditions, and full PO lifecycle scenarios at scale.
+
+### 24.1 Scenario Runner
+
+**File:** `test/stress/scenario-runner.ts`
+
+Standalone TypeScript CLI that runs 10 end-to-end lifecycle scenarios against a live server (`http://localhost:3001/api` by default).
+
+| # | Scenario | Terminal PO State | Key Verification |
+|---|----------|-------------------|------------------|
+| 1 | Normal settlement | SETTLED | Buyer→supplier payment, platform fee deducted |
+| 2 | Early payment funded | SETTLED | LP funds supplier early, settlement routes to LP |
+| 3 | Early payment expired | SETTLED | No LP funding, settlement routes to supplier |
+| 4 | Dispute — full refund | CANCELLED | Buyer refunded, supplier receives nothing |
+| 5 | Dispute — partial refund | SETTLED | Buyer gets partial refund, supplier gets remainder |
+| 6 | Dispute — release to supplier | SETTLED | Dispute resolved in supplier's favour |
+| 7 | Dispute — rework cycle | SETTLED | PO returned to FULFILLMENT, re-shipped, then settled |
+| 8 | LP funding rejected | FULFILLMENT | Wrong role cannot fund EP |
+| 9 | Concurrent LP fund + buyer settle | SETTLED | Race condition: exactly 1 path wins |
+| 10 | Delayed bank confirmation | FULFILLMENT | Escrow pending until admin confirms |
+
+**Built-in API client:** `api(method, path, token?, body?)` using `fetch`. Helpers for registration, login, PO lifecycle, early payments, disputes.
+
+**Usage:**
+```bash
+npx ts-node test/stress/scenario-runner.ts                  # all 10 scenarios
+npx ts-node test/stress/scenario-runner.ts --scenario=3     # single scenario
+npx ts-node test/stress/scenario-runner.ts --chaos           # with random delays
+```
+
+### 24.2 Stress Orchestrator
+
+**File:** `test/stress/run-stress.ts`
+
+Orchestrator that runs scenarios at scale with configurable parallelism.
+
+**CLI arguments:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--scenarios` | `all` | Which scenarios: `all` or comma-separated IDs (e.g. `1,2,9`) |
+| `--count` | `100` | Total iterations per scenario |
+| `--concurrency` | `10` | Parallel workers |
+| `--chaos` | `false` | Inject random delays between steps |
+| `--bail` | `false` | Stop on first failure |
+| `--quiet` | `false` | Suppress per-iteration output |
+
+**Reporting:** Pass/fail counts per scenario, timing percentiles (P50/P90/P99/Max), total duration.
+
+### 24.3 Race Condition E2E Tests
+
+**File:** `src/settlements/race-conditions.e2e-spec.ts` (6 tests)
+
+Jest E2E tests exercising concurrent access patterns that could cause double-payments, duplicate locks, or state machine corruption.
+
+**5.5 — Concurrent `fundEscrow()` (3 tests):**
+
+| Test | Concurrent Calls | Assertion |
+|------|-------------------|------------|
+| 5.5a | 10× `PATCH /:id/fund` | ≥1 returns 200; exactly 1 PaymentLock created (unique constraint) |
+| 5.5b | 5× `PATCH /:id/fund` | Exactly 1 `ESCROW_FUNDING_INITIATED` ledger event |
+| 5.5c | 1× `fund` then 1× `confirm-escrow` + 3× `fund` | PO reaches FULFILLMENT; exactly 1 lock |
+
+**5.6 — LP fund vs buyer acknowledge (3 tests):**
+
+| Test | Concurrent Calls | Assertion |
+|------|-------------------|------------|
+| 5.6a | 1× LP `fund EP` + 1× buyer `acknowledge` | ≥1 path wins; PO=SETTLED; ≥1 settlement record |
+| 5.6b | 5× buyer `acknowledge` | ≥1 returns 200; exactly 1 settlement; PO=SETTLED |
+| 5.6c | 3× LP `fund EP` | ≥1 returns 200; EP=FUNDED; instrument beneficiary=LIQUIDITY_PROVIDER |
+
+**Concurrency safety mechanisms verified:**
+- `PaymentLock.purchaseOrderId` — `@unique` constraint prevents duplicate locks
+- `PaymentInstrument.purchaseOrderId` — `@unique` constraint prevents duplicate instruments
+- `InstrumentService.confirmFinancing()` — `SELECT FOR UPDATE` prevents double-funding
+- `InstrumentService.requestSettlement()` — `SELECT FOR UPDATE` prevents double-settlement
+- Service-level idempotency guards — check existing lock/instrument before creating
+
+### 24.4 npm Scripts
+
+| Script | Command | Description |
+|--------|---------|-------------|
+| `npm run stress` | `ts-node test/stress/run-stress.ts` | Default: 100 iterations, 10 workers |
+| `npm run stress:quick` | `...--count=3 --concurrency=1` | Quick smoke test: 3 iterations, sequential |
+| `npm run stress:full` | `...--count=100 --concurrency=10 --chaos` | Full stress: 100 iterations, 10 workers, chaos mode |
+
+---
+
+## 25. Feature Flag & Pilot Gating
+
+Runtime feature flag system enabling per-organisation controlled rollout of platform capabilities. Flags can be managed via env vars, global DB overrides, or per-org DB overrides. Admin dashboard provides UI for toggling flags.
+
+### 25.1 Architecture
+
+**Resolution cascade** (first match wins):
+
+| Priority | Source | Description |
+|----------|--------|-------------|
+| 1 | Per-org DB override | `FeatureFlagOverride` row with `flag` + `organisationId` |
+| 2 | Global DB override | `FeatureFlagOverride` row with `flag` + `organisationId IS NULL` |
+| 3 | `FEATURE_FLAGS` env var | JSON object, e.g. `{"EARLY_PAYMENTS": true}` |
+| 4 | Built-in default | Hard-coded in `BUILTIN_DEFAULTS` map |
+
+**Key files:**
+
+| File | Purpose |
+|------|---------|
+| `backend/src/config/feature-flags.service.ts` | `FeatureFlagService` — `isEnabled()`, `listFlags()`, `setFlag()`, `removeOverride()` |
+| `backend/src/config/feature-flags.controller.ts` | Admin REST endpoints (`GET /admin/feature-flags`, `PATCH /admin/feature-flags/:flag`) |
+| `backend/src/config/feature-flags.module.ts` | `@Global()` module — exports `FeatureFlagService` to entire app |
+| `backend/prisma/schema.prisma` | `FeatureFlagOverride` model + `@@unique([flag, organisationId])` |
+| `frontend/src/app/dashboard/admin/feature-flags/page.tsx` | Admin UI for listing and toggling flags |
+| `frontend/src/lib/api.ts` | `featureFlagApi.list()` / `featureFlagApi.toggle()` |
+
+### 25.2 Flag Catalogue
+
+| Flag | Built-in Default | Purpose |
+|------|-----------------|---------|
+| `REAL_BANK_ESCROW` | `false` | Use real bank webhooks for escrow funding instead of simulated `setTimeout` |
+| `REAL_KYB_PROVIDER` | `false` | Use Wathq KYB provider instead of mock verification |
+| `LP_MARKETPLACE` | `false` | Enable LP marketplace for early payment matching |
+| `EARLY_PAYMENTS` | `true` | Allow suppliers to request early payment on eligible POs |
+| `MULTI_CURRENCY` | `true` | Enable SAR alongside GBP for cross-border transactions |
+| `ESCROW_TRANSACTIONS` | `true` | Enable escrow transaction journal for audit trail |
+
+Shipped features default to `true` to maintain backward compatibility. New/experimental features default to `false`.
+
+### 25.3 Admin API
+
+**List flags:**
+```
+GET /admin/feature-flags?orgId=<optional>
+Authorization: Bearer <admin-token>
+
+Response: {
+  flags: [{ flag: string, enabled: boolean, source: "env"|"db-global"|"db-org"|"default" }],
+  orgId: string | null
+}
+```
+
+**Toggle flag:**
+```
+PATCH /admin/feature-flags/:flag
+Authorization: Bearer <admin-token>
+Body: { enabled: boolean, organisationId?: string }
+
+Response: { flag: string, enabled: boolean, organisationId: string | null }
+```
+
+Both endpoints require `ADMIN` role via `JwtAuthGuard` + `RolesGuard`.
+
+### 25.4 Frontend Page
+
+`/dashboard/admin/feature-flags` — Accessible via admin sidebar (ToggleLeft icon). Displays all flags as cards with:
+- Flag name (monospace) + human-readable description
+- Source badge (Env Var / Global Override / Org Override / Default)
+- ON/OFF status badge (green/grey)
+- Toggle button for global enable/disable
+
+Uses `@tanstack/react-query` for data fetching with automatic cache invalidation on mutation.
+
+### 25.5 Guard Integration Points
+
+**Escrow funding** (`purchase-orders.service.ts:fundEscrow()`):
+- When `REAL_BANK_ESCROW` is **enabled**: Skips `scheduleEscrowConfirmation()` setTimeout simulation. PO stays in ACCEPTED status until a real bank webhook calls `confirmEscrowFunding()`.
+- When **disabled** (default): Runs simulated bank confirmation after `ESCROW_CONFIRM_DELAY_MS` (default 4s).
+
+**Early payments** (`early-payments.service.ts:requestEarlyPayment()`):
+- When `EARLY_PAYMENTS` is **disabled** for the supplier's org: Returns HTTP 403 "Early payments feature is not enabled for your organisation".
+- When **enabled** (default): Normal early payment flow proceeds.
+
+**Prisma schema:**
+```prisma
+model FeatureFlagOverride {
+  id             String        @id @default(uuid())
+  flag           String
+  organisationId String?       @map("organisation_id")
+  enabled        Boolean
+  createdAt      DateTime      @default(now()) @map("created_at")
+  organisation   Organisation? @relation(fields: [organisationId], references: [id])
+  @@unique([flag, organisationId])
+  @@index([flag])
+  @@map("feature_flag_overrides")
+}
+```
+
+**E2E coverage:** 11 tests in `feature-flags.e2e-spec.ts`:
+- 4 flag evaluation tests (default fallback, global override, per-org override, list all flags)
+- 5 admin endpoint tests (list all, toggle global, toggle per-org, unknown flag rejection, RBAC)
+- 2 guard behaviour tests (EARLY_PAYMENTS disabled blocks, enabled allows)
+
+---
+
+*Generated 14 March 2026. This document reflects the current production codebase (512 tests, 31 suites, all passing). Updated for: (1) SettlementRouterService — centralised settlement routing and fee calculation, extracted from acknowledgeObligation() and dispute resolution; (2) Financial Integrity Checker — 12 invariants, admin endpoint, cron scheduler, frontend card; (3) 2-step escrow funding workflow; (4) IN_PROGRESS → FULFILLMENT rename; (5) strict state machine enforcement; (6) EscrowAccount IBAN field; (7) Idempotent Financial Operations — two-layer idempotency framework with HTTP interceptor + service-level guards, IdempotencyRecord table, 4 protected financial endpoints; (8) Escrow Transaction Journal — EscrowTransaction model, EscrowAccountingService, 3 mutation point integrations, admin statement/verify endpoints, reconciliation enhancement, frontend statement view; (9) Lifecycle Stress Testing — 10-scenario runner, stress orchestrator, 6 race condition E2E tests, npm stress scripts; (10) Feature Flag & Pilot Gating — FeatureFlagService with 4-level cascade resolution, FeatureFlagOverride Prisma model, admin CRUD endpoints, frontend admin page, escrow funding + early payment guards, 11 E2E tests.*

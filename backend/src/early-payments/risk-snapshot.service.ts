@@ -143,7 +143,7 @@ export class RiskSnapshotService {
    *
    * DRAFT/SUBMITTED/APPROVED → 0 (not yet in motion)
    * ACCEPTED → 3 (supplier committed)
-   * IN_PROGRESS → 4
+   * FULFILLMENT → 4
    * SHIPPED → 6 (goods in transit)
    * DELIVERED → 8 (buyer received)
    * VERIFIED → 10 (buyer confirmed delivery)
@@ -158,7 +158,7 @@ export class RiskSnapshotService {
         return 8;
       case "SHIPPED":
         return 6;
-      case "IN_PROGRESS":
+      case "FULFILLMENT":
         return 4;
       case "ACCEPTED":
         return 3;

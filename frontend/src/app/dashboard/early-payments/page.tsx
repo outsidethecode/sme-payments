@@ -134,7 +134,7 @@ function SupplierView() {
   const eligiblePOs = pos?.filter(
     (po) =>
       (po.status === "ACCEPTED" ||
-        po.status === "IN_PROGRESS" ||
+        po.status === "FULFILLMENT" ||
         po.status === "SHIPPED" ||
         po.status === "DELIVERED") &&
       !earlyPayments?.find((ep) => ep.purchaseOrderId === po.id),

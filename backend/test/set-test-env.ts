@@ -9,3 +9,9 @@ process.env.DATABASE_URL =
 // Disable the auto-anchor scheduler during tests
 process.env.ANCHOR_PROVIDER = "noop";
 process.env.ANCHOR_INTERVAL_MINUTES = "0";
+
+// Disable the integrity check cron during tests
+process.env.INTEGRITY_CHECK_INTERVAL_MINUTES = "0";
+
+// Disable the idempotency record cleanup cron during tests
+process.env.IDEMPOTENCY_CLEANUP_INTERVAL_MINUTES = "0";

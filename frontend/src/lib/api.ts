@@ -147,6 +147,7 @@ export interface PaymentLock {
   amountMinor: number;
   currency?: string;
   status: string;
+  externalRef?: string | null;
   lockedAt: string | null;
   releasedAt: string | null;
 }
@@ -288,6 +289,10 @@ export const poApi = {
     api.patch<PurchaseOrder>(`/purchase-orders/${id}/send`, { signatureData }),
   accept: (id: string, signatureData?: SignaturePayload) =>
     api.patch<PurchaseOrder>(`/purchase-orders/${id}/accept`, {
+      signatureData,
+    }),
+  fundEscrow: (id: string, signatureData?: SignaturePayload) =>
+    api.patch<PurchaseOrder>(`/purchase-orders/${id}/fund`, {
       signatureData,
     }),
   reject: (id: string, signatureData?: SignaturePayload) =>
@@ -554,6 +559,20 @@ export const adminApi = {
       lockedAmountByCurrency?: Record<string, number>;
     }>("/admin/stats"),
 
+  integrityCheck: () =>
+    api.get<{
+      checkedAt: string;
+      totalChecked: number;
+      valid: number;
+      violations: Array<{
+        invariantId: string;
+        purchaseOrderId: string;
+        expected: string;
+        actual: string;
+        severity: "CRITICAL" | "HIGH" | "MEDIUM";
+      }>;
+    }>("/admin/integrity-check"),
+
   listEscrowAccounts: () => api.get<EscrowAccount[]>("/admin/escrow-accounts"),
   getEscrowAccount: (id: string) =>
     api.get<EscrowAccount>(`/admin/escrow-accounts/${id}`),
@@ -567,6 +586,57 @@ export const adminApi = {
     id: string,
     data: { label?: string; active?: boolean },
   ) => api.patch<EscrowAccount>(`/admin/escrow-accounts/${id}`, data),
+
+  // ── Escrow Transaction Journal ────────────────────────────
+
+  getEscrowStatement: (id: string) =>
+    api.get<{
+      escrowAccountId: string;
+      label: string;
+      currency: string;
+      currentBalance: number;
+      transactions: Array<{
+        id: string;
+        type: string;
+        amountMinor: number;
+        balanceAfter: number;
+        purchaseOrderId: string | null;
+        counterpartyId: string | null;
+        reference: string;
+        createdAt: string;
+      }>;
+    }>(`/admin/escrow-accounts/${id}/statement`),
+
+  verifyEscrowBalance: (id: string) =>
+    api.get<{
+      escrowAccountId: string;
+      shadowBalance: number;
+      computedBalance: number;
+      match: boolean;
+      transactionCount: number;
+    }>(`/admin/escrow-accounts/${id}/verify-balance`),
+};
+
+// ── Feature Flags ─────────────────────────────────────────────
+
+export interface FlagStatus {
+  flag: string;
+  enabled: boolean;
+  source: "env" | "db-global" | "db-org" | "default";
+}
+
+export const featureFlagApi = {
+  list: (orgId?: string) =>
+    api.get<{ flags: FlagStatus[]; orgId: string | null }>(
+      "/admin/feature-flags",
+      orgId ? { params: { orgId } } : undefined,
+    ),
+  toggle: (flag: string, enabled: boolean, organisationId?: string) =>
+    api.patch<{
+      flag: string;
+      enabled: boolean;
+      organisationId: string | null;
+    }>(`/admin/feature-flags/${flag}`, { enabled, organisationId }),
 };
 
 // ── Approvals ─────────────────────────────────────────────────

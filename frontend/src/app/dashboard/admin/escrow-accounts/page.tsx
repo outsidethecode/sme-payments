@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { adminApi, type EscrowAccount } from "@/lib/api";
 import { formatCurrency, formatDate } from "@/lib/format";
@@ -41,6 +42,7 @@ import {
 import { toast } from "sonner";
 import { Building2, Plus, Power, PowerOff } from "lucide-react";
 import { useState } from "react";
+import Link from "next/link";
 
 export default function EscrowAccountsPage() {
   const queryClient = useQueryClient();
@@ -208,23 +210,32 @@ export default function EscrowAccountsPage() {
                       {formatDate(acct.createdAt)}
                     </TableCell>
                     <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() =>
-                          toggleMutation.mutate({
-                            id: acct.id,
-                            active: !acct.active,
-                          })
-                        }
-                        disabled={toggleMutation.isPending}
-                      >
-                        {acct.active ? (
-                          <PowerOff className="h-4 w-4 text-destructive" />
-                        ) : (
-                          <Power className="h-4 w-4 text-emerald-600" />
-                        )}
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Link
+                          href={`/dashboard/admin/escrow-accounts/${acct.id}/statement`}
+                        >
+                          <Button variant="ghost" size="sm" className="text-xs">
+                            Statement
+                          </Button>
+                        </Link>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() =>
+                            toggleMutation.mutate({
+                              id: acct.id,
+                              active: !acct.active,
+                            })
+                          }
+                          disabled={toggleMutation.isPending}
+                        >
+                          {acct.active ? (
+                            <PowerOff className="h-4 w-4 text-destructive" />
+                          ) : (
+                            <Power className="h-4 w-4 text-emerald-600" />
+                          )}
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

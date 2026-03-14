@@ -8,7 +8,7 @@ import {
 import { PrismaService } from "../prisma/prisma.service";
 import { LedgerService, SignatureData } from "../ledger/ledger.service";
 import { SettlementService } from "../settlements/settlement.service";
-import { SettlementCurrency } from "../settlements/settlement-adapter.interface";
+import { SettlementRouterService } from "../settlements/settlement-router.service";
 
 // ── DTOs ─────────────────────────────────────────────────────
 
@@ -44,6 +44,7 @@ export class DisputesService {
     private readonly prisma: PrismaService,
     private readonly ledger: LedgerService,
     private readonly settlement: SettlementService,
+    private readonly settlementRouter: SettlementRouterService,
   ) {}
 
   /**
@@ -301,7 +302,7 @@ export class DisputesService {
           newPoStatus = "VERIFIED";
           break;
         case "REWORK":
-          newPoStatus = "IN_PROGRESS";
+          newPoStatus = "FULFILLMENT";
           break;
         default:
           newPoStatus = "DISPUTED";
@@ -340,61 +341,48 @@ export class DisputesService {
 
   /**
    * Execute settlement actions based on dispute outcome.
+   * Delegates routing decisions to SettlementRouterService.
    */
   private async executeDisputeSettlement(
     input: ResolveDisputeInput,
     po: any,
     sig?: SignatureData,
   ) {
-    const lock = po.paymentLock;
-    const currency = (po.currency || "GBP") as SettlementCurrency;
+    const plan = await this.settlementRouter.resolveDisputeSettlement(
+      po.id,
+      input.outcome as any,
+      input.refundAmount,
+      input.resolutionNotes,
+    );
 
-    switch (input.outcome) {
-      case "FULL_REFUND":
-        if (lock && lock.status === "LOCKED") {
+    for (const action of plan.actions) {
+      switch (action.type) {
+        case "REFUND":
           await this.settlement.refundPO({
             purchaseOrderId: po.id,
-            buyerId: po.buyerId,
-            amount: po.amount,
-            currency,
-            reservationRef: lock.openBankingRef || "",
-            reason: `Dispute full refund: ${input.resolutionNotes || "N/A"}`,
+            buyerId: action.recipientUserId,
+            amount: action.amount,
+            currency: action.currency,
+            reservationRef: po.paymentLock?.openBankingRef || "",
+            reason: action.reason,
           });
-        }
-        break;
+          break;
 
-      case "PARTIAL_REFUND":
-        if (lock && lock.status === "LOCKED") {
-          // For partial refund: refund partial amount to buyer first,
-          // then settle remainder to supplier in a second step.
-          // We use refundPO for the buyer portion (marks lock as REFUNDED),
-          // then manually create a settlement record for the supplier portion.
-          await this.settlement.refundPO({
-            purchaseOrderId: po.id,
-            buyerId: po.buyerId,
-            amount: input.refundAmount!,
-            currency,
-            reservationRef: lock.openBankingRef || "",
-            reason: `Dispute partial refund: ${input.resolutionNotes || "N/A"}`,
-          });
-        }
-        break;
-
-      case "RELEASE_TO_SUPPLIER":
-        if (lock && lock.status === "LOCKED") {
+        case "SETTLE":
           await this.settlement.settlePO({
             purchaseOrderId: po.id,
-            recipientId: po.supplierId,
-            totalAmount: po.amount,
-            feeBps: 50,
-            currency,
+            recipientId: action.recipientUserId,
+            recipientAccountRef: action.recipientBankIban || undefined,
+            totalAmount: action.grossAmount,
+            feeBps: action.feeBps,
+            currency: action.currency,
           });
-        }
-        break;
+          break;
 
-      case "REWORK":
-        // No settlement action — PO goes back to IN_PROGRESS
-        break;
+        case "NOOP":
+          this.logger.log(`Dispute ${input.disputeId}: ${action.reason}`);
+          break;
+      }
     }
   }
 

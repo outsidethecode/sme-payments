@@ -28,6 +28,7 @@ export interface CreateInstrumentInput {
   payerAccountRef?: string;
   buyerOrgId?: string;
   supplierOrgId?: string;
+  escrowAccountId?: string;
 }
 
 export interface ConfirmLockInput {
@@ -99,6 +100,7 @@ export class InstrumentService {
         settlementBeneficiary: "SUPPLIER",
         buyerOrgId: input.buyerOrgId ?? null,
         supplierOrgId: input.supplierOrgId ?? null,
+        escrowAccountId: input.escrowAccountId ?? null,
       },
     });
 

@@ -8,12 +8,12 @@ import { PrismaService } from "../prisma/prisma.service";
  * PO State Machine — exhaustive transition tests.
  *
  * PO statuses:
- *   DRAFT → SENT → ACCEPTED → SHIPPED → DELIVERED → VERIFIED → SETTLED
+ *   DRAFT → SENT → ACCEPTED (commercial) → [buyer funds escrow] → FULFILLMENT → SHIPPED → DELIVERED → VERIFIED → SETTLED
  *                → CANCELLED (reject)
  *                → NEGOTIATION ↔ SENT (counter flow)
  *                              → CANCELLED (rejectCounter)
- *   DELIVERED → DISPUTED → (CANCELLED | SETTLED | VERIFIED | IN_PROGRESS)
- *   IN_PROGRESS → SHIPPED / DELIVERED (post-rework)
+ *   DELIVERED → DISPUTED → (CANCELLED | SETTLED | VERIFIED | FULFILLMENT)
+ *   FULFILLMENT → SHIPPED → DELIVERED (strict: must ship before deliver)
  *
  * Every valid forward transition and every invalid guard is tested below.
  */
@@ -206,6 +206,20 @@ describe("PO State Machine E2E", () => {
       .post("/auth/login")
       .send({ email: "sm-admin@test.com", password: "Password123!" });
     adminToken = adminLoginRes.body.accessToken;
+
+    // Ensure a GBP escrow account exists for fund tests
+    await prisma.escrowAccount.upsert({
+      where: { country_currency: { country: "GB", currency: "GBP" } },
+      update: {},
+      create: {
+        label: "Test GBP Escrow",
+        bank: "Test Bank",
+        country: "GB",
+        currency: "GBP",
+        balanceMinor: 0,
+        active: true,
+      },
+    });
   });
 
   afterAll(async () => {
@@ -250,8 +264,33 @@ describe("PO State Machine E2E", () => {
     return id;
   }
 
-  async function createShipped(): Promise<string> {
+  async function createFunded(): Promise<string> {
     const id = await createAccepted();
+    // Step 1: Initiate escrow funding (reserves funds, creates lock)
+    const res = await request(app.getHttpServer())
+      .patch(`/purchase-orders/${id}/fund`)
+      .set("Authorization", `Bearer ${buyerToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.fundingPending).toBe(true);
+    expect(res.body.escrowDetails).toBeDefined();
+    expect(res.body.escrowDetails.bank).toBeDefined();
+
+    // Step 2: Confirm escrow (simulates bank callback)
+    const confirmRes = await request(app.getHttpServer())
+      .patch(`/purchase-orders/${id}/confirm-escrow`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(confirmRes.status).toBe(200);
+
+    // Verify PO is now in FULFILLMENT
+    const poRes = await request(app.getHttpServer())
+      .get(`/purchase-orders/${id}`)
+      .set("Authorization", `Bearer ${buyerToken}`);
+    expect(poRes.body.status).toBe("FULFILLMENT");
+    return id;
+  }
+
+  async function createShipped(): Promise<string> {
+    const id = await createFunded();
     const res = await request(app.getHttpServer())
       .patch(`/purchase-orders/${id}/ship`)
       .set("Authorization", `Bearer ${supplierToken}`);
@@ -261,7 +300,7 @@ describe("PO State Machine E2E", () => {
   }
 
   async function createDelivered(): Promise<string> {
-    const id = await createAccepted();
+    const id = await createShipped();
     const res = await request(app.getHttpServer())
       .patch(`/purchase-orders/${id}/deliver`)
       .set("Authorization", `Bearer ${supplierToken}`);
@@ -311,18 +350,18 @@ describe("PO State Machine E2E", () => {
       .send({ purchaseOrderId: id, reason: "Rework needed" });
     expect(raiseRes.status).toBe(201);
 
-    // Resolve with REWORK → PO goes to IN_PROGRESS
+    // Resolve with REWORK → PO goes to FULFILLMENT
     const resolveRes = await request(app.getHttpServer())
       .patch(`/disputes/${raiseRes.body.id}/resolve`)
       .set("Authorization", `Bearer ${adminToken}`)
       .send({ outcome: "REWORK", resolutionNotes: "Rework required" });
     expect(resolveRes.status).toBe(200);
 
-    // Verify PO is now IN_PROGRESS
+    // Verify PO is now FULFILLMENT
     const poRes = await request(app.getHttpServer())
       .get(`/purchase-orders/${id}`)
       .set("Authorization", `Bearer ${buyerToken}`);
-    expect(poRes.body.status).toBe("IN_PROGRESS");
+    expect(poRes.body.status).toBe("FULFILLMENT");
     return id;
   }
 
@@ -342,8 +381,8 @@ describe("PO State Machine E2E", () => {
     });
   });
 
-  describe("Happy path: IN_PROGRESS → SHIPPED (post-rework)", () => {
-    it("should allow shipping from IN_PROGRESS after dispute rework", async () => {
+  describe("Happy path: FULFILLMENT → SHIPPED (post-rework)", () => {
+    it("should allow shipping from FULFILLMENT after dispute rework", async () => {
       const id = await createInProgress();
 
       const res = await request(app.getHttpServer())
@@ -355,21 +394,8 @@ describe("PO State Machine E2E", () => {
     });
   });
 
-  describe("Happy path: IN_PROGRESS → DELIVERED (post-rework)", () => {
-    it("should allow delivery from IN_PROGRESS after dispute rework", async () => {
-      const id = await createInProgress();
-
-      const res = await request(app.getHttpServer())
-        .patch(`/purchase-orders/${id}/deliver`)
-        .set("Authorization", `Bearer ${supplierToken}`);
-
-      expect(res.status).toBe(200);
-      expect(res.body.status).toBe("DELIVERED");
-    });
-  });
-
   describe("Happy path: full post-rework cycle to SETTLED", () => {
-    it("should complete IN_PROGRESS → SHIPPED → DELIVERED → VERIFIED → SETTLED", async () => {
+    it("should complete FULFILLMENT → SHIPPED → DELIVERED → VERIFIED → SETTLED", async () => {
       const id = await createInProgress();
 
       // Ship
@@ -459,6 +485,14 @@ describe("PO State Machine E2E", () => {
 
     it("should reject deliver on SENT PO", async () => {
       const id = await createSent();
+      const res = await request(app.getHttpServer())
+        .patch(`/purchase-orders/${id}/deliver`)
+        .set("Authorization", `Bearer ${supplierToken}`);
+      expect(res.status).toBe(400);
+    });
+
+    it("should reject deliver on FULFILLMENT PO (must ship first)", async () => {
+      const id = await createFunded();
       const res = await request(app.getHttpServer())
         .patch(`/purchase-orders/${id}/deliver`)
         .set("Authorization", `Bearer ${supplierToken}`);
@@ -676,7 +710,7 @@ describe("PO State Machine E2E", () => {
     });
 
     it("should reject buyer trying to ship", async () => {
-      const id = await createAccepted();
+      const id = await createFunded();
       const res = await request(app.getHttpServer())
         .patch(`/purchase-orders/${id}/ship`)
         .set("Authorization", `Bearer ${buyerToken}`);
@@ -684,7 +718,7 @@ describe("PO State Machine E2E", () => {
     });
 
     it("should reject buyer trying to mark delivered", async () => {
-      const id = await createAccepted();
+      const id = await createShipped();
       const res = await request(app.getHttpServer())
         .patch(`/purchase-orders/${id}/deliver`)
         .set("Authorization", `Bearer ${buyerToken}`);
@@ -746,11 +780,13 @@ describe("PO State Machine E2E", () => {
       expect(res.status).toBe(400);
     });
 
-    it("should reject acknowledge", async () => {
+    it("should return idempotent response for acknowledge on SETTLED PO", async () => {
       const res = await request(app.getHttpServer())
         .patch(`/purchase-orders/${settledId}/acknowledge`)
         .set("Authorization", `Bearer ${buyerToken}`);
-      expect(res.status).toBe(400);
+      // Idempotent: returns existing SETTLED state instead of 400
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("SETTLED");
     });
 
     it("should reject dispute", async () => {
@@ -814,8 +850,18 @@ describe("PO State Machine E2E", () => {
   // ════════════════════════════════════════════════════════════
 
   describe("Payment lock lifecycle", () => {
-    it("should create LOCKED payment lock on accept", async () => {
+    it("should NOT create payment lock on accept (commercial only)", async () => {
       const id = await createAccepted();
+      const res = await request(app.getHttpServer())
+        .get(`/purchase-orders/${id}`)
+        .set("Authorization", `Bearer ${buyerToken}`);
+
+      expect(res.body.paymentLocked).toBe(false);
+      expect(res.body.paymentLock).toBeNull();
+    });
+
+    it("should create LOCKED payment lock on fund", async () => {
+      const id = await createFunded();
       const res = await request(app.getHttpServer())
         .get(`/purchase-orders/${id}`)
         .set("Authorization", `Bearer ${buyerToken}`);
@@ -832,6 +878,120 @@ describe("PO State Machine E2E", () => {
         .set("Authorization", `Bearer ${buyerToken}`);
 
       expect(res.body.paymentLock.status).toBe("RELEASED");
+    });
+  });
+
+  // ════════════════════════════════════════════════════════════
+  //  FUND ESCROW GUARDS
+  // ════════════════════════════════════════════════════════════
+
+  describe("Fund escrow: happy path", () => {
+    it("should initiate escrow funding on ACCEPTED PO → ACCEPTED (pending)", async () => {
+      const id = await createAccepted();
+      const res = await request(app.getHttpServer())
+        .patch(`/purchase-orders/${id}/fund`)
+        .set("Authorization", `Bearer ${buyerToken}`);
+
+      expect(res.status).toBe(200);
+      // Step 1: PO stays ACCEPTED, funding is pending
+      expect(res.body.status).toBe("ACCEPTED");
+      expect(res.body.fundingPending).toBe(true);
+      expect(res.body.escrowDetails).toBeDefined();
+      expect(res.body.escrowDetails.bank).toBeDefined();
+      expect(res.body.escrowDetails.iban).toBeDefined();
+    });
+
+    it("should confirm escrow → FULFILLMENT after bank callback", async () => {
+      const id = await createAccepted();
+      // Initiate
+      await request(app.getHttpServer())
+        .patch(`/purchase-orders/${id}/fund`)
+        .set("Authorization", `Bearer ${buyerToken}`);
+
+      // Confirm (simulates bank callback)
+      await request(app.getHttpServer())
+        .patch(`/purchase-orders/${id}/confirm-escrow`)
+        .set("Authorization", `Bearer ${adminToken}`);
+
+      const poRes = await request(app.getHttpServer())
+        .get(`/purchase-orders/${id}`)
+        .set("Authorization", `Bearer ${buyerToken}`);
+
+      expect(poRes.body.status).toBe("FULFILLMENT");
+      expect(poRes.body.paymentLocked).toBe(true);
+    });
+  });
+
+  describe("Fund escrow: invalid status guards", () => {
+    it("should reject fund on DRAFT PO", async () => {
+      const id = await createDraft();
+      const res = await request(app.getHttpServer())
+        .patch(`/purchase-orders/${id}/fund`)
+        .set("Authorization", `Bearer ${buyerToken}`);
+      expect(res.status).toBe(400);
+    });
+
+    it("should reject fund on SENT PO", async () => {
+      const id = await createSent();
+      const res = await request(app.getHttpServer())
+        .patch(`/purchase-orders/${id}/fund`)
+        .set("Authorization", `Bearer ${buyerToken}`);
+      expect(res.status).toBe(400);
+    });
+
+    it("should return idempotent response for fund on already-funded (FULFILLMENT) PO", async () => {
+      const id = await createFunded();
+      const res = await request(app.getHttpServer())
+        .patch(`/purchase-orders/${id}/fund`)
+        .set("Authorization", `Bearer ${buyerToken}`);
+      // Idempotent: returns existing FULFILLMENT state instead of 400
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("FULFILLMENT");
+    });
+  });
+
+  describe("Fund escrow: role guards", () => {
+    it("should reject supplier trying to fund", async () => {
+      const id = await createAccepted();
+      const res = await request(app.getHttpServer())
+        .patch(`/purchase-orders/${id}/fund`)
+        .set("Authorization", `Bearer ${supplierToken}`);
+      expect(res.status).toBe(403);
+    });
+  });
+
+  describe("Guard: cannot ship or deliver from ACCEPTED (unfunded)", () => {
+    it("should reject ship on ACCEPTED PO", async () => {
+      const id = await createAccepted();
+      const res = await request(app.getHttpServer())
+        .patch(`/purchase-orders/${id}/ship`)
+        .set("Authorization", `Bearer ${supplierToken}`);
+      expect(res.status).toBe(400);
+    });
+
+    it("should reject deliver on ACCEPTED PO", async () => {
+      const id = await createAccepted();
+      const res = await request(app.getHttpServer())
+        .patch(`/purchase-orders/${id}/deliver`)
+        .set("Authorization", `Bearer ${supplierToken}`);
+      expect(res.status).toBe(400);
+    });
+  });
+
+  describe("Guard: cannot ship without payment lock (defensive)", () => {
+    it("should reject ship on FULFILLMENT PO when payment lock is missing", async () => {
+      // Create accepted PO and force status to FULFILLMENT without creating a lock
+      const id = await createAccepted();
+      await prisma.purchaseOrder.update({
+        where: { id },
+        data: { status: "FULFILLMENT", paymentLocked: false },
+      });
+
+      const res = await request(app.getHttpServer())
+        .patch(`/purchase-orders/${id}/ship`)
+        .set("Authorization", `Bearer ${supplierToken}`);
+      expect(res.status).toBe(400);
+      expect(res.body.message).toMatch(/payment has not been locked/i);
     });
   });
 });

@@ -12,11 +12,14 @@ import { PoliciesService } from "../policies/policies.service";
 import { ApprovalsService } from "../approvals/approvals.service";
 import { OrganisationsService } from "../organisations/organisations.service";
 import { SettlementService } from "../settlements/settlement.service";
-import {
-  InstrumentService,
-  SettlementBeneficiaryType,
-} from "../settlements/instrument.service";
+import { SettlementRouterService } from "../settlements/settlement-router.service";
+import { InstrumentService } from "../settlements/instrument.service";
+import { EscrowAccountingService } from "../settlements/escrow-accounting.service";
 import { SettlementCurrency } from "../settlements/settlement-adapter.interface";
+import {
+  FeatureFlagService,
+  FeatureFlag,
+} from "../config/feature-flags.service";
 
 // Simple PO reference generator
 function generateReference(): string {
@@ -78,7 +81,10 @@ export class PurchaseOrdersService {
     private readonly approvals: ApprovalsService,
     private readonly orgs: OrganisationsService,
     private readonly settlement: SettlementService,
+    private readonly settlementRouter: SettlementRouterService,
     private readonly instrumentService: InstrumentService,
+    private readonly escrowAccounting: EscrowAccountingService,
+    private readonly featureFlags: FeatureFlagService,
   ) {}
 
   async create(input: CreatePOInput) {
@@ -459,38 +465,12 @@ export class PurchaseOrdersService {
     if (po.supplierId !== actorId)
       throw new ForbiddenException("Only the supplier can accept");
 
-    // Check buyer has sufficient balance for payment lock
-    const buyerBalance = await this.users.getBalance(po.buyerId);
-    if (buyerBalance < po.amount) {
-      throw new BadRequestException(
-        "Buyer has insufficient funds for payment lock",
-      );
-    }
-
-    // Resolve currency from the PO (or organisation)
-    const currency = (po.currency || "GBP") as SettlementCurrency;
-
-    // Resolve buyer's bank account ref (from org, if available)
-    const buyerOrg = await this.orgs.getOrgByUserId(po.buyerId);
-    const buyerAccountRef = buyerOrg?.bankIban || undefined;
-
-    // Reserve funds via settlement adapter
-    const reservation = await this.settlement.reserveForPO({
-      purchaseOrderId: id,
-      buyerId: po.buyerId,
-      buyerAccountRef,
-      amount: po.amount,
-      currency,
-    });
-
-    // Update PO status
+    // Update PO status — commercial acceptance only (no funds move yet)
     const updated = await this.prisma.purchaseOrder.update({
       where: { id },
       data: {
         status: "ACCEPTED",
         acceptedAt: new Date(),
-        paymentLocked: true,
-        lockedAt: new Date(),
       },
       include: {
         buyer: {
@@ -523,14 +503,372 @@ export class PurchaseOrdersService {
       actorRole: "SUPPLIER",
       payload: {
         amount: po.amount,
-        externalRef: reservation.externalRef,
-        settlementRail: this.settlement.getAdapterName(),
+        currency: po.currency,
       },
       ...sig,
     });
 
     const result = this.formatPO(updated);
     return { ...result, _receipt: this.ledger.buildReceipt(event) };
+  }
+
+  /**
+   * Initiate escrow funding for an accepted PO (Step 1 of 2).
+   *
+   * Buyer action: validates balance → reserves funds via adapter →
+   * creates PaymentLock (PENDING → LOCKED) → returns escrow account
+   * details so the buyer can see where payment is going.
+   *
+   * PO stays in ACCEPTED until the bank confirms receipt of funds
+   * (Step 2: confirmEscrowFunding). In simulation mode, a delayed
+   * callback auto-confirms after a few seconds.
+   */
+  async fundEscrow(id: string, actorId: string, sig?: SignatureData) {
+    // ── Idempotency guard: if PO already past ACCEPTED, return current state ──
+    const poCheck = await this.prisma.purchaseOrder.findUnique({
+      where: { id },
+    });
+    if (!poCheck) throw new NotFoundException("Purchase order not found");
+    if (poCheck.status === "FULFILLMENT") {
+      this.logger.log(
+        `fundEscrow(${id}): PO already in FULFILLMENT — returning idempotent response`,
+      );
+      const current = await this.prisma.purchaseOrder.findUnique({
+        where: { id },
+        include: {
+          buyer: {
+            select: {
+              id: true,
+              email: true,
+              name: true,
+              role: true,
+              companyName: true,
+            },
+          },
+          supplier: {
+            select: {
+              id: true,
+              email: true,
+              name: true,
+              role: true,
+              companyName: true,
+            },
+          },
+          paymentLock: true,
+        },
+      });
+      return this.formatPO(current);
+    }
+
+    const po = await this.requireStatus(id, "ACCEPTED");
+    if (po.buyerId !== actorId)
+      throw new ForbiddenException("Only the buyer can fund escrow");
+
+    // Idempotency: if lock already exists, return current PO + escrow info
+    const existingLock = await this.prisma.paymentLock.findUnique({
+      where: { purchaseOrderId: id },
+    });
+    if (existingLock) {
+      // If lock is LOCKED (confirmed but PO still ACCEPTED — shouldn't happen normally),
+      // return the current state instead of throwing
+      if (existingLock.status === "LOCKED") {
+        this.logger.log(
+          `fundEscrow(${id}): Lock already LOCKED — returning idempotent response`,
+        );
+        const current = await this.prisma.purchaseOrder.findUnique({
+          where: { id },
+          include: {
+            buyer: {
+              select: {
+                id: true,
+                email: true,
+                name: true,
+                role: true,
+                companyName: true,
+              },
+            },
+            supplier: {
+              select: {
+                id: true,
+                email: true,
+                name: true,
+                role: true,
+                companyName: true,
+              },
+            },
+            paymentLock: true,
+          },
+        });
+        return this.formatPO(current);
+      }
+      // If still PENDING, return the escrow details again
+      const escrowAccount = await this.prisma.escrowAccount.findFirst({
+        where: { currency: po.currency as SettlementCurrency, active: true },
+      });
+      const current = await this.prisma.purchaseOrder.findUnique({
+        where: { id },
+        include: {
+          buyer: {
+            select: {
+              id: true,
+              email: true,
+              name: true,
+              role: true,
+              companyName: true,
+            },
+          },
+          supplier: {
+            select: {
+              id: true,
+              email: true,
+              name: true,
+              role: true,
+              companyName: true,
+            },
+          },
+          paymentLock: true,
+        },
+      });
+      return {
+        ...this.formatPO(current),
+        escrowDetails: escrowAccount
+          ? {
+              bank: escrowAccount.bank,
+              iban: escrowAccount.iban,
+              label: escrowAccount.label,
+              currency: escrowAccount.currency,
+              country: escrowAccount.country,
+            }
+          : null,
+        fundingPending: true,
+      };
+    }
+
+    // Check buyer has sufficient balance
+    const buyerBalance = await this.users.getBalance(actorId);
+    if (buyerBalance < po.amount) {
+      throw new BadRequestException("Insufficient funds to fund escrow");
+    }
+
+    // Resolve the correct escrow account by PO currency
+    const currency = (po.currency || "GBP") as SettlementCurrency;
+    const escrowAccount = await this.prisma.escrowAccount.findFirst({
+      where: { currency, active: true },
+    });
+    if (!escrowAccount) {
+      throw new BadRequestException(
+        `No active escrow account for currency ${currency}`,
+      );
+    }
+
+    // Resolve buyer's bank account ref (from org, if available)
+    const buyerOrg = await this.orgs.getOrgByUserId(actorId);
+    const buyerAccountRef = buyerOrg?.bankIban || undefined;
+
+    // Reserve funds via settlement adapter (debits buyer balance)
+    const reservation = await this.settlement.reserveForPO({
+      purchaseOrderId: id,
+      buyerId: actorId,
+      buyerAccountRef,
+      amount: po.amount,
+      currency,
+      escrowAccountId: escrowAccount.id,
+    });
+
+    // Log the initiation event (funds reserved, awaiting bank confirmation)
+    const event = await this.ledger.logEvent({
+      entityType: "PURCHASE_ORDER",
+      entityId: id,
+      eventType: "ESCROW_FUNDING_INITIATED",
+      actorId,
+      actorRole: "BUYER",
+      payload: {
+        amount: po.amount,
+        currency,
+        escrowAccountId: escrowAccount.id,
+        escrowAccountLabel: escrowAccount.label,
+        escrowBank: escrowAccount.bank,
+        escrowIban: escrowAccount.iban,
+        paymentLockId: reservation.paymentLockId,
+        externalRef: reservation.externalRef,
+        settlementRail: this.settlement.getAdapterName(),
+      },
+      ...sig,
+    });
+
+    // Fetch updated PO with lock
+    const updated = await this.prisma.purchaseOrder.findUnique({
+      where: { id },
+      include: {
+        buyer: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            companyName: true,
+          },
+        },
+        supplier: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            companyName: true,
+          },
+        },
+        paymentLock: true,
+      },
+    });
+
+    const result = this.formatPO(updated);
+
+    // If REAL_BANK_ESCROW flag is enabled, skip simulation — wait for real bank webhook.
+    // Otherwise, schedule the simulated bank confirmation (setTimeout).
+    const realBankEscrow = await this.featureFlags.isEnabled(
+      FeatureFlag.REAL_BANK_ESCROW,
+      buyerOrg?.id,
+    );
+    if (!realBankEscrow) {
+      this.scheduleEscrowConfirmation(id, escrowAccount.id, po.amount, actorId);
+    } else {
+      this.logger.log(
+        `REAL_BANK_ESCROW enabled for org ${buyerOrg?.id} — skipping simulation, waiting for bank webhook`,
+      );
+    }
+
+    return {
+      ...result,
+      escrowDetails: {
+        bank: escrowAccount.bank,
+        iban: escrowAccount.iban,
+        label: escrowAccount.label,
+        currency: escrowAccount.currency,
+        country: escrowAccount.country,
+      },
+      fundingPending: true,
+      _receipt: this.ledger.buildReceipt(event),
+    };
+  }
+
+  /**
+   * Confirm escrow funding (Step 2 of 2).
+   *
+   * Called when the bank confirms that funds have arrived in the escrow
+   * account. In simulation mode, this is auto-triggered after a short delay.
+   * In production, this would be triggered by a bank webhook.
+   *
+   * Credits escrow balance → PO → FULFILLMENT → paymentLocked = true.
+   */
+  async confirmEscrowFunding(id: string) {
+    const po = await this.prisma.purchaseOrder.findUnique({
+      where: { id },
+      include: { paymentLock: true },
+    });
+
+    if (!po) throw new NotFoundException("PO not found");
+
+    // Idempotency: already in FULFILLMENT → no-op
+    if (po.status === "FULFILLMENT") {
+      this.logger.log(`Escrow already confirmed for PO ${id}`);
+      return;
+    }
+
+    // Must be ACCEPTED with a LOCKED payment lock
+    if (po.status !== "ACCEPTED") {
+      this.logger.warn(
+        `Cannot confirm escrow for PO ${id} in status ${po.status}`,
+      );
+      return;
+    }
+
+    if (!po.paymentLock || po.paymentLock.status !== "LOCKED") {
+      this.logger.warn(
+        `Cannot confirm escrow for PO ${id}: lock status is ${po.paymentLock?.status ?? "missing"}`,
+      );
+      return;
+    }
+
+    // Resolve escrow account
+    const currency = (po.currency || "GBP") as SettlementCurrency;
+    const escrowAccount = await this.prisma.escrowAccount.findFirst({
+      where: { currency, active: true },
+    });
+
+    // Credit escrow account shadow balance
+    if (escrowAccount) {
+      await this.prisma.escrowAccount.update({
+        where: { id: escrowAccount.id },
+        data: { balanceMinor: { increment: po.amount } },
+      });
+
+      // Record deposit in escrow transaction journal
+      await this.escrowAccounting.recordDeposit({
+        escrowAccountId: escrowAccount.id,
+        amountMinor: po.amount,
+        currency,
+        purchaseOrderId: po.id,
+        counterpartyId: po.buyerId,
+        reference: `DEPOSIT ${po.referenceNumber}`,
+      });
+    }
+
+    // Transition PO → FULFILLMENT (funds secured, supplier can begin work)
+    await this.prisma.purchaseOrder.update({
+      where: { id },
+      data: {
+        status: "FULFILLMENT",
+        paymentLocked: true,
+        lockedAt: new Date(),
+      },
+    });
+
+    // Log the confirmed event
+    await this.ledger.logEvent({
+      entityType: "PURCHASE_ORDER",
+      entityId: id,
+      eventType: "ESCROW_FUNDED",
+      actorId: po.buyerId,
+      actorRole: "SYSTEM",
+      payload: {
+        amount: po.amount,
+        currency,
+        escrowAccountId: escrowAccount?.id,
+        escrowAccountLabel: escrowAccount?.label,
+        paymentLockId: po.paymentLock.id,
+        externalRef: po.paymentLock.openBankingRef,
+        confirmedBy: "BANK_CALLBACK",
+      },
+    });
+
+    this.logger.log(`Escrow confirmed for PO ${id}: ACCEPTED → FULFILLMENT`);
+  }
+
+  /**
+   * Schedule a simulated bank confirmation callback.
+   * In production, this would be replaced by a real bank webhook handler.
+   * The delay simulates the time for a bank transfer to settle.
+   */
+  private scheduleEscrowConfirmation(
+    poId: string,
+    escrowAccountId: string,
+    amount: number,
+    buyerId: string,
+  ) {
+    const delayMs = Number(process.env.ESCROW_CONFIRM_DELAY_MS) || 4000;
+    this.logger.log(
+      `Scheduling simulated escrow confirmation for PO ${poId} in ${delayMs}ms`,
+    );
+    setTimeout(async () => {
+      try {
+        await this.confirmEscrowFunding(poId);
+      } catch (err) {
+        this.logger.error(
+          `Simulated escrow confirmation failed for PO ${poId}: ${(err as Error).message}`,
+        );
+      }
+    }, delayMs);
   }
 
   async reject(id: string, actorId: string, sig?: SignatureData) {
@@ -886,15 +1224,30 @@ export class PurchaseOrdersService {
   }
 
   async markShipped(id: string, actorId: string, sig?: SignatureData) {
-    const po = await this.prisma.purchaseOrder.findUnique({ where: { id } });
+    const po = await this.prisma.purchaseOrder.findUnique({
+      where: { id },
+      include: { paymentLock: true },
+    });
     if (!po) throw new NotFoundException("PO not found");
-    if (po.status !== "ACCEPTED" && po.status !== "IN_PROGRESS") {
+    if (po.status !== "FULFILLMENT") {
       throw new BadRequestException(
-        `Cannot mark as shipped from status ${po.status}`,
+        `Cannot mark as shipped from status ${po.status} (escrow must be funded first)`,
       );
     }
     if (po.supplierId !== actorId)
       throw new ForbiddenException("Only the supplier can mark shipment");
+
+    // Defensive guard: ensure payment is actually secured before shipment
+    if (
+      !po.paymentLocked ||
+      !po.paymentLock ||
+      po.paymentLock.status !== "LOCKED"
+    ) {
+      throw new BadRequestException(
+        "Cannot ship: buyer payment has not been locked in escrow. " +
+          "The buyer must fund escrow before goods can be shipped.",
+      );
+    }
 
     const updated = await this.prisma.purchaseOrder.update({
       where: { id },
@@ -939,13 +1292,9 @@ export class PurchaseOrdersService {
   async markDelivered(id: string, actorId: string, sig?: SignatureData) {
     const po = await this.prisma.purchaseOrder.findUnique({ where: { id } });
     if (!po) throw new NotFoundException("PO not found");
-    if (
-      po.status !== "ACCEPTED" &&
-      po.status !== "IN_PROGRESS" &&
-      po.status !== "SHIPPED"
-    ) {
+    if (po.status !== "SHIPPED") {
       throw new BadRequestException(
-        `Cannot mark as delivered from status ${po.status}`,
+        `Cannot mark as delivered from status ${po.status} (must be shipped first)`,
       );
     }
     if (po.supplierId !== actorId)
@@ -1049,6 +1398,39 @@ export class PurchaseOrdersService {
     actorId: string,
     sig?: SignatureData,
   ) {
+    // ── Idempotency guard: if already SETTLED, return existing state ──
+    const poCheck = await this.prisma.purchaseOrder.findUnique({
+      where: { id },
+      include: {
+        buyer: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            companyName: true,
+          },
+        },
+        supplier: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            companyName: true,
+          },
+        },
+        paymentLock: true,
+      },
+    });
+    if (!poCheck) throw new NotFoundException("Purchase order not found");
+    if (poCheck.status === "SETTLED") {
+      this.logger.log(
+        `acknowledgeObligation(${id}): PO already SETTLED — returning idempotent response`,
+      );
+      return this.formatPO(poCheck);
+    }
+
     const po = await this.requireStatus(id, "VERIFIED");
     if (po.buyerId !== actorId)
       throw new ForbiddenException(
@@ -1090,25 +1472,19 @@ export class PurchaseOrdersService {
       }
     }
 
+    // ── Resolve settlement via centralised router ────────────
+    const plan = await this.settlementRouter.resolveSettlement(id);
+    const recipientId = plan.recipientUserId;
+    const recipientAccountRef = plan.recipientBankIban || undefined;
+
     // ── Atomically transition instrument to SETTLEMENT_PENDING ──
     // This uses SELECT FOR UPDATE internally, serialising with any
     // concurrent confirmFinancing() call in the LP funding path.
-    const currency = (po.currency || "GBP") as SettlementCurrency;
-    const recipientOrg = await this.resolveRecipientFromBeneficiary(
-      instrument,
-      po.supplierId,
-      earlyPay,
-    );
-    const recipientId = recipientOrg.userId;
-    const recipientAccountRef = recipientOrg.bankIban || undefined;
-
     await this.instrumentService.requestSettlement(
       { instrumentId: instrument.id, recipientAccountRef },
       actorId,
     );
 
-    // Platform fee: 0.5% = 50 BPS
-    const FEE_BPS = 50;
     const hasEarlyPay =
       earlyPay && earlyPay.status === "FUNDED" && earlyPay.liquidityPartnerId;
 
@@ -1120,10 +1496,12 @@ export class PurchaseOrdersService {
       actorId,
       actorRole: "BUYER",
       payload: {
-        totalAmount: po.amount,
-        currency,
+        totalAmount: plan.grossAmount,
+        currency: plan.currency,
         recipientId,
+        recipient: plan.recipient,
         settlementBeneficiary: instrument.settlementBeneficiary,
+        feeBps: plan.feeBps,
         acknowledgedAt: new Date().toISOString(),
       },
       ...sig,
@@ -1134,10 +1512,10 @@ export class PurchaseOrdersService {
       purchaseOrderId: id,
       recipientId,
       recipientAccountRef,
-      totalAmount: po.amount,
-      feeBps: FEE_BPS,
-      currency,
-      earlyPaymentRequestId: hasEarlyPay ? earlyPay!.id : undefined,
+      totalAmount: plan.grossAmount,
+      feeBps: plan.feeBps,
+      currency: plan.currency,
+      earlyPaymentRequestId: plan.earlyPaymentRequestId,
     });
 
     // Update PO status and early payment in a transaction
@@ -1183,11 +1561,12 @@ export class PurchaseOrdersService {
       actorId,
       actorRole: "BUYER",
       payload: {
-        totalAmount: po.amount,
+        totalAmount: plan.grossAmount,
         feeAmount: result.feeAmount,
         recipientReceives: result.netAmount,
         earlyPaySettlement: !!hasEarlyPay,
         recipientId,
+        recipient: plan.recipient,
         settlementBeneficiary: instrument.settlementBeneficiary,
         settlementRail: this.settlement.getAdapterName(),
         externalRef: result.externalRef,
@@ -1198,31 +1577,8 @@ export class PurchaseOrdersService {
     return { ...formatted, _receipt: this.ledger.buildReceipt(event) };
   }
 
-  /**
-   * Resolve the settlement recipient from the instrument's beneficiary.
-   * This is the SINGLE SOURCE OF TRUTH for who gets paid.
-   */
-  private async resolveRecipientFromBeneficiary(
-    instrument: { settlementBeneficiary: string | null },
-    supplierId: string,
-    earlyPay: { liquidityPartnerId: string | null; status: string } | null,
-  ) {
-    const beneficiary =
-      (instrument.settlementBeneficiary as SettlementBeneficiaryType) ||
-      "SUPPLIER";
-
-    if (beneficiary === "LIQUIDITY_PROVIDER" && earlyPay?.liquidityPartnerId) {
-      const org = await this.orgs.getOrgByUserId(earlyPay.liquidityPartnerId);
-      return {
-        userId: earlyPay.liquidityPartnerId,
-        bankIban: org?.bankIban || null,
-      };
-    }
-
-    // Default: pay the supplier
-    const org = await this.orgs.getOrgByUserId(supplierId);
-    return { userId: supplierId, bankIban: org?.bankIban || null };
-  }
+  // resolveRecipientFromBeneficiary() has been extracted to
+  // SettlementRouterService.resolveRecipient() — see Phase 2 hardening.
 
   async dispute(id: string, actorId: string, sig?: SignatureData) {
     const po = await this.requireStatus(id, "DELIVERED");

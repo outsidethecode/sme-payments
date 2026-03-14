@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -61,6 +61,11 @@ import {
   Fingerprint,
   MessageSquare,
   RotateCcw,
+  Wallet,
+  Building2,
+  Clock,
+  CreditCard,
+  Loader2,
 } from "lucide-react";
 
 export default function PurchaseOrderDetailPage() {
@@ -69,10 +74,53 @@ export default function PurchaseOrderDetailPage() {
   const queryClient = useQueryClient();
   const { hasPasskey, signing, signAction } = usePasskey();
 
+  // Escrow details shown after buyer initiates funding
+  const [escrowDetails, setEscrowDetails] = useState<{
+    bank: string;
+    iban: string | null;
+    label: string;
+    currency: string;
+    country: string;
+  } | null>(null);
+
+  // Whether funding has been initiated but bank hasn't confirmed yet
+  const fundingPending =
+    escrowDetails !== null ||
+    // Detect pending state from server data (lock exists but PO still ACCEPTED)
+    false; // updated below after `po` is available
+
   const { data: po, isLoading } = useQuery({
     queryKey: ["purchase-order", id],
     queryFn: () => poApi.get(id).then((r) => r.data),
     enabled: !!id,
+    // Poll every 2s while escrow funding is pending to detect bank confirmation
+    refetchInterval: escrowDetails ? 2000 : undefined,
+  });
+
+  // Clear escrow details once PO transitions to FULFILLMENT (bank confirmed)
+  useEffect(() => {
+    if (po?.status === "FULFILLMENT" && escrowDetails) {
+      setEscrowDetails(null);
+      toast.success("Bank confirmed — escrow funded, supplier can begin work");
+      queryClient.invalidateQueries({ queryKey: ["ledger", id] });
+    }
+  }, [po?.status, escrowDetails, queryClient, id]);
+
+  // Detect server-side pending state (page refresh while funding is in flight)
+  const isServerFundingPending =
+    po?.status === "ACCEPTED" &&
+    po?.paymentLock &&
+    po.paymentLock.status === "LOCKED";
+
+  // Poll when server indicates pending too
+  const { data: _poRefresh } = useQuery({
+    queryKey: ["purchase-order-poll", id],
+    queryFn: () => {
+      queryClient.invalidateQueries({ queryKey: ["purchase-order", id] });
+      return Promise.resolve(null);
+    },
+    enabled: !!isServerFundingPending && !escrowDetails,
+    refetchInterval: 2000,
   });
 
   const { data: events } = useQuery({
@@ -182,6 +230,49 @@ export default function PurchaseOrderDetailPage() {
     poApi.dispute,
     "Delivery disputed",
   );
+  const fundEscrowMutation = useMutation({
+    mutationFn: async () => {
+      const sigResult = await signAction("ESCROW_FUNDING_INITIATED", id);
+      let signatureData: SignaturePayload | undefined;
+      if (sigResult) {
+        const { data: verified } = await import("@/lib/api").then((m) =>
+          m.passkeysApi.authVerify(sigResult.purpose, sigResult.assertion),
+        );
+        signatureData = {
+          signature: verified.signature,
+          authenticatorData: verified.authenticatorData,
+          publicKey: verified.publicKey,
+          credentialId: verified.credentialId,
+          intentHash: sigResult.intentHash,
+          clientDataJSON: verified.clientDataJSON,
+        };
+      }
+      return poApi.fundEscrow(id, signatureData);
+    },
+    onSuccess: (result: any) => {
+      const data = result?.data;
+      if (data?._receipt) storeReceipt(data).catch(() => {});
+      // Capture escrow details to show payment instructions
+      if (data?.escrowDetails) {
+        setEscrowDetails(data.escrowDetails);
+      }
+      queryClient.invalidateQueries({ queryKey: ["purchase-order", id] });
+      queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["ledger", id] });
+      toast.success(
+        hasPasskey
+          ? "Escrow funding initiated — awaiting bank confirmation ✓ Passkey signed"
+          : "Escrow funding initiated — awaiting bank confirmation",
+      );
+    },
+    onError: (err: Error & { response?: { data?: { message?: string } } }) => {
+      if (err.name === "SigningCancelled") {
+        toast.info("Action cancelled");
+        return;
+      }
+      toast.error(err.response?.data?.message || "Failed to fund escrow");
+    },
+  });
   const acceptCounterMutation = makeSignedAction(
     "PO_COUNTER_ACCEPTED",
     poApi.acceptCounter,
@@ -339,26 +430,52 @@ export default function PurchaseOrderDetailPage() {
             </Button>
           </>
         )}
-        {isSupplier &&
-          (po.status === "ACCEPTED" || po.status === "IN_PROGRESS") && (
-            <>
-              <Button
-                onClick={() => shipMutation.mutate()}
-                disabled={shipMutation.isPending || signing}
-              >
-                <Package className="mr-2 h-4 w-4" />
-                Mark Shipped
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => deliverMutation.mutate()}
-                disabled={deliverMutation.isPending || signing}
-              >
-                <Truck className="mr-2 h-4 w-4" />
-                Mark Delivered
-              </Button>
-            </>
+        {isBuyer &&
+          po.status === "ACCEPTED" &&
+          !po.paymentLock &&
+          !escrowDetails && (
+            <Button
+              onClick={() => fundEscrowMutation.mutate()}
+              disabled={fundEscrowMutation.isPending || signing}
+            >
+              <Wallet className="mr-2 h-4 w-4" />
+              Fund Escrow
+            </Button>
           )}
+        {isBuyer &&
+          po.status === "ACCEPTED" &&
+          (escrowDetails || isServerFundingPending) && (
+            <div className="flex items-center gap-2 text-sm text-amber-600 font-medium">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Awaiting bank confirmation…
+            </div>
+          )}
+        {isSupplier && po.status === "FULFILLMENT" && (
+          <div className="flex items-center gap-3">
+            {po.paymentLock?.status === "LOCKED" ? (
+              <span className="flex items-center gap-1 text-sm text-green-600 font-medium">
+                <ShieldCheck className="h-4 w-4" />
+                Payment Secured
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 text-sm text-amber-600 font-medium">
+                <AlertTriangle className="h-4 w-4" />
+                Payment Not Locked
+              </span>
+            )}
+            <Button
+              onClick={() => shipMutation.mutate()}
+              disabled={
+                shipMutation.isPending ||
+                signing ||
+                po.paymentLock?.status !== "LOCKED"
+              }
+            >
+              <Package className="mr-2 h-4 w-4" />
+              Mark Shipped
+            </Button>
+          </div>
+        )}
         {isSupplier && po.status === "SHIPPED" && (
           <Button
             onClick={() => deliverMutation.mutate()}
@@ -432,6 +549,91 @@ export default function PurchaseOrderDetailPage() {
           </>
         )}
       </div>
+
+      {/* Escrow Payment Instructions — shown while funding is pending */}
+      {isBuyer &&
+        po.status === "ACCEPTED" &&
+        (escrowDetails || isServerFundingPending) && (
+          <Card className="border-amber-300 bg-amber-50/50">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Building2 className="h-4 w-4 text-amber-600" />
+                Escrow Payment Details
+              </CardTitle>
+              <CardDescription>
+                Transfer the amount below to the escrow account. The system will
+                automatically confirm once the bank verifies the deposit.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <div className="rounded-md border bg-white p-4 space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Amount</span>
+                  <span className="font-bold text-lg">
+                    {formatCurrency(
+                      po.totalAmountPennies,
+                      po.currency as "GBP" | "SAR",
+                    )}
+                  </span>
+                </div>
+                <Separator />
+                {escrowDetails ? (
+                  <>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Bank</span>
+                      <span className="font-medium">{escrowDetails.bank}</span>
+                    </div>
+                    {escrowDetails.iban && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">IBAN</span>
+                        <span className="font-mono font-medium tracking-wider">
+                          {escrowDetails.iban}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">
+                        Account Label
+                      </span>
+                      <span className="font-medium">{escrowDetails.label}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Currency</span>
+                      <Badge variant="outline">{escrowDetails.currency}</Badge>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {/* Server-side pending: no escrow details cached, show lock info */}
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">
+                        Payment Lock
+                      </span>
+                      <Badge variant="secondary">
+                        {po.paymentLock?.status}
+                      </Badge>
+                    </div>
+                  </>
+                )}
+                <Separator />
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Reference</span>
+                  <span className="font-mono text-xs">
+                    {po.paymentLock?.externalRef || po.reference}
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 text-amber-700">
+                <Clock className="h-4 w-4" />
+                <span className="text-xs">
+                  Awaiting bank confirmation — this page will update
+                  automatically. In simulation mode, this completes in a few
+                  seconds.
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
       {/* Counter-Proposal Form */}
       {showCounterForm && (

@@ -205,6 +205,40 @@ describe("Disputes, Fraud Controls & LP Risk E2E", () => {
       .post("/auth/login")
       .send({ email: "dispute-lp@test.com", password: "TestPass123!" });
     lpToken = lpLoginRes.body.accessToken;
+
+    // Ensure GBP escrow account exists
+    await prisma.escrowAccount.upsert({
+      where: { country_currency: { country: "GB", currency: "GBP" } },
+      update: {},
+      create: {
+        label: "Test GBP Escrow",
+        bank: "Test Bank",
+        country: "GB",
+        currency: "GBP",
+        balanceMinor: 0,
+        active: true,
+      },
+    });
+
+    // Ensure buyer org has IBAN (required for fund)
+    const buyerMembership = await prisma.orgMembership.findUnique({
+      where: { userId: buyerId },
+    });
+    if (buyerMembership) {
+      await prisma.organisation.update({
+        where: { id: buyerMembership.organisationId },
+        data: { bankIban: "GB29NWBK60161331926819" },
+      });
+    }
+    const supplierMembership = await prisma.orgMembership.findUnique({
+      where: { userId: supplierId },
+    });
+    if (supplierMembership) {
+      await prisma.organisation.update({
+        where: { id: supplierMembership.organisationId },
+        data: { bankIban: "GB76BARC20035344773388" },
+      });
+    }
   });
 
   afterAll(async () => {
@@ -240,6 +274,21 @@ describe("Disputes, Fraud Controls & LP Risk E2E", () => {
     // Accept
     await request(app.getHttpServer())
       .patch(`/purchase-orders/${poId}/accept`)
+      .set("Authorization", `Bearer ${supplierToken}`);
+
+    // Fund escrow (Step 1: initiate)
+    await request(app.getHttpServer())
+      .patch(`/purchase-orders/${poId}/fund`)
+      .set("Authorization", `Bearer ${buyerToken}`);
+
+    // Fund escrow (Step 2: bank confirmation)
+    await request(app.getHttpServer())
+      .patch(`/purchase-orders/${poId}/confirm-escrow`)
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    // Ship (strict state machine: FULFILLMENT → SHIPPED → DELIVERED)
+    await request(app.getHttpServer())
+      .patch(`/purchase-orders/${poId}/ship`)
       .set("Authorization", `Bearer ${supplierToken}`);
 
     // Deliver
@@ -467,7 +516,7 @@ describe("Disputes, Fraud Controls & LP Risk E2E", () => {
   // ═══════════════════════════════════════════════════════════
 
   describe("Dispute - Rework", () => {
-    it("should send PO back to IN_PROGRESS for rework", async () => {
+    it("should send PO back to FULFILLMENT for rework", async () => {
       const { poId } = await createDeliveredPO();
 
       const raiseRes = await request(app.getHttpServer())
@@ -486,11 +535,11 @@ describe("Disputes, Fraud Controls & LP Risk E2E", () => {
       expect(resolveRes.status).toBe(200);
       expect(resolveRes.body.outcome).toBe("REWORK");
 
-      // PO should be IN_PROGRESS
+      // PO should be FULFILLMENT
       const poRes = await request(app.getHttpServer())
         .get(`/purchase-orders/${poId}`)
         .set("Authorization", `Bearer ${buyerToken}`);
-      expect(poRes.body.status).toBe("IN_PROGRESS");
+      expect(poRes.body.status).toBe("FULFILLMENT");
     });
   });
 

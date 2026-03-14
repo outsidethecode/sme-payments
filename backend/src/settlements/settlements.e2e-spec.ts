@@ -236,13 +236,27 @@ describe("Settlements E2E", () => {
       .post("/auth/login")
       .send({ email: "settle-admin@test.com", password: "Password123!" });
     adminToken = adminLoginRes.body.accessToken;
+
+    // Ensure a GBP escrow account exists for fund tests
+    await prisma.escrowAccount.upsert({
+      where: { country_currency: { country: "GB", currency: "GBP" } },
+      update: {},
+      create: {
+        label: "Test GBP Escrow",
+        bank: "Test Bank",
+        country: "GB",
+        currency: "GBP",
+        balanceMinor: 0,
+        active: true,
+      },
+    });
   });
 
   afterAll(async () => {
     await app.close();
   });
 
-  // ── Helper: create + send + accept PO ───────────────────
+  // ── Helper: create + send + accept + fund PO ─────────────
 
   async function createAndAcceptPO(): Promise<string> {
     const createRes = await request(app.getHttpServer())
@@ -265,6 +279,16 @@ describe("Settlements E2E", () => {
       .patch(`/purchase-orders/${poId}/accept`)
       .set("Authorization", `Bearer ${supplierToken}`);
 
+    // Fund escrow (Step 1: initiate → reserves funds, lock PENDING → LOCKED)
+    await request(app.getHttpServer())
+      .patch(`/purchase-orders/${poId}/fund`)
+      .set("Authorization", `Bearer ${buyerToken}`);
+
+    // Fund escrow (Step 2: bank confirmation → credits escrow, PO → FULFILLMENT)
+    await request(app.getHttpServer())
+      .patch(`/purchase-orders/${poId}/confirm-escrow`)
+      .set("Authorization", `Bearer ${adminToken}`);
+
     return poId;
   }
 
@@ -284,7 +308,7 @@ describe("Settlements E2E", () => {
   describe("Full PO settlement flow via adapter", () => {
     let poId: string;
 
-    it("should create PO, accept (reserve funds), and verify payment lock via adapter", async () => {
+    it("should create PO, accept, fund escrow, and verify payment lock via adapter", async () => {
       poId = await createAndAcceptPO();
 
       const po = await request(app.getHttpServer())
@@ -310,7 +334,14 @@ describe("Settlements E2E", () => {
       expect(instrument!.bankReference).toMatch(/^SIM-RSV-/);
     });
 
-    it("should mark delivered by supplier", async () => {
+    it("should ship then mark delivered by supplier", async () => {
+      // Ship first (strict state machine: FULFILLMENT → SHIPPED → DELIVERED)
+      const shipRes = await request(app.getHttpServer())
+        .patch(`/purchase-orders/${poId}/ship`)
+        .set("Authorization", `Bearer ${supplierToken}`);
+      expect(shipRes.status).toBe(200);
+      expect(shipRes.body.status).toBe("SHIPPED");
+
       const res = await request(app.getHttpServer())
         .patch(`/purchase-orders/${poId}/deliver`)
         .set("Authorization", `Bearer ${supplierToken}`);
@@ -416,6 +447,11 @@ describe("Settlements E2E", () => {
     });
 
     it("should settle to LP after delivery verification", async () => {
+      // Ship first (strict state machine)
+      await request(app.getHttpServer())
+        .patch(`/purchase-orders/${poId}/ship`)
+        .set("Authorization", `Bearer ${supplierToken}`);
+
       await request(app.getHttpServer())
         .patch(`/purchase-orders/${poId}/deliver`)
         .set("Authorization", `Bearer ${supplierToken}`);
@@ -530,7 +566,12 @@ describe("Settlements E2E", () => {
       expect(found.status).toBe("REQUESTED");
     });
 
-    it("should settle PO normally (deliver → verify → acknowledge) and auto-expire the request", async () => {
+    it("should settle PO normally (ship → deliver → verify → acknowledge) and auto-expire the request", async () => {
+      // Ship first (strict state machine)
+      await request(app.getHttpServer())
+        .patch(`/purchase-orders/${poId}/ship`)
+        .set("Authorization", `Bearer ${supplierToken}`);
+
       // Deliver
       await request(app.getHttpServer())
         .patch(`/purchase-orders/${poId}/deliver`)
@@ -598,6 +639,11 @@ describe("Settlements E2E", () => {
       expect(epRes.status).toBe(201);
       epId = epRes.body.id;
 
+      // Ship first (strict state machine)
+      await request(app.getHttpServer())
+        .patch(`/purchase-orders/${poId}/ship`)
+        .set("Authorization", `Bearer ${supplierToken}`);
+
       // Deliver
       await request(app.getHttpServer())
         .patch(`/purchase-orders/${poId}/deliver`)
@@ -651,7 +697,11 @@ describe("Settlements E2E", () => {
       expect(epRes.status).toBe(201);
       epId = epRes.body.id;
 
-      // Race the PO to SETTLED
+      // Race the PO to SETTLED (ship first — strict state machine)
+      await request(app.getHttpServer())
+        .patch(`/purchase-orders/${poId}/ship`)
+        .set("Authorization", `Bearer ${supplierToken}`);
+
       await request(app.getHttpServer())
         .patch(`/purchase-orders/${poId}/deliver`)
         .set("Authorization", `Bearer ${supplierToken}`);
@@ -693,8 +743,10 @@ describe("Settlements E2E", () => {
         .set("Authorization", `Bearer ${supplierToken}`)
         .send({ purchaseOrderId: poId });
 
-      expect(res2.status).toBe(400);
-      expect(res2.body.message).toContain("already exists");
+      // Idempotent: returns existing request instead of 400
+      expect(res2.status).toBe(201);
+      expect(res2.body.id).toBe(res1.body.id);
+      expect(res2.body.purchaseOrderId).toBe(poId);
     });
   });
 
@@ -723,7 +775,7 @@ describe("Settlements E2E", () => {
       const msg = Array.isArray(res.body.message)
         ? res.body.message.join(" ")
         : res.body.message;
-      expect(msg).toContain("ACCEPTED");
+      expect(msg).toContain("FULFILLMENT");
     });
   });
 
@@ -742,7 +794,11 @@ describe("Settlements E2E", () => {
       expect(epRes.status).toBe(201);
       epId = epRes.body.id;
 
-      // Move PO past fundable status: deliver → verify
+      // Move PO past fundable status: ship → deliver → verify
+      await request(app.getHttpServer())
+        .patch(`/purchase-orders/${poId}/ship`)
+        .set("Authorization", `Bearer ${supplierToken}`);
+
       await request(app.getHttpServer())
         .patch(`/purchase-orders/${poId}/deliver`)
         .set("Authorization", `Bearer ${supplierToken}`);

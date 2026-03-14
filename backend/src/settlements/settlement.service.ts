@@ -16,6 +16,7 @@ import {
   TransferResult,
 } from "./settlement-adapter.interface";
 import { InstrumentService } from "./instrument.service";
+import { EscrowAccountingService } from "./escrow-accounting.service";
 
 // ── DTO types ────────────────────────────────────────────────
 
@@ -25,6 +26,7 @@ export interface ReserveForPOInput {
   buyerAccountRef?: string;
   amount: number;
   currency: SettlementCurrency;
+  escrowAccountId?: string;
 }
 
 export interface SettlePOInput {
@@ -104,6 +106,7 @@ export class SettlementService {
     private readonly prisma: PrismaService,
     private readonly ledger: LedgerService,
     private readonly instrumentService: InstrumentService,
+    private readonly escrowAccounting: EscrowAccountingService,
     @Inject(SETTLEMENT_ADAPTER)
     private readonly adapter: SettlementAdapter,
   ) {}
@@ -140,6 +143,7 @@ export class SettlementService {
         amount: input.amount,
         currency: input.currency,
         payerAccountRef: input.buyerAccountRef,
+        escrowAccountId: input.escrowAccountId,
       },
       input.buyerId,
     );
@@ -420,7 +424,7 @@ export class SettlementService {
       );
     }
 
-    // Step 5: Confirm — update lock, settlement, and platform fee in transaction
+    // Step 5: Confirm — update lock, settlement, platform fee, and escrow balance in transaction
     await this.prisma.$transaction(async (tx) => {
       await tx.paymentLock.update({
         where: { id: lock.id },
@@ -435,6 +439,44 @@ export class SettlementService {
           currency: input.currency,
         },
       });
+
+      // Debit escrow account shadow balance (funds leaving escrow → recipient)
+      if (instrument?.escrowAccountId) {
+        await tx.escrowAccount.update({
+          where: { id: instrument.escrowAccountId },
+          data: { balanceMinor: { decrement: input.totalAmount } },
+        });
+
+        // Record release + fee in escrow transaction journal
+        const releaseType = input.earlyPaymentRequestId
+          ? ("RELEASE_LP" as const)
+          : ("RELEASE_SUPPLIER" as const);
+        await this.escrowAccounting.recordRelease(
+          {
+            escrowAccountId: instrument.escrowAccountId,
+            amountMinor: netAmount,
+            currency: input.currency,
+            purchaseOrderId: input.purchaseOrderId,
+            counterpartyId: input.recipientId,
+            reference: `${releaseType} PO-${input.purchaseOrderId.slice(0, 8)}`,
+            releaseType,
+          },
+          tx,
+        );
+
+        if (feeAmount > 0) {
+          await this.escrowAccounting.recordFee(
+            {
+              escrowAccountId: instrument.escrowAccountId,
+              amountMinor: feeAmount,
+              currency: input.currency,
+              purchaseOrderId: input.purchaseOrderId,
+              reference: `FEE PO-${input.purchaseOrderId.slice(0, 8)}`,
+            },
+            tx,
+          );
+        }
+      }
     });
 
     await this.confirmSettlement(
@@ -737,6 +779,24 @@ export class SettlementService {
         { instrumentId: instrument.id, reason: input.reason || "Refund" },
         input.buyerId,
       );
+    }
+
+    // Step 3c: Debit escrow account shadow balance (funds leaving escrow → buyer)
+    if (instrument?.escrowAccountId) {
+      await this.prisma.escrowAccount.update({
+        where: { id: instrument.escrowAccountId },
+        data: { balanceMinor: { decrement: input.amount } },
+      });
+
+      // Record refund in escrow transaction journal
+      await this.escrowAccounting.recordRefund({
+        escrowAccountId: instrument.escrowAccountId,
+        amountMinor: input.amount,
+        currency: input.currency,
+        purchaseOrderId: input.purchaseOrderId,
+        counterpartyId: input.buyerId,
+        reference: `REFUND PO-${input.purchaseOrderId.slice(0, 8)}`,
+      });
     }
 
     // Log confirmed refund event

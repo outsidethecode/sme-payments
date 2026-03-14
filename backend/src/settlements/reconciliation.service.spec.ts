@@ -1,6 +1,7 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { ReconciliationService } from "./reconciliation.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { EscrowAccountingService } from "./escrow-accounting.service";
 import { LedgerService } from "../ledger/ledger.service";
 import {
   SETTLEMENT_ADAPTER,
@@ -22,6 +23,9 @@ describe("ReconciliationService", () => {
     reconciliationReport: {
       create: jest.fn(),
       findFirst: jest.fn(),
+      findMany: jest.fn(),
+    },
+    escrowAccount: {
       findMany: jest.fn(),
     },
     user: {
@@ -51,6 +55,20 @@ describe("ReconciliationService", () => {
         ReconciliationService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: LedgerService, useValue: mockLedger },
+        {
+          provide: EscrowAccountingService,
+          useValue: {
+            verifyBalance: jest
+              .fn()
+              .mockResolvedValue({
+                escrowAccountId: "esc-1",
+                shadowBalance: 0,
+                computedBalance: 0,
+                match: true,
+                transactionCount: 0,
+              }),
+          },
+        },
         { provide: SETTLEMENT_ADAPTER, useValue: mockAdapter },
       ],
     }).compile();
@@ -62,6 +80,9 @@ describe("ReconciliationService", () => {
 
     // Default: empty per-currency groupBy (all tests need this)
     mockPrisma.paymentInstrument.groupBy.mockResolvedValue([]);
+
+    // Default: no active escrow accounts (escrow journal verification)
+    mockPrisma.escrowAccount.findMany.mockResolvedValue([]);
   });
 
   // ── runReconciliation: empty state ──────────────────────

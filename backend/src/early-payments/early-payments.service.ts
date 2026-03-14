@@ -13,6 +13,10 @@ import { SettlementService } from "../settlements/settlement.service";
 import { InstrumentService } from "../settlements/instrument.service";
 import { SettlementCurrency } from "../settlements/settlement-adapter.interface";
 import { RiskSnapshotService } from "./risk-snapshot.service";
+import {
+  FeatureFlagService,
+  FeatureFlag,
+} from "../config/feature-flags.service";
 
 /** Default ujrah fee if no policy rule specifies a custom feeBps */
 const DEFAULT_FEE_BPS = 250;
@@ -29,10 +33,11 @@ export class EarlyPaymentsService {
     private settlement: SettlementService,
     private instrumentService: InstrumentService,
     private riskSnapshot: RiskSnapshotService,
+    private featureFlags: FeatureFlagService,
   ) {}
 
   /**
-   * Supplier requests early payment on an ACCEPTED / IN_PROGRESS / DELIVERED PO.
+   * Supplier requests early payment on an ACCEPTED / FULFILLMENT / DELIVERED PO.
    * The PO must have a locked payment instrument (not yet settled).
    * Transitions the instrument LOCKED → FINANCING_REQUESTED.
    */
@@ -41,6 +46,18 @@ export class EarlyPaymentsService {
     supplierId: string,
     sig?: SignatureData,
   ) {
+    // ── Feature flag gate ──
+    const supplierOrg = await this.orgs.getOrgByUserId(supplierId);
+    const earlyPaymentsEnabled = await this.featureFlags.isEnabled(
+      FeatureFlag.EARLY_PAYMENTS,
+      supplierOrg?.id,
+    );
+    if (!earlyPaymentsEnabled) {
+      throw new ForbiddenException(
+        "Early payments feature is not enabled for your organisation",
+      );
+    }
+
     const po = await this.prisma.purchaseOrder.findUnique({
       where: { id: purchaseOrderId },
       include: { paymentLock: true },
@@ -52,15 +69,10 @@ export class EarlyPaymentsService {
         "Only the supplier of this PO can request early payment",
       );
     }
-    const eligibleStatuses = [
-      "ACCEPTED",
-      "IN_PROGRESS",
-      "SHIPPED",
-      "DELIVERED",
-    ];
+    const eligibleStatuses = ["FULFILLMENT", "SHIPPED", "DELIVERED"];
     if (!eligibleStatuses.includes(po.status)) {
       throw new BadRequestException(
-        `PO must be in ACCEPTED, IN_PROGRESS, SHIPPED, or DELIVERED status to request early payment (currently ${po.status})`,
+        `PO must be in FULFILLMENT, SHIPPED, or DELIVERED status to request early payment (currently ${po.status})`,
       );
     }
     if (!po.paymentLock || po.paymentLock.status !== "LOCKED") {
@@ -79,14 +91,36 @@ export class EarlyPaymentsService {
       );
     }
 
-    // Check if an early payment request already exists
+    // Check if an early payment request already exists — return it (idempotent)
     const existing = await this.prisma.earlyPaymentRequest.findUnique({
       where: { purchaseOrderId },
+      include: {
+        purchaseOrder: {
+          include: {
+            buyer: {
+              select: {
+                id: true,
+                email: true,
+                name: true,
+                role: true,
+                companyName: true,
+              },
+            },
+            supplier: {
+              select: {
+                id: true,
+                email: true,
+                name: true,
+                role: true,
+                companyName: true,
+              },
+            },
+          },
+        },
+      },
     });
     if (existing) {
-      throw new BadRequestException(
-        "An early payment request already exists for this PO",
-      );
+      return existing;
     }
 
     // Determine fee BPS from LP funding policies (use highest feeBps from any active FUNDING_LIMIT rule)
@@ -301,6 +335,39 @@ export class EarlyPaymentsService {
 
     if (!request)
       throw new NotFoundException("Early payment request not found");
+
+    // ── Idempotency guard: if already FUNDED by this LP, return existing ──
+    if (request.status === "FUNDED" && request.liquidityPartnerId === lpId) {
+      const full = await this.prisma.earlyPaymentRequest.findUnique({
+        where: { id },
+        include: {
+          purchaseOrder: {
+            include: {
+              buyer: {
+                select: {
+                  id: true,
+                  email: true,
+                  name: true,
+                  role: true,
+                  companyName: true,
+                },
+              },
+              supplier: {
+                select: {
+                  id: true,
+                  email: true,
+                  name: true,
+                  role: true,
+                  companyName: true,
+                },
+              },
+            },
+          },
+        },
+      });
+      return full;
+    }
+
     if (request.status !== "REQUESTED") {
       throw new BadRequestException(
         `Cannot fund a request in ${request.status} status`,
@@ -308,12 +375,7 @@ export class EarlyPaymentsService {
     }
 
     // Guard: PO must still be in a fundable state
-    const fundableStatuses = [
-      "ACCEPTED",
-      "IN_PROGRESS",
-      "SHIPPED",
-      "DELIVERED",
-    ];
+    const fundableStatuses = ["FULFILLMENT", "SHIPPED", "DELIVERED"];
     if (!fundableStatuses.includes(request.purchaseOrder.status)) {
       // Auto-expire the stale request
       await this.prisma.earlyPaymentRequest.update({
@@ -535,7 +597,7 @@ export class EarlyPaymentsService {
         status: "REQUESTED",
         // Only show requests where the PO is still in a fundable state
         purchaseOrder: {
-          status: { in: ["ACCEPTED", "IN_PROGRESS", "SHIPPED", "DELIVERED"] },
+          status: { in: ["ACCEPTED", "FULFILLMENT", "SHIPPED", "DELIVERED"] },
         },
       },
       include: {

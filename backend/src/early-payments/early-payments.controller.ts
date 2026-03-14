@@ -12,6 +12,7 @@ import { ApiTags, ApiBearerAuth, ApiOperation } from "@nestjs/swagger";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RolesGuard } from "../auth/roles.guard";
 import { Roles } from "../auth/roles.decorator";
+import { Idempotent } from "../idempotency/idempotent.decorator";
 import { EarlyPaymentsService } from "./early-payments.service";
 import { IsString, IsOptional, ValidateNested } from "class-validator";
 import { Type } from "class-transformer";
@@ -61,6 +62,7 @@ export class EarlyPaymentsController {
 
   @Post()
   @Roles("SUPPLIER")
+  @Idempotent()
   @ApiOperation({ summary: "Request early payment on a PO" })
   async request(@Body() dto: RequestEarlyPaymentDto, @Request() req: any) {
     return this.earlyPaymentsService.requestEarlyPayment(
@@ -93,6 +95,7 @@ export class EarlyPaymentsController {
 
   @Patch(":id/fund")
   @Roles("LIQUIDITY_PARTNER")
+  @Idempotent()
   @ApiOperation({ summary: "Fund an early payment request (LP only)" })
   async fund(
     @Param("id") id: string,

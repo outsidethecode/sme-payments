@@ -6,6 +6,7 @@ import { SETTLEMENT_ADAPTER } from "./settlement-adapter.interface";
 import { PrismaService } from "../prisma/prisma.service";
 import { LedgerService } from "../ledger/ledger.service";
 import { InstrumentService } from "./instrument.service";
+import { EscrowAccountingService } from "./escrow-accounting.service";
 
 // ── Helper: sign a webhook payload ──────────────────────────
 
@@ -99,6 +100,23 @@ describe("Bank Webhook Handler", () => {
         { provide: PrismaService, useValue: mockPrisma },
         { provide: LedgerService, useValue: mockLedger },
         { provide: InstrumentService, useValue: mockInstrument },
+        {
+          provide: EscrowAccountingService,
+          useValue: {
+            recordDeposit: jest
+              .fn()
+              .mockResolvedValue({ id: "tx-1", balanceAfter: 0 }),
+            recordRelease: jest
+              .fn()
+              .mockResolvedValue({ id: "tx-2", balanceAfter: 0 }),
+            recordRefund: jest
+              .fn()
+              .mockResolvedValue({ id: "tx-3", balanceAfter: 0 }),
+            recordFee: jest
+              .fn()
+              .mockResolvedValue({ id: "tx-4", balanceAfter: 0 }),
+          },
+        },
       ],
     }).compile();
 

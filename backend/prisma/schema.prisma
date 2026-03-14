@@ -141,6 +141,7 @@ model Organisation {
   policyRules      PolicyRule[]
   approvalRequests ApprovalRequest[]
   sentInvitations  Invitation[]  @relation("InviterOrg")
+  featureFlagOverrides FeatureFlagOverride[]
 
   @@map("organisations")
 }
@@ -293,7 +294,7 @@ enum POStatus {
   SENT
   NEGOTIATION          // Supplier counter-proposed; awaiting buyer review
   ACCEPTED
-  IN_PROGRESS
+  FULFILLMENT          // Escrow funded; supplier may begin fulfilment
   SHIPPED
   DELIVERED
   VERIFIED
@@ -392,6 +393,7 @@ model PurchaseOrder {
   evidenceAttachments EvidenceAttachment[]
   disputes            Dispute[]
   revisions           PORevision[]
+  escrowTransactions  EscrowTransaction[]
 
   @@index([externalPoNumber])
   @@index([importBatchId])
@@ -471,7 +473,7 @@ enum DisputeOutcome {
   FULL_REFUND          // buyer gets 100% back
   PARTIAL_REFUND       // buyer gets partial, rest to supplier
   RELEASE_TO_SUPPLIER  // supplier keeps all funds
-  REWORK               // PO reverts to IN_PROGRESS for supplier to rework
+  REWORK               // PO reverts to FULFILLMENT for supplier to rework
 }
 
 model Dispute {
@@ -815,6 +817,7 @@ model EscrowAccount {
   id            String   @id @default(uuid())
   label         String                                // e.g. "UK GBP Escrow (Simulated)"
   bank          String                                // bank name
+  iban          String?                               // escrow IBAN (shown to buyer for wire transfer)
   country       String                                // ISO country code (GB, SA)
   currency      Currency @default(GBP)
   balanceMinor  Int      @default(0) @map("balance_minor")  // shadow balance in minor units
@@ -824,7 +827,69 @@ model EscrowAccount {
 
   instruments          PaymentInstrument[]
   reconciliationReports ReconciliationReport[]
+  escrowTransactions   EscrowTransaction[]
 
   @@unique([country, currency])
   @@map("escrow_accounts")
+}
+
+// ── Escrow Transaction Journal ──────────────────────────────
+
+enum EscrowTxType {
+  DEPOSIT            // buyer funds escrow (confirmEscrowFunding)
+  RELEASE_SUPPLIER   // settlement to supplier
+  RELEASE_LP         // settlement to LP (early payment recoup)
+  REFUND_BUYER       // dispute refund to buyer
+  FEE_DEDUCTION      // platform fee
+}
+
+model EscrowTransaction {
+  id               String         @id @default(uuid())
+  escrowAccountId  String         @map("escrow_account_id")
+  escrowAccount    EscrowAccount  @relation(fields: [escrowAccountId], references: [id])
+  type             EscrowTxType
+  amountMinor      Int            @map("amount_minor")
+  currency         Currency
+  balanceAfter     Int            @map("balance_after")      // running balance after this tx
+  purchaseOrderId  String?        @map("purchase_order_id")
+  purchaseOrder    PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
+  counterpartyId   String?        @map("counterparty_id")    // buyer/supplier/LP user ID
+  reference        String                                      // human-readable ref (e.g. "PO-ABCD1234-XY12")
+  ledgerEventId    String?        @map("ledger_event_id")     // link back to immutable ledger event
+  createdAt        DateTime       @default(now()) @map("created_at")
+
+  @@index([escrowAccountId, createdAt])
+  @@index([purchaseOrderId])
+  @@map("escrow_transactions")
+}
+
+// ── Idempotency Records ─────────────────────────────────────
+
+model IdempotencyRecord {
+  id           String   @id @default(uuid())
+  key          String   @unique                       // caller-supplied Idempotency-Key header value
+  endpoint     String                                  // HTTP method + path, e.g. "PATCH /purchase-orders/:id/fund"
+  statusCode   Int      @map("status_code")
+  responseBody Json     @map("response_body")          // cached JSON response
+  createdAt    DateTime @default(now()) @map("created_at")
+  expiresAt    DateTime @map("expires_at")
+
+  @@index([expiresAt])
+  @@map("idempotency_records")
+}
+
+// ── Feature Flag Overrides ──────────────────────────────────
+
+model FeatureFlagOverride {
+  id             String   @id @default(uuid())
+  flag           String
+  organisationId String?  @map("organisation_id")
+  enabled        Boolean
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organisation Organisation? @relation(fields: [organisationId], references: [id])
+
+  @@unique([flag, organisationId])
+  @@index([flag])
+  @@map("feature_flag_overrides")
 }

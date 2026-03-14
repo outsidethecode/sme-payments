@@ -54,7 +54,7 @@ export function statusVariant(
     case "NEGOTIATION":
       return "outline";
     case "ACCEPTED":
-    case "IN_PROGRESS":
+    case "FULFILLMENT":
     case "SHIPPED":
     case "VERIFIED":
     case "SETTLED":

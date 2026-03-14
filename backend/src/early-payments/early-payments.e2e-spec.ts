@@ -17,6 +17,7 @@ describe("Early-Payments Marketplace Risk (e2e)", () => {
   let buyerToken: string;
   let supplierToken: string;
   let lpToken: string;
+  let adminToken: string;
   let supplierId: string;
 
   const TEST_PREFIX = "risk-mkt-";
@@ -126,13 +127,71 @@ describe("Early-Payments Marketplace Risk (e2e)", () => {
         password: "Password123!",
       });
     lpToken = lpLoginRes.body.accessToken;
+
+    // Register admin (needed for confirm-escrow)
+    const adminUser = await prisma.user.create({
+      data: {
+        email: `${TEST_PREFIX}admin@test.com`,
+        password: hashedPw,
+        name: "Risk Admin",
+        role: "ADMIN",
+      },
+    });
+    const adminOrg = await prisma.organisation.create({
+      data: {
+        name: "Risk Admin Org",
+        type: "BUYER",
+        registrationNo: "RISK-ADM-001",
+        jurisdiction: "UK",
+        status: "ACTIVE",
+      },
+    });
+    await prisma.orgMembership.create({
+      data: {
+        userId: adminUser.id,
+        organisationId: adminOrg.id,
+        orgRole: "OWNER",
+      },
+    });
+    const adminLoginRes = await request(app.getHttpServer())
+      .post("/auth/login")
+      .send({
+        email: `${TEST_PREFIX}admin@test.com`,
+        password: "Password123!",
+      });
+    adminToken = adminLoginRes.body.accessToken;
+
+    // Ensure GBP escrow account exists
+    await prisma.escrowAccount.upsert({
+      where: { country_currency: { country: "GB", currency: "GBP" } },
+      update: {},
+      create: {
+        label: "Test GBP Escrow",
+        bank: "Test Bank",
+        country: "GB",
+        currency: "GBP",
+        balanceMinor: 0,
+        active: true,
+      },
+    });
+
+    // Ensure buyer org has IBAN (required for fund)
+    const buyerMembership = await prisma.orgMembership.findFirst({
+      where: { user: { email: `${TEST_PREFIX}buyer@test.com` } },
+    });
+    if (buyerMembership) {
+      await prisma.organisation.update({
+        where: { id: buyerMembership.organisationId },
+        data: { bankIban: "GB29NWBK60161331926819" },
+      });
+    }
   }, 30_000);
 
   afterAll(async () => {
     await app.close();
   });
 
-  // ── Helper: create PO + accept + request early payment ────
+  // ── Helper: create PO + accept + fund + request early payment ────
 
   async function createEarlyPaymentMarketplaceItem(): Promise<string> {
     // Create PO
@@ -148,13 +207,21 @@ describe("Early-Payments Marketplace Risk (e2e)", () => {
       });
     const poId = createRes.body.id;
 
-    // Send + Accept
+    // Send + Accept + Fund
     await request(app.getHttpServer())
       .patch(`/purchase-orders/${poId}/send`)
       .set("Authorization", `Bearer ${buyerToken}`);
     await request(app.getHttpServer())
       .patch(`/purchase-orders/${poId}/accept`)
       .set("Authorization", `Bearer ${supplierToken}`);
+    await request(app.getHttpServer())
+      .patch(`/purchase-orders/${poId}/fund`)
+      .set("Authorization", `Bearer ${buyerToken}`);
+
+    // Confirm escrow (simulates bank callback)
+    const confirmRes = await request(app.getHttpServer())
+      .patch(`/purchase-orders/${poId}/confirm-escrow`)
+      .set("Authorization", `Bearer ${adminToken}`);
 
     // Request early payment
     const epRes = await request(app.getHttpServer())
@@ -203,7 +270,7 @@ describe("Early-Payments Marketplace Risk (e2e)", () => {
     ).toBe(true);
   });
 
-  it("risk score reflects PO status (ACCEPTED should have moderate score)", async () => {
+  it("risk score reflects PO status (FULFILLMENT should have moderate score)", async () => {
     await createEarlyPaymentMarketplaceItem();
 
     const res = await request(app.getHttpServer())
@@ -212,15 +279,14 @@ describe("Early-Payments Marketplace Risk (e2e)", () => {
       .expect(200);
 
     const item = res.body.find(
-      (i: any) => i.risk && i.risk.deliveryStatus === "ACCEPTED",
+      (i: any) => i.risk && i.risk.deliveryStatus === "FULFILLMENT",
     );
     expect(item).toBeDefined();
 
-    // ACCEPTED PO with auto-created payment lock + instrument → higher score
-    // Exact score depends on system-created lock/instrument status
+    // FULFILLMENT PO with payment lock + instrument → moderate score
     expect(item.risk.riskScore).toBeGreaterThanOrEqual(2);
     expect(item.risk.riskScore).toBeLessThanOrEqual(10);
-    expect(item.risk.deliveryStatus).toBe("ACCEPTED");
+    expect(item.risk.deliveryStatus).toBe("FULFILLMENT");
     expect(item.risk.buyerDisputeRate).toBeGreaterThanOrEqual(0);
   });
 
