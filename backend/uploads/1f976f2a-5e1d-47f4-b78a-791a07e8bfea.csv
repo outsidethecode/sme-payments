@@ -1,0 +1,52 @@
+Technical Due Diligence Pack (RPT-DD-001)
+Generated: 26/01/2026, 19:58:41
+
+SECTION 1: ENVIRONMENT OVERVIEW
+
+Metric,Value
+Total Integrations,2
+Total Assets,63
+Critical Assets,1
+High Assets,57
+
+SECTION 2: OWNERSHIP & ACCOUNTABILITY
+
+Metric,Value
+Total Assets,63
+Assets with Primary Owner,10
+Assets with Secondary Owner,4
+Assets without Owner,53
+Coverage Percentage,16%
+Critical Assets with Bus Factor = 1,0
+High Confidence Ownerships,5
+Medium Confidence Ownerships,9
+Low Confidence Ownerships,0
+
+SECTION 3: ACCESS EXPOSURE
+
+Metric,Value
+Total Access Grants,249
+Admin Grants,72
+External Admin Grants,0
+Unmapped Identities,63
+Write Access,16
+Read Access,161
+
+SECTION 4: PEOPLE RISK SUMMARY (Top 10)
+
+Person,Primary Ownerships,Admin Access Count,Risk Score,Critical Assets
+"Zakwan Jaroucheh",undefined,undefined,25,undefined
+"Dmitri Timoshenko",undefined,undefined,5,undefined
+
+SECTION 5: REMEDIATION PLAN
+
+Priority,Action,Count,Category
+critical,"Assign primary owners to 53 assets",53,ownership
+medium,"Map 63 unmapped identities to persons",63,access
+
+Findings Summary
+Severity,Count
+Critical,0
+High,0
+Medium,0
+Low,0

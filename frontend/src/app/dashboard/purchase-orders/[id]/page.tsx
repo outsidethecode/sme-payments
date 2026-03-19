@@ -6,8 +6,13 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   poApi,
   ledgerApi,
+  approvalsApi,
+  policiesApi,
+  earlyPayApi,
+  disputesApi,
   type SignaturePayload,
   type LineItem,
+  type Dispute,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { usePasskey } from "@/lib/use-passkey";
@@ -59,6 +64,8 @@ import {
   ShieldCheck,
   HandCoins,
   AlertTriangle,
+  AlertCircle,
+  Info,
   Fingerprint,
   MessageSquare,
   RotateCcw,
@@ -67,6 +74,10 @@ import {
   Clock,
   CreditCard,
   Loader2,
+  Scale,
+  FileText,
+  ExternalLink,
+  CheckCircle,
 } from "lucide-react";
 
 export default function PurchaseOrderDetailPage() {
@@ -124,10 +135,85 @@ export default function PurchaseOrderDetailPage() {
     refetchInterval: 2000,
   });
 
+  // Fetch approval request details when PO is pending approval
+  const { data: approvalRequests } = useQuery({
+    queryKey: ["approval-requests", id],
+    queryFn: () =>
+      approvalsApi
+        .byEntity("PURCHASE_ORDER", id)
+        .then((r) => r.data),
+    enabled: !!id && po?.status === "PENDING_APPROVAL",
+  });
+  const pendingApproval = approvalRequests?.find(
+    (ar) => ar.status === "PENDING" || ar.status === "ESCALATED",
+  );
+
+  // Fetch supplier acceptance policy when supplier views a SENT PO
+  const { data: supplierPolicy } = useQuery({
+    queryKey: ["supplier-acceptance-policy", id, po?.totalAmountMinor],
+    queryFn: () =>
+      policiesApi
+        .simulate(po!.totalAmountMinor ?? po!.totalAmountPennies, "SUPPLIER_ACCEPTANCE")
+        .then((r) => r.data),
+    enabled: !!po && po.status === "SENT" && user?.role === "SUPPLIER",
+  });
+
+  // Fetch negotiation policy (buyer uses PO_APPROVAL, supplier uses SUPPLIER_ACCEPTANCE)
+  const negotiationRuleType = user?.role === "SUPPLIER" ? "SUPPLIER_ACCEPTANCE" : "PO_APPROVAL";
+  const { data: negotiationPolicy } = useQuery({
+    queryKey: ["negotiation-policy", id, po?.totalAmountMinor, negotiationRuleType],
+    queryFn: () =>
+      policiesApi
+        .simulate(po!.totalAmountMinor ?? po!.totalAmountPennies, negotiationRuleType)
+        .then((r) => r.data),
+    enabled: !!po && po.status === "NEGOTIATION",
+  });
+
+  // Fetch early payment policy when supplier views a fulfillment-stage PO
+  const { data: earlyPayPolicy } = useQuery({
+    queryKey: ["early-pay-policy", id, po?.totalAmountMinor],
+    queryFn: () =>
+      policiesApi
+        .simulate(po!.totalAmountMinor ?? po!.totalAmountPennies, "EARLY_PAYMENT")
+        .then((r) => r.data),
+    enabled:
+      !!po &&
+      user?.role === "SUPPLIER" &&
+      ["FULFILLMENT", "SHIPPED", "DELIVERED"].includes(po.status),
+  });
+
+  // Check if an early payment request already exists for this PO
+  const { data: earlyPayments } = useQuery({
+    queryKey: ["early-payments"],
+    queryFn: () => earlyPayApi.list().then((r) => r.data),
+    enabled: user?.role === "SUPPLIER" && !!po && ["FULFILLMENT", "SHIPPED", "DELIVERED"].includes(po.status),
+  });
+  const hasEarlyPayRequest = earlyPayments?.some((ep) => ep.purchaseOrderId === id);
+
+  // Fetch delivery verification policy when buyer views a DELIVERED PO
+  const { data: deliveryPolicy } = useQuery({
+    queryKey: ["delivery-policy", id, po?.totalAmountMinor],
+    queryFn: () =>
+      policiesApi
+        .simulate(po!.totalAmountMinor ?? po!.totalAmountPennies, "DELIVERY_VERIFICATION")
+        .then((r) => r.data),
+    enabled:
+      !!po &&
+      user?.role === "BUYER" &&
+      po.status === "DELIVERED",
+  });
+
   const { data: events } = useQuery({
     queryKey: ["ledger", id],
     queryFn: () => ledgerApi.list(id).then((r) => r.data),
     enabled: !!id,
+  });
+
+  const { data: poDispute } = useQuery({
+    queryKey: ["dispute-for-po", id],
+    queryFn: () =>
+      disputesApi.list({ purchaseOrderId: id }).then((r) => r.data?.[0] ?? null),
+    enabled: !!po && ["DISPUTED", "SETTLED", "CANCELLED", "VERIFIED", "FULFILLMENT"].includes(po.status),
   });
 
   /**
@@ -388,9 +474,320 @@ export default function PurchaseOrderDetailPage() {
           <AlertTitle className="text-yellow-800 dark:text-yellow-200">
             Awaiting Approval
           </AlertTitle>
-          <AlertDescription className="text-yellow-700 dark:text-yellow-300">
-            This purchase order requires approval before it can be sent to the supplier. Team members with the appropriate role can approve it on the{" "}
-            <Link href="/dashboard/approvals" className="inline underline font-medium">Approvals page</Link>.
+          <AlertDescription className="text-yellow-700 dark:text-yellow-300 space-y-2">
+            <p>
+              This purchase order requires approval before it can be sent to the
+              supplier. Team members with the appropriate role can approve it on the{" "}
+              <Link
+                href="/dashboard/approvals"
+                className="underline font-medium"
+              >
+                Approvals page
+              </Link>.
+            </p>
+            {pendingApproval && (
+              <div className="mt-2 rounded-md bg-yellow-100/60 dark:bg-yellow-900/30 px-3 py-2 text-sm space-y-1">
+                <p className="font-medium">
+                  Policy: {pendingApproval.policyRule?.name ?? "Organisation policy"}
+                </p>
+                <p>
+                  Requires{" "}
+                  <span className="font-semibold">
+                    {pendingApproval.requiredApprovals}{" "}
+                    {pendingApproval.requiredApprovals === 1
+                      ? "approval"
+                      : "approvals"}
+                  </span>
+                  {pendingApproval.policyRule?.requiredRoles &&
+                    pendingApproval.policyRule.requiredRoles.length > 0 && (
+                      <>
+                        {" "}from a team member with the{" "}
+                        <span className="font-semibold">
+                          {pendingApproval.policyRule.requiredRoles
+                            .map((r) => r.charAt(0) + r.slice(1).toLowerCase())
+                            .join(" or ")}
+                        </span>{" "}
+                        role
+                      </>
+                    )}
+                  .
+                </p>
+                <p>
+                  Progress: {pendingApproval.currentApprovals} of{" "}
+                  {pendingApproval.requiredApprovals} received.
+                </p>
+              </div>
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Supplier Acceptance Policy Banner */}
+      {isSupplier && po.status === "SENT" && supplierPolicy?.rule && (
+        <Alert className="border-blue-500/50 bg-blue-50 dark:bg-blue-950/20">
+          <Info className="h-4 w-4 text-blue-600" />
+          <AlertTitle className="text-blue-800 dark:text-blue-200">
+            Supplier Acceptance Policy
+          </AlertTitle>
+          <AlertDescription className="text-blue-700 dark:text-blue-300 space-y-2">
+            <div className="rounded-md bg-blue-100/60 dark:bg-blue-900/30 px-3 py-2 text-sm space-y-1">
+              <p className="font-medium">
+                Policy: {supplierPolicy.rule.name}
+              </p>
+              <p>
+                {supplierPolicy.rule.autoApprove ? (
+                  <>This amount qualifies for <span className="font-semibold">auto-approval</span>.</>
+                ) : (
+                  <>
+                    Requires{" "}
+                    <span className="font-semibold">
+                      {supplierPolicy.rule.requiredApprovals}{" "}
+                      {supplierPolicy.rule.requiredApprovals === 1 ? "approval" : "approvals"}
+                    </span>{" "}
+                    from a team member with the{" "}
+                    <span className="font-semibold">
+                      {supplierPolicy.rule.requiredRoles
+                        .map((r: string) => r.charAt(0) + r.slice(1).toLowerCase())
+                        .join(" or ")}
+                    </span>{" "}
+                    role.
+                  </>
+                )}
+              </p>
+            </div>
+            {(() => {
+              const defRoles = ["OWNER", "APPROVER", "FINANCE"];
+              const rr = supplierPolicy.rule.requiredRoles;
+              const effectiveRoles = (rr && rr.length > 0 ? rr : defRoles).map((r: string) => r.toUpperCase());
+              const hasPermission = user?.orgRole && effectiveRoles.includes(user.orgRole);
+              if (hasPermission) return null;
+              return (
+                <p className="flex items-center gap-1.5 text-sm text-amber-700 dark:text-amber-400">
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                  Your role (<span className="font-semibold">{user?.orgRole?.charAt(0)}{user?.orgRole?.slice(1).toLowerCase()}</span>) does not have permission to act on this PO.
+                </p>
+              );
+            })()}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Negotiation Policy Banner */}
+      {canRespondToCounter && negotiationPolicy?.rule && (
+        <Alert className="border-blue-500/50 bg-blue-50 dark:bg-blue-950/20">
+          <Info className="h-4 w-4 text-blue-600" />
+          <AlertTitle className="text-blue-800 dark:text-blue-200">
+            Negotiation Policy
+          </AlertTitle>
+          <AlertDescription className="text-blue-700 dark:text-blue-300 space-y-2">
+            <div className="rounded-md bg-blue-100/60 dark:bg-blue-900/30 px-3 py-2 text-sm space-y-1">
+              <p className="font-medium">
+                Policy: {negotiationPolicy.rule.name}
+              </p>
+              <p>
+                Responding to a counter-proposal requires the{" "}
+                <span className="font-semibold">
+                  {negotiationPolicy.rule.requiredRoles
+                    .map((r: string) => r.charAt(0) + r.slice(1).toLowerCase())
+                    .join(" or ")}
+                </span>{" "}
+                role.
+              </p>
+            </div>
+            {!user?.orgRole || !(negotiationPolicy.rule.requiredRoles ?? []).map((r: string) => r.toUpperCase()).includes(user.orgRole) ? (
+              <p className="flex items-center gap-1.5 text-sm text-amber-700 dark:text-amber-400">
+                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                Your role (<span className="font-semibold">{user?.orgRole?.charAt(0)}{user?.orgRole?.slice(1).toLowerCase()}</span>) does not have permission to respond to this counter-proposal.
+              </p>
+            ) : null}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Supplier Fulfillment Policy Banner */}
+      {isSupplier && po.status === "FULFILLMENT" && earlyPayPolicy?.rule && (
+        <Alert className="border-blue-500/50 bg-blue-50 dark:bg-blue-950/20">
+          <Info className="h-4 w-4 text-blue-600" />
+          <AlertTitle className="text-blue-800 dark:text-blue-200">
+            Early Payment Policy
+          </AlertTitle>
+          <AlertDescription className="text-blue-700 dark:text-blue-300 space-y-2">
+            <div className="rounded-md bg-blue-100/60 dark:bg-blue-900/30 px-3 py-2 text-sm space-y-1">
+              <p className="font-medium">
+                Policy: {earlyPayPolicy.rule.name}
+              </p>
+              <p>
+                {earlyPayPolicy.rule.autoApprove ? (
+                  <>This amount qualifies for <span className="font-semibold">auto-approval</span>.</>
+                ) : (
+                  <>
+                    Requires{" "}
+                    <span className="font-semibold">
+                      {earlyPayPolicy.rule.requiredApprovals}{" "}
+                      {earlyPayPolicy.rule.requiredApprovals === 1 ? "approval" : "approvals"}
+                    </span>{" "}
+                    from a team member with the{" "}
+                    <span className="font-semibold">
+                      {earlyPayPolicy.rule.requiredRoles
+                        .map((r: string) => r.charAt(0) + r.slice(1).toLowerCase())
+                        .join(" or ")}
+                    </span>{" "}
+                    role.
+                  </>
+                )}
+              </p>
+            </div>
+            {(() => {
+              const defRoles = ["OWNER", "FINANCE"];
+              const rr = earlyPayPolicy.rule.requiredRoles;
+              const effectiveRoles = (rr && rr.length > 0 ? rr : defRoles).map((r: string) => r.toUpperCase());
+              const hasPermission = user?.orgRole && effectiveRoles.includes(user.orgRole);
+              if (hasPermission) return null;
+              return (
+                <p className="flex items-center gap-1.5 text-sm text-amber-700 dark:text-amber-400">
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                  Your role (<span className="font-semibold">{user?.orgRole?.charAt(0)}{user?.orgRole?.slice(1).toLowerCase()}</span>) does not have permission to request early payment.
+                </p>
+              );
+            })()}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Buyer Delivery Verification Policy Banner */}
+      {isBuyer && po.status === "DELIVERED" && deliveryPolicy?.rule && (
+        <Alert className="border-blue-500/50 bg-blue-50 dark:bg-blue-950/20">
+          <Info className="h-4 w-4 text-blue-600" />
+          <AlertTitle className="text-blue-800 dark:text-blue-200">
+            Delivery Verification Policy
+          </AlertTitle>
+          <AlertDescription className="text-blue-700 dark:text-blue-300 space-y-2">
+            <div className="rounded-md bg-blue-100/60 dark:bg-blue-900/30 px-3 py-2 text-sm space-y-1">
+              <p className="font-medium">
+                Policy: {deliveryPolicy.rule.name}
+              </p>
+              <p>
+                {deliveryPolicy.rule.autoApprove ? (
+                  <>This amount qualifies for <span className="font-semibold">auto-approval</span>.</>
+                ) : (
+                  <>
+                    Requires{" "}
+                    <span className="font-semibold">
+                      {deliveryPolicy.rule.requiredApprovals}{" "}
+                      {deliveryPolicy.rule.requiredApprovals === 1 ? "approval" : "approvals"}
+                    </span>{" "}
+                    from a team member with the{" "}
+                    <span className="font-semibold">
+                      {deliveryPolicy.rule.requiredRoles
+                        .map((r: string) => r.charAt(0) + r.slice(1).toLowerCase())
+                        .join(" or ")}
+                    </span>{" "}
+                    role.
+                  </>
+                )}
+              </p>
+            </div>
+            {(() => {
+              const defRoles = ["OWNER", "FINANCE"];
+              const rr = deliveryPolicy.rule.requiredRoles;
+              const effectiveRoles = (rr && rr.length > 0 ? rr : defRoles).map((r: string) => r.toUpperCase());
+              const hasPermission = user?.orgRole && effectiveRoles.includes(user.orgRole);
+              if (hasPermission) return null;
+              return (
+                <p className="flex items-center gap-1.5 text-sm text-amber-700 dark:text-amber-400">
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                  Your role (<span className="font-semibold">{user?.orgRole?.charAt(0)}{user?.orgRole?.slice(1).toLowerCase()}</span>) does not have permission to verify delivery.
+                </p>
+              );
+            })()}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Resolved Dispute Banner — shown when PO was resolved from a dispute */}
+      {poDispute && poDispute.status === "RESOLVED" && po.status !== "DISPUTED" && (
+        <Alert className="border-green-500/50 bg-green-50 dark:bg-green-950/20">
+          <CheckCircle className="h-4 w-4 text-green-600" />
+          <AlertTitle className="text-green-800 dark:text-green-200">
+            Dispute Resolved
+          </AlertTitle>
+          <AlertDescription className="text-green-700 dark:text-green-300 space-y-2">
+            <p>
+              This dispute was resolved with outcome:{" "}
+              <span className="font-semibold">
+                {poDispute.outcome === "FULL_REFUND" ? "Full Refund" : poDispute.outcome === "PARTIAL_REFUND" ? "Partial Refund" : poDispute.outcome === "RELEASE_TO_SUPPLIER" ? "Released to Supplier" : poDispute.outcome === "REWORK" ? "Rework Required" : statusLabel(poDispute.outcome ?? "")}
+              </span>
+            </p>
+            {poDispute.refundAmount !== null && poDispute.refundAmount !== undefined && (
+              <p className="text-sm">
+                Refund Amount:{" "}
+                <span className="font-semibold">
+                  {formatCurrency(poDispute.refundAmount, po.currency as "GBP" | "SAR")}
+                </span>
+                {" "}of{" "}
+                {formatCurrency(po.totalAmountPennies, po.currency as "GBP" | "SAR")} total
+              </p>
+            )}
+            {poDispute.resolutionNotes && (
+              <div className="rounded-md bg-green-100/60 dark:bg-green-900/30 px-3 py-2 text-sm">
+                <p className="font-medium">Resolution Notes</p>
+                <p>{poDispute.resolutionNotes}</p>
+              </div>
+            )}
+            <Link href={`/dashboard/disputes/${poDispute.id}`} className="inline-block text-xs underline">
+              View full dispute details
+            </Link>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Dispute Banner — shown when PO is DISPUTED */}
+      {po.status === "DISPUTED" && (
+        <Alert className="border-red-500/50 bg-red-50 dark:bg-red-950/20">
+          <Scale className="h-4 w-4 text-red-600" />
+          <AlertTitle className="text-red-800 dark:text-red-200">
+            Dispute in Progress
+          </AlertTitle>
+          <AlertDescription className="text-red-700 dark:text-red-300 space-y-2">
+            {poDispute ? (
+              <>
+                <p>
+                  This PO was disputed by the buyer. Status:{" "}
+                  <span className="font-semibold">{statusLabel(poDispute.status)}</span>
+                </p>
+                <div className="rounded-md bg-red-100/60 dark:bg-red-900/30 px-3 py-2 text-sm space-y-1">
+                  <p className="font-medium">Reason</p>
+                  <p>{poDispute.reason}</p>
+                </div>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm mt-2">
+                  <span>
+                    Buyer Evidence:{" "}
+                    <span className="font-semibold">
+                      {(poDispute.buyerEvidence?.length ?? 0) > 0
+                        ? `${poDispute.buyerEvidence!.length} file(s)`
+                        : "None yet"}
+                    </span>
+                  </span>
+                  <span>
+                    Supplier Evidence:{" "}
+                    <span className="font-semibold">
+                      {(poDispute.supplierEvidence?.length ?? 0) > 0
+                        ? `${poDispute.supplierEvidence!.length} file(s)`
+                        : "None yet"}
+                    </span>
+                  </span>
+                </div>
+                <p className="text-xs text-red-600 dark:text-red-400 mt-1">
+                  {user?.role === "ADMIN"
+                    ? "As admin, you can review and resolve this dispute from the Disputes page."
+                    : user?.role === "BUYER" || user?.role === "SUPPLIER"
+                      ? "Both buyer and supplier can submit evidence. An admin will review and resolve the dispute."
+                      : "An admin will review the evidence and decide the outcome."}
+                </p>
+              </>
+            ) : (
+              <p>This purchase order is under dispute. A platform admin will review and resolve it.</p>
+            )}
           </AlertDescription>
         </Alert>
       )}
@@ -412,39 +809,47 @@ export default function PurchaseOrderDetailPage() {
             Send to Supplier
           </Button>
         )}
-        {isSupplier && po.status === "SENT" && (
-          <>
-            <Button
-              onClick={() => acceptMutation.mutate()}
-              disabled={acceptMutation.isPending || signing}
-            >
-              <Check className="mr-2 h-4 w-4" />
-              Accept
-            </Button>
-            {(po.currentRevision ?? 0) === 0 && (
+        {isSupplier && po.status === "SENT" && (() => {
+          // Auto-approve skips multi-step approval, but the permission gate still applies
+          const defaultRoles = ["OWNER", "APPROVER", "FINANCE"];
+          const policyRoles = supplierPolicy?.rule?.requiredRoles;
+          const supplierActionRoles = (policyRoles && policyRoles.length > 0 ? policyRoles : defaultRoles).map((r: string) => r.toUpperCase());
+          const canSupplierAct = user?.orgRole && supplierActionRoles.includes(user.orgRole);
+          if (!canSupplierAct) return null;
+          return (
+            <>
               <Button
-                variant="outline"
-                onClick={() => {
-                  setCounterItems(po.lineItems.map((li) => ({ ...li })));
-                  setCounterNotes("");
-                  setShowCounterForm(true);
-                }}
-                disabled={counterMutation.isPending || signing}
+                onClick={() => acceptMutation.mutate()}
+                disabled={acceptMutation.isPending || signing}
               >
-                <MessageSquare className="mr-2 h-4 w-4" />
-                Counter-Propose
+                <Check className="mr-2 h-4 w-4" />
+                Accept
               </Button>
-            )}
-            <Button
-              variant="destructive"
-              onClick={() => rejectMutation.mutate()}
-              disabled={rejectMutation.isPending || signing}
-            >
-              <X className="mr-2 h-4 w-4" />
-              Reject
-            </Button>
-          </>
-        )}
+              {(po.currentRevision ?? 0) === 0 && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setCounterItems(po.lineItems.map((li) => ({ ...li })));
+                    setCounterNotes("");
+                    setShowCounterForm(true);
+                  }}
+                  disabled={counterMutation.isPending || signing}
+                >
+                  <MessageSquare className="mr-2 h-4 w-4" />
+                  Counter-Propose
+                </Button>
+              )}
+              <Button
+                variant="destructive"
+                onClick={() => rejectMutation.mutate()}
+                disabled={rejectMutation.isPending || signing}
+              >
+                <X className="mr-2 h-4 w-4" />
+                Reject
+              </Button>
+            </>
+          );
+        })()}
         {isBuyer &&
           po.status === "ACCEPTED" &&
           !po.paymentLock &&
@@ -465,42 +870,121 @@ export default function PurchaseOrderDetailPage() {
               Awaiting bank confirmation…
             </div>
           )}
-        {isSupplier && po.status === "FULFILLMENT" && (
-          <div className="flex items-center gap-3">
+        {isSupplier && po.status === "FULFILLMENT" && (() => {
+          const defRoles = ["OWNER", "FINANCE"];
+          const rr = earlyPayPolicy?.rule?.requiredRoles;
+          const fulfillmentRoles = (rr && rr.length > 0 ? rr : defRoles).map((r: string) => r.toUpperCase());
+          const canAct = user?.orgRole && fulfillmentRoles.includes(user.orgRole);
+          return (
+          <div className="flex w-full flex-col gap-3 rounded-lg border p-4">
             {po.paymentLock?.status === "LOCKED" ? (
-              <span className="flex items-center gap-1 text-sm text-green-600 font-medium">
-                <ShieldCheck className="h-4 w-4" />
-                Payment Secured
-              </span>
+              <div className="flex items-center gap-2 text-sm font-medium text-green-600">
+                <ShieldCheck className="h-5 w-5" />
+                Payment Secured — Buyer has funded escrow
+              </div>
             ) : (
-              <span className="flex items-center gap-1 text-sm text-amber-600 font-medium">
-                <AlertTriangle className="h-4 w-4" />
-                Payment Not Locked
-              </span>
+              <div className="flex items-center gap-2 text-sm font-medium text-amber-600">
+                <AlertTriangle className="h-5 w-5" />
+                Payment Not Locked — Waiting for buyer to fund escrow
+              </div>
             )}
-            <Button
-              onClick={() => shipMutation.mutate()}
-              disabled={
-                shipMutation.isPending ||
-                signing ||
-                po.paymentLock?.status !== "LOCKED"
-              }
-            >
-              <Package className="mr-2 h-4 w-4" />
-              Mark Shipped
-            </Button>
+            <Separator />
+            {canAct ? (
+            <div className="flex flex-wrap gap-2">
+              <Button
+                onClick={() => shipMutation.mutate()}
+                disabled={
+                  shipMutation.isPending ||
+                  signing ||
+                  po.paymentLock?.status !== "LOCKED"
+                }
+              >
+                <Package className="mr-2 h-4 w-4" />
+                Mark Shipped
+              </Button>
+              {!hasEarlyPayRequest && po.paymentLock?.status === "LOCKED" ? (
+              <Link href="/dashboard/early-payments">
+                <Button variant="outline">
+                  <CreditCard className="mr-2 h-4 w-4" />
+                  Request Early Payment
+                </Button>
+              </Link>
+              ) : hasEarlyPayRequest ? (
+              <span className="inline-flex items-center rounded-md bg-amber-50 px-3 py-1 text-sm font-medium text-amber-700 ring-1 ring-inset ring-amber-300">
+                <CreditCard className="mr-1.5 h-4 w-4" />
+                Early Payment Requested
+              </span>
+              ) : null}
+            </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Your role (<span className="font-semibold">{user?.orgRole?.charAt(0)}{user?.orgRole?.slice(1).toLowerCase()}</span>) does not have permission to perform actions on this PO.
+                Required: {fulfillmentRoles.join(", ")}.
+              </p>
+            )}
           </div>
-        )}
-        {isSupplier && po.status === "SHIPPED" && (
-          <Button
-            onClick={() => deliverMutation.mutate()}
-            disabled={deliverMutation.isPending || signing}
-          >
-            <Truck className="mr-2 h-4 w-4" />
-            Mark Delivered
-          </Button>
-        )}
-        {isBuyer && po.status === "DELIVERED" && (
+          );
+        })()}
+        {isSupplier && po.status === "SHIPPED" && (() => {
+          const defRoles = ["OWNER", "FINANCE"];
+          const rr = earlyPayPolicy?.rule?.requiredRoles;
+          const actionRoles = (rr && rr.length > 0 ? rr : defRoles).map((r: string) => r.toUpperCase());
+          const canAct = user?.orgRole && actionRoles.includes(user.orgRole);
+          if (!canAct) return null;
+          return (
+          <>
+            <Button
+              onClick={() => deliverMutation.mutate()}
+              disabled={deliverMutation.isPending || signing}
+            >
+              <Truck className="mr-2 h-4 w-4" />
+              Mark Delivered
+            </Button>
+            {!hasEarlyPayRequest && po.paymentLock?.status === "LOCKED" ? (
+            <Link href="/dashboard/early-payments">
+              <Button variant="outline">
+                <CreditCard className="mr-2 h-4 w-4" />
+                Request Early Payment
+              </Button>
+            </Link>
+            ) : hasEarlyPayRequest ? (
+            <span className="inline-flex items-center rounded-md bg-amber-50 px-3 py-1 text-sm font-medium text-amber-700 ring-1 ring-inset ring-amber-300">
+              <CreditCard className="mr-1.5 h-4 w-4" />
+              Early Payment Requested
+            </span>
+            ) : null}
+          </>
+          );
+        })()}
+        {isSupplier && po.status === "DELIVERED" && (() => {
+          const defRoles = ["OWNER", "FINANCE"];
+          const rr = earlyPayPolicy?.rule?.requiredRoles;
+          const actionRoles = (rr && rr.length > 0 ? rr : defRoles).map((r: string) => r.toUpperCase());
+          const canAct = user?.orgRole && actionRoles.includes(user.orgRole);
+          if (!canAct) return null;
+          if (hasEarlyPayRequest) return (
+          <span className="inline-flex items-center rounded-md bg-amber-50 px-3 py-1 text-sm font-medium text-amber-700 ring-1 ring-inset ring-amber-300">
+            <CreditCard className="mr-1.5 h-4 w-4" />
+            Early Payment Requested
+          </span>
+          );
+          if (po.paymentLock?.status !== "LOCKED") return null;
+          return (
+          <Link href="/dashboard/early-payments">
+            <Button>
+              <CreditCard className="mr-2 h-4 w-4" />
+              Request Early Payment
+            </Button>
+          </Link>
+          );
+        })()}
+        {isBuyer && po.status === "DELIVERED" && (() => {
+          const defRoles = ["OWNER", "FINANCE"];
+          const rr = deliveryPolicy?.rule?.requiredRoles;
+          const actionRoles = (rr && rr.length > 0 ? rr : defRoles).map((r: string) => r.toUpperCase());
+          const canAct = user?.orgRole && actionRoles.includes(user.orgRole);
+          if (!canAct) return null;
+          return (
           <>
             <Button
               onClick={() => verifyMutation.mutate()}
@@ -518,8 +1002,15 @@ export default function PurchaseOrderDetailPage() {
               Dispute
             </Button>
           </>
-        )}
-        {isBuyer && po.status === "VERIFIED" && (
+          );
+        })()}
+        {isBuyer && po.status === "VERIFIED" && (() => {
+          const defRoles = ["OWNER", "FINANCE"];
+          const rr = deliveryPolicy?.rule?.requiredRoles;
+          const actionRoles = (rr && rr.length > 0 ? rr : defRoles).map((r: string) => r.toUpperCase());
+          const canAct = user?.orgRole && actionRoles.includes(user.orgRole);
+          if (!canAct) return null;
+          return (
           <Button
             onClick={() => acknowledgeMutation.mutate()}
             disabled={acknowledgeMutation.isPending || signing}
@@ -527,42 +1018,90 @@ export default function PurchaseOrderDetailPage() {
             <HandCoins className="mr-2 h-4 w-4" />
             Acknowledge &amp; Settle
           </Button>
-        )}
-        {canRespondToCounter && (
-          <>
-            <Button
-              onClick={() => acceptCounterMutation.mutate()}
-              disabled={acceptCounterMutation.isPending || signing}
-            >
-              <Check className="mr-2 h-4 w-4" />
-              Accept Counter
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                const rev = latestRevision;
-                setCounterItems(
-                  (rev?.lineItems as LineItem[])?.map((li) => ({ ...li })) ??
-                    po.lineItems.map((li) => ({ ...li })),
-                );
-                setCounterNotes("");
-                setShowCounterForm(true);
-              }}
-              disabled={counterMutation.isPending || signing}
-            >
-              <RotateCcw className="mr-2 h-4 w-4" />
-              Counter Again
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => rejectCounterMutation.mutate()}
-              disabled={rejectCounterMutation.isPending || signing}
-            >
-              <X className="mr-2 h-4 w-4" />
-              Reject Counter
-            </Button>
-          </>
-        )}
+          );
+        })()}
+        {canRespondToCounter && (() => {
+          const negRoles = (negotiationPolicy?.rule?.requiredRoles ?? ["OWNER", "APPROVER", "FINANCE"]).map((r: string) => r.toUpperCase());
+          const canNegotiate = user?.orgRole && negRoles.includes(user.orgRole);
+          if (!canNegotiate) return null;
+          return (
+            <>
+              <Button
+                onClick={() => acceptCounterMutation.mutate()}
+                disabled={acceptCounterMutation.isPending || signing}
+              >
+                <Check className="mr-2 h-4 w-4" />
+                Accept Counter
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  const rev = latestRevision;
+                  setCounterItems(
+                    (rev?.lineItems as LineItem[])?.map((li) => ({ ...li })) ??
+                      po.lineItems.map((li) => ({ ...li })),
+                  );
+                  setCounterNotes("");
+                  setShowCounterForm(true);
+                }}
+                disabled={counterMutation.isPending || signing}
+              >
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Counter Again
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => rejectCounterMutation.mutate()}
+                disabled={rejectCounterMutation.isPending || signing}
+              >
+                <X className="mr-2 h-4 w-4" />
+                Reject Counter
+              </Button>
+            </>
+          );
+        })()}
+        {po.status === "DISPUTED" && poDispute && (() => {
+          const isAdmin = user?.role === "ADMIN";
+          const disputeHref = `/dashboard/disputes/${poDispute.id}`;
+          return (
+          <div className="flex w-full flex-col gap-3 rounded-lg border border-red-200 bg-red-50/30 dark:border-red-900 dark:bg-red-950/10 p-4">
+            <div className="flex items-center gap-2 text-sm font-medium text-red-700 dark:text-red-400">
+              <Scale className="h-5 w-5" />
+              Dispute Actions
+            </div>
+            <Separator />
+            <div className="flex flex-wrap gap-2">
+              {(isBuyer || isSupplier) && poDispute.status !== "RESOLVED" && (
+                <Link href={disputeHref}>
+                  <Button>
+                    <FileText className="mr-2 h-4 w-4" />
+                    Submit Evidence
+                  </Button>
+                </Link>
+              )}
+              {isAdmin && (
+                <Link href={disputeHref}>
+                  <Button>
+                    <Scale className="mr-2 h-4 w-4" />
+                    Review &amp; Resolve
+                  </Button>
+                </Link>
+              )}
+              <Link href={disputeHref}>
+                <Button variant="outline">
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  View Details
+                </Button>
+              </Link>
+            </div>
+            {!isAdmin && (
+              <p className="text-xs text-muted-foreground">
+                Only a platform admin can resolve disputes. Contact your admin or wait for the resolution.
+              </p>
+            )}
+          </div>
+          );
+        })()}
       </div>
 
       {/* Escrow Payment Instructions — shown while funding is pending */}
@@ -625,7 +1164,7 @@ export default function PurchaseOrderDetailPage() {
                         Payment Lock
                       </span>
                       <Badge variant="secondary">
-                        {po.paymentLock?.status}
+                        {statusLabel(po.paymentLock?.status ?? "")}
                       </Badge>
                     </div>
                   </>
@@ -916,6 +1455,15 @@ export default function PurchaseOrderDetailPage() {
                 {statusLabel(po.paymentLock.status)}
               </Badge>
             </div>
+            {po.paymentLock.status === "REFUNDED" && poDispute?.refundAmount != null && poDispute.refundAmount < po.paymentLock.amountPennies && (
+              <div className="flex justify-between">
+                <span>Refunded Amount</span>
+                <span className="font-medium">
+                  {formatCurrency(poDispute.refundAmount, po.currency as "GBP" | "SAR")}
+                  <span className="text-muted-foreground font-normal"> (partial)</span>
+                </span>
+              </div>
+            )}
             {po.paymentLock.lockedAt && (
               <div className="flex justify-between">
                 <span>Locked at</span>
@@ -1082,7 +1630,7 @@ export default function PurchaseOrderDetailPage() {
                             : "outline"
                     }
                   >
-                    {rev.status}
+                    {statusLabel(rev.status)}
                   </Badge>
                 </div>
                 <div className="flex justify-between text-muted-foreground">

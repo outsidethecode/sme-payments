@@ -3,6 +3,19 @@ import { PrismaService } from "../prisma/prisma.service";
 
 // ── Types ────────────────────────────────────────────────────
 
+export interface RiskFactorScore {
+  /** Factor name */
+  name: string;
+  /** Raw score 0–10 for this factor */
+  score: number;
+  /** Weight used in composite (0–1) */
+  weight: number;
+  /** Weighted contribution to the composite */
+  weighted: number;
+  /** Human-readable explanation of why this score was given */
+  reason: string;
+}
+
 export interface RiskSnapshot {
   /** 0–10 composite score (10 = lowest risk) */
   riskScore: number;
@@ -22,6 +35,8 @@ export interface RiskSnapshot {
   expectedSettlement: string | null;
   /** Whether at least one evidence attachment exists for this PO */
   evidencePackAvailable: boolean;
+  /** Individual factor scores that compose the overall risk score */
+  factors: RiskFactorScore[];
 }
 
 // ── Weights ──────────────────────────────────────────────────
@@ -87,15 +102,55 @@ export class RiskSnapshotService {
     // ── Factor 5: Freshness (0–10) ─────────────────────────
     const freshnessScore = this.freshnessScore(po.createdAt);
 
+    // ── Build factor breakdown ───────────────────────────────
+    const factors: RiskFactorScore[] = [
+      {
+        name: "Payment Security",
+        score: paymentScore,
+        weight: WEIGHT_PAYMENT_LOCKED,
+        weighted: Number((paymentScore * WEIGHT_PAYMENT_LOCKED).toFixed(2)),
+        reason: paymentLocked
+          ? "Buyer funds are locked in escrow — full protection"
+          : "No payment lock — funds are not secured yet",
+      },
+      {
+        name: "Delivery Progress",
+        score: deliveryScore,
+        weight: WEIGHT_DELIVERY_PROGRESS,
+        weighted: Number((deliveryScore * WEIGHT_DELIVERY_PROGRESS).toFixed(2)),
+        reason: this.deliveryReason(po.status),
+      },
+      {
+        name: "Buyer Track Record",
+        score: disputeScore,
+        weight: WEIGHT_DISPUTE_HISTORY,
+        weighted: Number((disputeScore * WEIGHT_DISPUTE_HISTORY).toFixed(2)),
+        reason:
+          buyerDisputeRate === 0
+            ? "Buyer has no dispute history — clean record"
+            : `Buyer dispute rate is ${(buyerDisputeRate * 100).toFixed(1)}%`,
+      },
+      {
+        name: "Bank Confirmation",
+        score: bankScore,
+        weight: WEIGHT_BANK_CONFIRMED,
+        weighted: Number((bankScore * WEIGHT_BANK_CONFIRMED).toFixed(2)),
+        reason: bankReference
+          ? `Funds confirmed by bank (${bankReference})`
+          : "Awaiting bank confirmation of reserved funds",
+      },
+      {
+        name: "Recency",
+        score: freshnessScore,
+        weight: WEIGHT_FRESHNESS,
+        weighted: Number((freshnessScore * WEIGHT_FRESHNESS).toFixed(2)),
+        reason: this.freshnessReason(po.createdAt),
+      },
+    ];
+
     // ── Weighted composite ──────────────────────────────────
     const riskScore = Number(
-      (
-        paymentScore * WEIGHT_PAYMENT_LOCKED +
-        deliveryScore * WEIGHT_DELIVERY_PROGRESS +
-        disputeScore * WEIGHT_DISPUTE_HISTORY +
-        bankScore * WEIGHT_BANK_CONFIRMED +
-        freshnessScore * WEIGHT_FRESHNESS
-      ).toFixed(1),
+      factors.reduce((sum, f) => sum + f.weighted, 0).toFixed(1),
     );
 
     // Default probability: inverse of risk score mapped to 0–100
@@ -120,6 +175,7 @@ export class RiskSnapshotService {
       bankReference,
       expectedSettlement,
       evidencePackAvailable: (po.evidenceAttachments?.length ?? 0) > 0,
+      factors,
     };
   }
 
@@ -206,6 +262,37 @@ export class RiskSnapshotService {
     return Number((10 * (1 - ageDays / FRESHNESS_DECAY_DAYS)).toFixed(1));
   }
 
+  /** Human-readable reason for delivery progress score */
+  private deliveryReason(status: string): string {
+    switch (status) {
+      case "VERIFIED":
+      case "SETTLED":
+      case "ACKNOWLEDGED":
+        return "Delivery verified by buyer — maximum confidence";
+      case "DELIVERED":
+        return "Goods delivered, awaiting buyer verification";
+      case "SHIPPED":
+        return "Goods shipped and in transit";
+      case "FULFILLMENT":
+        return "Supplier is preparing the order";
+      case "ACCEPTED":
+        return "Supplier accepted — production not yet started";
+      default:
+        return "Order has not progressed to fulfillment yet";
+    }
+  }
+
+  /** Human-readable reason for freshness score */
+  private freshnessReason(createdAt: Date): string {
+    const ageDays = Math.round(
+      (Date.now() - createdAt.getTime()) / (1000 * 60 * 60 * 24),
+    );
+    if (ageDays <= 1) return "Created today — maximum freshness";
+    if (ageDays < FRESHNESS_DECAY_DAYS)
+      return `Created ${ageDays} days ago — still within the ${FRESHNESS_DECAY_DAYS}-day freshness window`;
+    return `Created ${ageDays} days ago — beyond the ${FRESHNESS_DECAY_DAYS}-day freshness window`;
+  }
+
   private emptySnapshot(deliveryStatus: string): RiskSnapshot {
     return {
       riskScore: 0,
@@ -217,6 +304,7 @@ export class RiskSnapshotService {
       bankReference: null,
       expectedSettlement: null,
       evidencePackAvailable: false,
+      factors: [],
     };
   }
 }

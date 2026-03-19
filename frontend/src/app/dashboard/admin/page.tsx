@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { adminApi } from "@/lib/api";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, statusLabel } from "@/lib/format";
 import {
   Card,
   CardContent,
@@ -283,7 +283,7 @@ export default function AdminPage() {
                             }
                             className="text-[10px] shrink-0"
                           >
-                            {v.severity}
+                            {statusLabel(v.severity)}
                           </Badge>
                           <div>
                             <span className="font-mono font-medium">

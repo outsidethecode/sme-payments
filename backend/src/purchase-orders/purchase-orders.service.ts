@@ -95,6 +95,18 @@ export class PurchaseOrdersService implements OnModuleInit {
     private readonly callbackRegistry: ApprovalCallbackRegistry,
   ) {}
 
+  /**
+   * Check if actorId belongs to the same organisation as the given userId.
+   * Returns true if they share an org, or if actorId === userId directly.
+   */
+  private async isSameOrg(actorId: string, userId: string): Promise<boolean> {
+    if (actorId === userId) return true;
+    const actorOrg = await this.orgs.getOrgByUserId(actorId);
+    if (!actorOrg) return false;
+    const targetOrg = await this.orgs.getOrgByUserId(userId);
+    return !!targetOrg && actorOrg.id === targetOrg.id;
+  }
+
   onModuleInit() {
     // Register approval callbacks so the generic ApprovalController can
     // dispatch post-approval work without knowing about PO internals.
@@ -226,20 +238,44 @@ export class PurchaseOrdersService implements OnModuleInit {
   }
 
   async findAll(userId: string, role: string) {
-    const where =
-      role === "ADMIN"
-        ? {}
-        : role === "BUYER"
-          ? { buyerId: userId }
-          : role === "SUPPLIER"
-            ? { supplierId: userId }
-            : role === "LIQUIDITY_PARTNER"
-              ? {
-                  earlyPaymentRequest: {
-                    liquidityPartnerId: userId,
-                  },
-                }
+    let where: any;
+
+    if (role === "ADMIN") {
+      where = {};
+    } else {
+      // Look up the user's organisation to show all POs for org members
+      const org = await this.orgs.getOrgByUserId(userId);
+      if (org) {
+        // Get all member IDs in the same organisation
+        const members = await this.prisma.orgMembership.findMany({
+          where: { organisationId: org.id },
+          select: { userId: true },
+        });
+        const memberIds = members.map((m) => m.userId);
+
+        if (role === "BUYER") {
+          where = { buyerId: { in: memberIds } };
+        } else if (role === "SUPPLIER") {
+          where = { supplierId: { in: memberIds } };
+        } else if (role === "LIQUIDITY_PARTNER") {
+          where = {
+            earlyPaymentRequest: {
+              liquidityPartnerId: { in: memberIds },
+            },
+          };
+        } else {
+          where = { id: "__none__" };
+        }
+      } else {
+        // Fallback: no org, show only own POs
+        where =
+          role === "BUYER"
+            ? { buyerId: userId }
+            : role === "SUPPLIER"
+              ? { supplierId: userId }
               : { id: "__none__" };
+      }
+    }
 
     const pos = await this.prisma.purchaseOrder.findMany({
       where,
@@ -305,8 +341,8 @@ export class PurchaseOrdersService implements OnModuleInit {
 
   async send(id: string, actorId: string, sig?: SignatureData) {
     const po = await this.requireStatus(id, "DRAFT");
-    if (po.buyerId !== actorId)
-      throw new ForbiddenException("Only the buyer can send this PO");
+    if (!(await this.isSameOrg(actorId, po.buyerId)))
+      throw new ForbiddenException("Only the buyer organisation can send this PO");
 
     // ── Policy evaluation ────────────────────────────────────
     const buyerOrg = await this.orgs.getOrgByUserId(actorId);
@@ -532,8 +568,8 @@ export class PurchaseOrdersService implements OnModuleInit {
 
   async accept(id: string, actorId: string, sig?: SignatureData) {
     const po = await this.requireStatus(id, "SENT");
-    if (po.supplierId !== actorId)
-      throw new ForbiddenException("Only the supplier can accept");
+    if (!(await this.isSameOrg(actorId, po.supplierId)))
+      throw new ForbiddenException("Only the supplier organisation can accept");
 
     // ── Policy engine gate ──────────────────────────────────
     const decision = await this.policyEngine.evaluateForActor(
@@ -652,8 +688,8 @@ export class PurchaseOrdersService implements OnModuleInit {
     }
 
     const po = await this.requireStatus(id, "ACCEPTED");
-    if (po.buyerId !== actorId)
-      throw new ForbiddenException("Only the buyer can fund escrow");
+    if (!(await this.isSameOrg(actorId, po.buyerId)))
+      throw new ForbiddenException("Only the buyer organisation can fund escrow");
 
     // ── Policy engine gate ──────────────────────────────────
     const decision = await this.policyEngine.evaluateForActor(
@@ -990,8 +1026,23 @@ export class PurchaseOrdersService implements OnModuleInit {
 
   async reject(id: string, actorId: string, sig?: SignatureData) {
     const po = await this.requireStatus(id, "SENT");
-    if (po.supplierId !== actorId)
-      throw new ForbiddenException("Only the supplier can reject");
+    if (!(await this.isSameOrg(actorId, po.supplierId)))
+      throw new ForbiddenException("Only the supplier organisation can reject");
+
+    // ── Policy engine permission gate (same roles as SUPPLIER_ACCEPTANCE) ──
+    const decision = await this.policyEngine.evaluateForActor(
+      actorId,
+      "SUPPLIER_ACCEPTANCE" as any,
+      "PURCHASE_ORDER",
+      id,
+      { amountMinorUnits: po.amount, currency: po.currency },
+    );
+    // For reject we only check the permission gate (role), not approval flow
+    if (!decision.allowed && !decision.requiresApproval) {
+      throw new ForbiddenException(
+        decision.reason || "Rejection denied by policy engine",
+      );
+    }
 
     const updated = await this.prisma.purchaseOrder.update({
       where: { id },
@@ -1059,28 +1110,53 @@ export class PurchaseOrdersService implements OnModuleInit {
     });
     if (!po) throw new NotFoundException("PO not found");
 
-    // Supplier can counter from SENT; either party can counter from NEGOTIATION
+    // Supplier org can counter from SENT; either party org can counter from NEGOTIATION
+    const isSupplierOrg = await this.isSameOrg(actorId, po.supplierId);
+    const isBuyerOrg = await this.isSameOrg(actorId, po.buyerId);
     if (po.status === "SENT") {
-      if (po.supplierId !== actorId)
+      if (!isSupplierOrg)
         throw new ForbiddenException(
-          "Only the supplier can counter-propose a SENT PO",
+          "Only the supplier organisation can counter-propose a SENT PO",
         );
     } else if (po.status === "NEGOTIATION") {
       // The OTHER party counters (not the one who last proposed)
       const lastRevision = po.revisions.sort(
         (a, b) => b.revision - a.revision,
       )[0];
-      if (lastRevision && lastRevision.proposedBy === actorId) {
+      if (lastRevision && (await this.isSameOrg(actorId, lastRevision.proposedBy))) {
         throw new BadRequestException(
-          "You already proposed the latest revision. Wait for the other party to respond.",
+          "Your organisation already proposed the latest revision. Wait for the other party to respond.",
         );
       }
-      if (po.buyerId !== actorId && po.supplierId !== actorId) {
+      if (!isBuyerOrg && !isSupplierOrg) {
         throw new ForbiddenException("Only PO parties can negotiate");
       }
     } else {
       throw new BadRequestException(
         `Cannot counter-propose from status ${po.status}`,
+      );
+    }
+
+    // ── Policy engine gate (same roles as SUPPLIER_ACCEPTANCE) ──
+    const counterRole =
+      po.supplierId === actorId ? "SUPPLIER_ACCEPTANCE" : "PO_APPROVAL";
+    const decision = await this.policyEngine.evaluateForActor(
+      actorId,
+      counterRole as any,
+      "PURCHASE_ORDER",
+      id,
+      { amountMinorUnits: po.amount, currency: po.currency },
+    );
+    if (!decision.allowed) {
+      if (decision.requiresApproval) {
+        return {
+          pendingApproval: true,
+          approvalRequestId: decision.approvalRequestId,
+          reason: decision.reason,
+        };
+      }
+      throw new ForbiddenException(
+        decision.reason || "Counter-proposal denied by policy engine",
       );
     }
 
@@ -1184,17 +1260,19 @@ export class PurchaseOrdersService implements OnModuleInit {
     if (!latestRevision || latestRevision.status !== "PENDING") {
       throw new BadRequestException("No pending counter-proposal to accept");
     }
-    // Only the OTHER party (not the proposer) can accept
-    if (latestRevision.proposedBy === actorId) {
+    // Only the OTHER party's org (not the proposer's org) can accept
+    if (await this.isSameOrg(actorId, latestRevision.proposedBy)) {
       throw new BadRequestException(
-        "You cannot accept your own counter-proposal",
+        "Your organisation proposed this revision — wait for the other party to respond",
       );
     }
-    if (po.buyerId !== actorId && po.supplierId !== actorId) {
+    const isBuyerOrg = await this.isSameOrg(actorId, po.buyerId);
+    const isSupplierOrg = await this.isSameOrg(actorId, po.supplierId);
+    if (!isBuyerOrg && !isSupplierOrg) {
       throw new ForbiddenException("Only PO parties can accept a counter");
     }
 
-    const actorRole = po.buyerId === actorId ? "BUYER" : "SUPPLIER";
+    const actorRole = isBuyerOrg ? "BUYER" : "SUPPLIER";
 
     // Apply the revision: update PO line items, amount, and move to SENT
     // (so the normal accept flow can continue)
@@ -1279,16 +1357,18 @@ export class PurchaseOrdersService implements OnModuleInit {
     if (!latestRevision || latestRevision.status !== "PENDING") {
       throw new BadRequestException("No pending counter-proposal to reject");
     }
-    if (latestRevision.proposedBy === actorId) {
+    if (await this.isSameOrg(actorId, latestRevision.proposedBy)) {
       throw new BadRequestException(
-        "You cannot reject your own counter-proposal",
+        "Your organisation proposed this revision — wait for the other party to respond",
       );
     }
-    if (po.buyerId !== actorId && po.supplierId !== actorId) {
+    const isBuyerOrg = await this.isSameOrg(actorId, po.buyerId);
+    const isSupplierOrg = await this.isSameOrg(actorId, po.supplierId);
+    if (!isBuyerOrg && !isSupplierOrg) {
       throw new ForbiddenException("Only PO parties can reject a counter");
     }
 
-    const actorRole = po.buyerId === actorId ? "BUYER" : "SUPPLIER";
+    const actorRole = isBuyerOrg ? "BUYER" : "SUPPLIER";
 
     await this.prisma.pORevision.update({
       where: { id: latestRevision.id },
@@ -1351,8 +1431,8 @@ export class PurchaseOrdersService implements OnModuleInit {
         `Cannot mark as shipped from status ${po.status} (escrow must be funded first)`,
       );
     }
-    if (po.supplierId !== actorId)
-      throw new ForbiddenException("Only the supplier can mark shipment");
+    if (!(await this.isSameOrg(actorId, po.supplierId)))
+      throw new ForbiddenException("Only the supplier organisation can mark shipment");
 
     // Defensive guard: ensure payment is actually secured before shipment
     if (
@@ -1414,8 +1494,8 @@ export class PurchaseOrdersService implements OnModuleInit {
         `Cannot mark as delivered from status ${po.status} (must be shipped first)`,
       );
     }
-    if (po.supplierId !== actorId)
-      throw new ForbiddenException("Only the supplier can mark delivery");
+    if (!(await this.isSameOrg(actorId, po.supplierId)))
+      throw new ForbiddenException("Only the supplier organisation can mark delivery");
 
     const updated = await this.prisma.purchaseOrder.update({
       where: { id },
@@ -1459,8 +1539,8 @@ export class PurchaseOrdersService implements OnModuleInit {
 
   async verifyDelivery(id: string, actorId: string, sig?: SignatureData) {
     const po = await this.requireStatus(id, "DELIVERED");
-    if (po.buyerId !== actorId)
-      throw new ForbiddenException("Only the buyer can verify delivery");
+    if (!(await this.isSameOrg(actorId, po.buyerId)))
+      throw new ForbiddenException("Only the buyer organisation can verify delivery");
 
     // ── Policy engine gate ──────────────────────────────────
     const decision = await this.policyEngine.evaluateForActor(
@@ -1570,9 +1650,9 @@ export class PurchaseOrdersService implements OnModuleInit {
     }
 
     const po = await this.requireStatus(id, "VERIFIED");
-    if (po.buyerId !== actorId)
+    if (!(await this.isSameOrg(actorId, po.buyerId)))
       throw new ForbiddenException(
-        "Only the buyer can acknowledge the obligation",
+        "Only the buyer organisation can acknowledge the obligation",
       );
 
     // ── Policy engine gate ──────────────────────────────────
@@ -1597,9 +1677,40 @@ export class PurchaseOrdersService implements OnModuleInit {
     }
 
     // ── Load instrument + early pay ──────────────────────────
-    const instrument = await this.prisma.paymentInstrument.findUnique({
+    let instrument = await this.prisma.paymentInstrument.findUnique({
       where: { purchaseOrderId: id },
     });
+
+    // Back-fill: POs that progressed before the instrument system was added
+    // have a LOCKED PaymentLock but no PaymentInstrument row.
+    if (!instrument && poCheck.paymentLock?.status === "LOCKED") {
+      this.logger.warn(
+        `acknowledgeObligation(${id}): back-filling missing instrument from existing payment lock`,
+      );
+      instrument = await this.instrumentService.create(
+        {
+          purchaseOrderId: id,
+          amount: po.amount,
+          currency: po.currency,
+          payerAccountRef: poCheck.paymentLock.openBankingRef ?? undefined,
+        },
+        actorId,
+      );
+      // Fast-forward through CREATED → LOCK_REQUESTED → LOCKED
+      await this.instrumentService.requestLock(instrument.id, actorId);
+      await this.instrumentService.confirmLock(
+        {
+          instrumentId: instrument.id,
+          bankReference: poCheck.paymentLock.openBankingRef ?? "backfill",
+        },
+        actorId,
+      );
+      // Re-read to get latest status
+      instrument = await this.prisma.paymentInstrument.findUniqueOrThrow({
+        where: { id: instrument.id },
+      });
+    }
+
     if (!instrument) {
       throw new BadRequestException("PO has no payment instrument");
     }
@@ -1741,33 +1852,49 @@ export class PurchaseOrdersService implements OnModuleInit {
 
   async dispute(id: string, actorId: string, sig?: SignatureData) {
     const po = await this.requireStatus(id, "DELIVERED");
-    if (po.buyerId !== actorId)
-      throw new ForbiddenException("Only the buyer can dispute");
+    if (!(await this.isSameOrg(actorId, po.buyerId)))
+      throw new ForbiddenException("Only the buyer organisation can dispute");
 
-    const updated = await this.prisma.purchaseOrder.update({
-      where: { id },
-      data: { status: "DISPUTED" },
-      include: {
-        buyer: {
-          select: {
-            id: true,
-            email: true,
-            name: true,
-            role: true,
-            companyName: true,
-          },
+    // Create Dispute record + transition PO in one transaction
+    const { updated, dispute } = await this.prisma.$transaction(async (tx) => {
+      const d = await tx.dispute.create({
+        data: {
+          purchaseOrderId: id,
+          raisedById: actorId,
+          reason: "Delivery disputed by buyer",
+          currency: (po.currency as any) ?? "SAR",
+          status: "OPEN",
+          buyerEvidence: [],
         },
-        supplier: {
-          select: {
-            id: true,
-            email: true,
-            name: true,
-            role: true,
-            companyName: true,
+      });
+
+      const u = await tx.purchaseOrder.update({
+        where: { id },
+        data: { status: "DISPUTED" },
+        include: {
+          buyer: {
+            select: {
+              id: true,
+              email: true,
+              name: true,
+              role: true,
+              companyName: true,
+            },
           },
+          supplier: {
+            select: {
+              id: true,
+              email: true,
+              name: true,
+              role: true,
+              companyName: true,
+            },
+          },
+          paymentLock: true,
         },
-        paymentLock: true,
-      },
+      });
+
+      return { updated: u, dispute: d };
     });
 
     // Auto-expire any unfunded early payment request — dispute blocks normal settlement
@@ -1792,13 +1919,24 @@ export class PurchaseOrdersService implements OnModuleInit {
       });
     }
 
+    // Log dispute raised event
+    await this.ledger.logEvent({
+      entityType: "DISPUTE",
+      entityId: dispute.id,
+      eventType: "DISPUTE_RAISED",
+      actorId,
+      actorRole: "BUYER",
+      payload: { purchaseOrderId: id },
+      ...sig,
+    });
+
     const event = await this.ledger.logEvent({
       entityType: "PURCHASE_ORDER",
       entityId: id,
       eventType: "DELIVERY_DISPUTED",
       actorId,
       actorRole: "BUYER",
-      payload: {},
+      payload: { disputeId: dispute.id },
       ...sig,
     });
 

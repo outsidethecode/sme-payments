@@ -3,7 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
 import { disputesApi, type Dispute } from "@/lib/api";
-import { formatCurrency, formatDateTime } from "@/lib/format";
+import { formatCurrency, formatDateTime, statusLabel } from "@/lib/format";
 import {
   Card,
   CardContent,
@@ -22,6 +22,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { useState } from "react";
+import Link from "next/link";
 
 const STATUS_COLORS: Record<string, string> = {
   OPEN: "bg-yellow-100 text-yellow-800",
@@ -109,7 +110,7 @@ export default function DisputesPage() {
               size="sm"
               onClick={() => setStatusFilter(s)}
             >
-              {s || "All"}
+              {s ? statusLabel(s) : "All"}
             </Button>
           ),
         )}
@@ -124,12 +125,14 @@ export default function DisputesPage() {
       ) : (
         <div className="space-y-4">
           {disputes.map((d: Dispute) => (
-            <Card key={d.id}>
+            <Card key={d.id} className="transition-colors hover:border-foreground/20">
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
                   <div>
                     <CardTitle className="text-base">
-                      {d.purchaseOrder?.referenceNumber ?? d.purchaseOrderId}
+                      <Link href={`/dashboard/disputes/${d.id}`} className="hover:underline">
+                        {d.purchaseOrder?.referenceNumber ?? d.purchaseOrderId}
+                      </Link>
                     </CardTitle>
                     <CardDescription>
                       Raised by {d.raisedBy?.name ?? d.raisedById} on{" "}
@@ -138,11 +141,11 @@ export default function DisputesPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge className={STATUS_COLORS[d.status] ?? ""}>
-                      {d.status.replace(/_/g, " ")}
+                      {statusLabel(d.status)}
                     </Badge>
                     {d.outcome && (
                       <Badge variant="outline">
-                        {OUTCOME_LABELS[d.outcome] ?? d.outcome}
+                        {OUTCOME_LABELS[d.outcome] ?? statusLabel(d.outcome)}
                       </Badge>
                     )}
                   </div>

@@ -38,8 +38,17 @@ export class EarlyPaymentsService {
     private featureFlags: FeatureFlagService,
   ) {}
 
+  /** Check whether two users belong to the same organisation */
+  private async isSameOrg(userA: string, userB: string): Promise<boolean> {
+    const [orgA, orgB] = await Promise.all([
+      this.orgs.getOrgByUserId(userA),
+      this.orgs.getOrgByUserId(userB),
+    ]);
+    return !!(orgA && orgB && orgA.id === orgB.id);
+  }
+
   /**
-   * Supplier requests early payment on an ACCEPTED / FULFILLMENT / DELIVERED PO.
+   * Supplier requests early payment on a FULFILLMENT / SHIPPED / DELIVERED PO.
    * The PO must have a locked payment instrument (not yet settled).
    * Transitions the instrument LOCKED → FINANCING_REQUESTED.
    */
@@ -66,9 +75,10 @@ export class EarlyPaymentsService {
     });
 
     if (!po) throw new NotFoundException("Purchase order not found");
-    if (po.supplierId !== supplierId) {
+    const sameOrg = await this.isSameOrg(po.supplierId, supplierId);
+    if (!sameOrg) {
       throw new ForbiddenException(
-        "Only the supplier of this PO can request early payment",
+        "Only the supplier organisation of this PO can request early payment",
       );
     }
     const eligibleStatuses = ["FULFILLMENT", "SHIPPED", "DELIVERED"];

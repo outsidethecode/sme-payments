@@ -432,6 +432,93 @@ async function main() {
     priority: 1,
   });
 
+  // ── KSA LP Funding Tiers ──────────────────────────────────
+  await seedPolicy(orgKsaLP.id, {
+    ruleType: "LP_FUNDING",
+    name: "Auto-fund ≤ 100,000 SAR",
+    conditions: { minAmount: 0, maxAmount: 100_000_00 },
+    requiredApprovals: 0,
+    requiredRoles: [],
+    autoApprove: true,
+    priority: 10,
+  });
+  await seedPolicy(orgKsaLP.id, {
+    ruleType: "LP_FUNDING",
+    name: "Large LP funding approval (SAR)",
+    conditions: { minAmount: 100_000_01, maxAmount: 500_000_00 },
+    requiredApprovals: 1,
+    requiredRoles: ["APPROVER"],
+    autoApprove: false,
+    priority: 5,
+  });
+  await seedPolicy(orgKsaLP.id, {
+    ruleType: "LP_FUNDING",
+    name: "Major LP commitment 2 approvers (SAR)",
+    conditions: { minAmount: 500_000_01, maxAmount: 999_999_999_99 },
+    requiredApprovals: 2,
+    requiredRoles: ["APPROVER", "FINANCE"],
+    autoApprove: false,
+    priority: 1,
+  });
+
+  // ── KSA Supplier Policy Rules ─────────────────────────────
+  await seedPolicy(orgKsaSupplier.id, {
+    ruleType: "SUPPLIER_ACCEPTANCE",
+    name: "Auto-accept POs ≤ 25,000 SAR",
+    conditions: { minAmount: 0, maxAmount: 25_000_00 },
+    requiredApprovals: 0,
+    requiredRoles: [],
+    autoApprove: true,
+    priority: 10,
+  });
+  await seedPolicy(orgKsaSupplier.id, {
+    ruleType: "SUPPLIER_ACCEPTANCE",
+    name: "Large PO acceptance approval (SAR)",
+    conditions: { minAmount: 25_000_01, maxAmount: 999_999_999_99 },
+    requiredApprovals: 2,
+    requiredRoles: ["APPROVER", "FINANCE", "OWNER"],
+    autoApprove: false,
+    priority: 5,
+  });
+  await seedPolicy(orgKsaSupplier.id, {
+    ruleType: "EARLY_PAYMENT",
+    name: "Auto-approve early pay ≤ 50,000 SAR",
+    conditions: { minAmount: 0, maxAmount: 50_000_00 },
+    requiredApprovals: 0,
+    requiredRoles: [],
+    autoApprove: true,
+    priority: 10,
+  });
+  await seedPolicy(orgKsaSupplier.id, {
+    ruleType: "EARLY_PAYMENT",
+    name: "Large early pay approval (SAR)",
+    conditions: { minAmount: 50_000_01, maxAmount: 999_999_999_99 },
+    requiredApprovals: 1,
+    requiredRoles: ["FINANCE"],
+    autoApprove: false,
+    priority: 5,
+  });
+
+  // ── KSA Buyer Delivery Verification ────────────────────────
+  await seedPolicy(orgKsaBuyer.id, {
+    ruleType: "DELIVERY_VERIFICATION",
+    name: "Auto-verify delivery ≤ 200,000 SAR",
+    conditions: { minAmount: 0, maxAmount: 200_000_00 },
+    requiredApprovals: 0,
+    requiredRoles: [],
+    autoApprove: true,
+    priority: 10,
+  });
+  await seedPolicy(orgKsaBuyer.id, {
+    ruleType: "DELIVERY_VERIFICATION",
+    name: "Large delivery verification (SAR)",
+    conditions: { minAmount: 200_000_01, maxAmount: 999_999_999_99 },
+    requiredApprovals: 1,
+    requiredRoles: ["FINANCE"],
+    autoApprove: false,
+    priority: 5,
+  });
+
   // ── UK LP Funding Limits ───────────────────────────────────
   await seedPolicy(orgLP.id, {
     ruleType: "FUNDING_LIMIT",
@@ -664,6 +751,100 @@ async function main() {
     orgRole: OrgRole.FINANCE,
   });
 
+  // ══════════════════════════════════════════════════════════════
+  // KSA TEAM MEMBERS — APPROVER, FINANCE, MEMBER, VIEWER
+  // ══════════════════════════════════════════════════════════════
+
+  // ── KSA Buyer Team (Al-Rajhi Trading) ──────────────────────
+  const ksaBuyerApprover = await seedTeamMember({
+    email: "approver@alrajhi.sa",
+    name: "Khalid Al-Harbi",
+    role: UserRole.BUYER,
+    orgId: orgKsaBuyer.id,
+    orgRole: OrgRole.APPROVER,
+  });
+  const ksaBuyerFinance = await seedTeamMember({
+    email: "finance@alrajhi.sa",
+    name: "Layla Al-Qahtani",
+    role: UserRole.BUYER,
+    orgId: orgKsaBuyer.id,
+    orgRole: OrgRole.FINANCE,
+  });
+  const ksaBuyerMember = await seedTeamMember({
+    email: "member@alrajhi.sa",
+    name: "Omar Al-Dosari",
+    role: UserRole.BUYER,
+    orgId: orgKsaBuyer.id,
+    orgRole: OrgRole.MEMBER,
+  });
+  const ksaBuyerViewer = await seedTeamMember({
+    email: "viewer@alrajhi.sa",
+    name: "Sara Al-Ghamdi",
+    role: UserRole.BUYER,
+    orgId: orgKsaBuyer.id,
+    orgRole: OrgRole.VIEWER,
+  });
+
+  // ── KSA Supplier Team (Noor Supply Chain) ──────────────────
+  const ksaSupplierApprover = await seedTeamMember({
+    email: "approver@noorsupply.sa",
+    name: "Faisal Al-Otaibi",
+    role: UserRole.SUPPLIER,
+    orgId: orgKsaSupplier.id,
+    orgRole: OrgRole.APPROVER,
+  });
+  const ksaSupplierFinance = await seedTeamMember({
+    email: "finance@noorsupply.sa",
+    name: "Hana Al-Mutairi",
+    role: UserRole.SUPPLIER,
+    orgId: orgKsaSupplier.id,
+    orgRole: OrgRole.FINANCE,
+  });
+  const ksaSupplierMember = await seedTeamMember({
+    email: "member@noorsupply.sa",
+    name: "Yusuf Al-Shammari",
+    role: UserRole.SUPPLIER,
+    orgId: orgKsaSupplier.id,
+    orgRole: OrgRole.MEMBER,
+  });
+  const ksaSupplierViewer = await seedTeamMember({
+    email: "viewer@noorsupply.sa",
+    name: "Mona Al-Zahrani",
+    role: UserRole.SUPPLIER,
+    orgId: orgKsaSupplier.id,
+    orgRole: OrgRole.VIEWER,
+  });
+
+  // ── KSA LP Team (Tamweel Capital) ──────────────────────────
+  const ksaLPApprover = await seedTeamMember({
+    email: "approver@tamweel.sa",
+    name: "Abdulaziz Al-Subaie",
+    role: UserRole.LIQUIDITY_PARTNER,
+    orgId: orgKsaLP.id,
+    orgRole: OrgRole.APPROVER,
+  });
+  const ksaLPFinance = await seedTeamMember({
+    email: "finance@tamweel.sa",
+    name: "Reem Al-Anazi",
+    role: UserRole.LIQUIDITY_PARTNER,
+    orgId: orgKsaLP.id,
+    orgRole: OrgRole.FINANCE,
+  });
+  const ksaLPMember = await seedTeamMember({
+    email: "member@tamweel.sa",
+    name: "Tariq Al-Dossary",
+    role: UserRole.LIQUIDITY_PARTNER,
+    orgId: orgKsaLP.id,
+    orgRole: OrgRole.MEMBER,
+  });
+  const ksaLPViewer = await seedTeamMember({
+    email: "viewer@tamweel.sa",
+    name: "Nouf Al-Rajhi",
+    role: UserRole.LIQUIDITY_PARTNER,
+    orgId: orgKsaLP.id,
+    orgRole: OrgRole.VIEWER,
+  });
+
   // ── Escrow Accounts ─────────────────────────────────────────
   const escrowGBP = await prisma.escrowAccount.upsert({
     where: { country_currency: { country: "GB", currency: "GBP" } },
@@ -715,7 +896,7 @@ async function main() {
   console.log("");
   console.log(`✅ Admin:      ${admin.email}`);
   console.log("");
-  console.log("✅ Team members (APPROVER / FINANCE):");
+  console.log("✅ UK Team members (APPROVER / FINANCE):");
   console.log(
     `   Buyer 1:    ${buyer1Approver.email} (APPROVER), ${buyer1Finance.email} (FINANCE)`,
   );
@@ -726,34 +907,47 @@ async function main() {
     `   LP:         ${lpApprover.email} (APPROVER), ${lpFinance.email} (FINANCE)`,
   );
   console.log("");
+  console.log("✅ KSA Team members (APPROVER / FINANCE / MEMBER / VIEWER):");
+  console.log(
+    `   Al-Rajhi Buyer:  ${ksaBuyerApprover.email} (APPROVER), ${ksaBuyerFinance.email} (FINANCE)`,
+  );
+  console.log(
+    `                    ${ksaBuyerMember.email} (MEMBER), ${ksaBuyerViewer.email} (VIEWER)`,
+  );
+  console.log(
+    `   Noor Supplier:   ${ksaSupplierApprover.email} (APPROVER), ${ksaSupplierFinance.email} (FINANCE)`,
+  );
+  console.log(
+    `                    ${ksaSupplierMember.email} (MEMBER), ${ksaSupplierViewer.email} (VIEWER)`,
+  );
+  console.log(
+    `   Tamweel LP:      ${ksaLPApprover.email} (APPROVER), ${ksaLPFinance.email} (FINANCE)`,
+  );
+  console.log(
+    `                    ${ksaLPMember.email} (MEMBER), ${ksaLPViewer.email} (VIEWER)`,
+  );
+  console.log("");
   console.log("✅ Escrow accounts:");
   console.log(`   GBP: ${escrowGBP.label} (${escrowGBP.id})`);
   console.log(`   SAR: ${escrowSAR.label} (${escrowSAR.id})`);
   console.log("");
   console.log("✅ Seeded policy rules:");
   console.log(
-    "   KSA Buyer:  3 PO approval tiers + ESCROW_FUNDING (2 tiers), SETTLEMENT (2 tiers)",
+    "   KSA Buyer:    3 PO approval tiers + ESCROW_FUNDING (2), SETTLEMENT (2), DELIVERY_VERIFICATION (2)",
   );
   console.log(
-    "   UK Buyer 1: 3 PO approval tiers (auto ≤£10k, 1 approver ≤£50k, 2 approvers >£50k)",
+    "   KSA Supplier: SUPPLIER_ACCEPTANCE (2 tiers), EARLY_PAYMENT (2 tiers)",
   );
   console.log(
-    "   UK Buyer 1: ESCROW_FUNDING (2 tiers), SETTLEMENT (2 tiers), DELIVERY_VERIFICATION (2 tiers)",
+    "   KSA LP:       LP_FUNDING (3 tiers), FUNDING_LIMIT (SAR exposure)",
   );
   console.log(
-    "   UK Supplier 1: SUPPLIER_ACCEPTANCE (2 tiers), EARLY_PAYMENT (2 tiers)",
-  );
-  console.log("   UK LP:      LP_FUNDING (3 tiers), FUNDING_LIMIT");
-  console.log(
-    "   KSA LP:     Funding limits (5M SAR total, 40% buyer, 30% supplier, 90d tenor, 250bps)",
+    "   UK Buyer 1:   3 PO approval tiers + ESCROW_FUNDING (2), SETTLEMENT (2), DELIVERY_VERIFICATION (2)",
   );
   console.log(
-    "   UK LP:      Funding limits (£2M total, 40% buyer, 30% supplier, 90d tenor, 200bps)",
+    "   UK Supplier:  SUPPLIER_ACCEPTANCE (2 tiers), EARLY_PAYMENT (2 tiers)",
   );
-  console.log(
-    "   KSA Buyer:  PO order limits (min SAR 1,875 / max SAR 937,500)",
-  );
-  console.log("   UK Buyer 1: PO order limits (min £500 / max £250,000)");
+  console.log("   UK LP:        LP_FUNDING (3 tiers), FUNDING_LIMIT");
   console.log("");
   console.log("   All passwords: password123");
 }

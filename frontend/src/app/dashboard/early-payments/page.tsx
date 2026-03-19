@@ -5,8 +5,10 @@ import {
   earlyPayApi,
   poApi,
   passkeysApi,
+  policiesApi,
   type SignaturePayload,
   type RiskSnapshot,
+  type RiskFactorScore,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { usePasskey } from "@/lib/use-passkey";
@@ -43,6 +45,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
   Table,
   TableBody,
   TableCell,
@@ -61,6 +70,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   ArrowUpDown,
+  Info,
 } from "lucide-react";
 import { useState, useMemo } from "react";
 
@@ -80,6 +90,7 @@ export default function EarlyPaymentsPage() {
 // ── Supplier View ─────────────────────────────────────────────
 
 function SupplierView() {
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const { hasPasskey, signing, signAction } = usePasskey();
 
@@ -131,10 +142,28 @@ function SupplierView() {
     },
   });
 
+  // Compute a representative amount for policy simulation
+  const maxAmount = pos?.reduce((max, po) => Math.max(max, po.totalAmountPennies ?? 0), 0) ?? 0;
+
+  const { data: epPolicy } = useQuery({
+    queryKey: ["policy-simulate", "EARLY_PAYMENT", maxAmount],
+    queryFn: () =>
+      policiesApi.simulate(maxAmount, "EARLY_PAYMENT").then((r) => r.data),
+    enabled: maxAmount > 0,
+  });
+
+  // Role guard: check if user's orgRole is allowed by policy
+  const policyRoles = epPolicy?.rule?.requiredRoles ?? [];
+  const allowedRoles =
+    policyRoles.length > 0
+      ? policyRoles
+      : ["OWNER", "FINANCE"]; // default — matches backend EARLY_PAYMENT allowed roles
+  const userOrgRole = (user as any)?.orgRole;
+  const canRequest = allowedRoles.includes(userOrgRole);
+
   const eligiblePOs = pos?.filter(
     (po) =>
-      (po.status === "ACCEPTED" ||
-        po.status === "FULFILLMENT" ||
+      (po.status === "FULFILLMENT" ||
         po.status === "SHIPPED" ||
         po.status === "DELIVERED") &&
       !earlyPayments?.find((ep) => ep.purchaseOrderId === po.id),
@@ -145,7 +174,7 @@ function SupplierView() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Early Payments</h1>
         <p className="text-sm text-muted-foreground">
-          Get paid early on accepted purchase orders
+          Get paid early on purchase orders with locked payment
         </p>
       </div>
 
@@ -158,10 +187,10 @@ function SupplierView() {
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground space-y-2">
           <p>
-            1. Your PO must be <strong>accepted</strong> with payment locked by
-            the buyer.
+            1. The buyer must have <strong>funded escrow</strong> (PO in
+            Fulfillment, Shipped, or Delivered status).
           </p>
-          <p>2. Request early payment, a flat 2.5% service fee applies.</p>
+          <p>2. Request early payment — a flat 2.5% service fee applies.</p>
           <p>
             3. A liquidity partner funds the advance, you receive the net amount
             immediately.
@@ -179,6 +208,15 @@ function SupplierView() {
           <CardDescription>
             POs with locked payment that you can request early payment on
           </CardDescription>
+          {!canRequest && (
+            <div className="mt-2 flex items-start gap-2 rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3 text-sm text-amber-800 dark:text-amber-200">
+              <Info className="h-4 w-4 mt-0.5 flex-shrink-0" />
+              <span>
+                Your role (<strong>{userOrgRole}</strong>) cannot request early payments.
+                Required: {allowedRoles.join(", ")}.
+              </span>
+            </div>
+          )}
         </CardHeader>
         <CardContent>
           {posLoading || epLoading ? (
@@ -238,18 +276,22 @@ function SupplierView() {
                         {formatCurrency(net, po.currency as "GBP" | "SAR")}
                       </TableCell>
                       <TableCell>
-                        <Button
-                          size="sm"
-                          onClick={() => requestMutation.mutate(po.id)}
-                          disabled={requestMutation.isPending || signing}
-                        >
-                          {signing ? (
-                            <Fingerprint className="mr-1 h-3 w-3 animate-pulse" />
-                          ) : (
-                            <Zap className="mr-1 h-3 w-3" />
-                          )}
-                          {signing ? "Signing…" : "Request"}
-                        </Button>
+                        {canRequest ? (
+                          <Button
+                            size="sm"
+                            onClick={() => requestMutation.mutate(po.id)}
+                            disabled={requestMutation.isPending || signing}
+                          >
+                            {signing ? (
+                              <Fingerprint className="mr-1 h-3 w-3 animate-pulse" />
+                            ) : (
+                              <Zap className="mr-1 h-3 w-3" />
+                            )}
+                            {signing ? "Signing…" : "Request"}
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">No permission</span>
+                        )}
                       </TableCell>
                     </TableRow>
                   );
@@ -344,25 +386,137 @@ function riskLabel(score: number) {
 }
 
 function RiskBadge({ risk }: { risk: RiskSnapshot }) {
+  const [open, setOpen] = useState(false);
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span
-            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${riskColor(risk.riskScore)}`}
+    <>
+      <div className="inline-flex items-center gap-1">
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${riskColor(risk.riskScore)}`}
+              >
+                {riskIcon(risk.riskScore)}
+                {risk.riskScore.toFixed(1)} / 10
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="left" className="max-w-xs">
+              <p className="font-semibold">{riskLabel(risk.riskScore)}</p>
+              <p className="text-xs">
+                Default probability: {risk.defaultProbability.toFixed(1)}%
+              </p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+          className="text-muted-foreground hover:text-foreground transition-colors"
+          aria-label="View risk score breakdown"
+        >
+          <Info className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <RiskScoreModal risk={risk} open={open} onOpenChange={setOpen} />
+    </>
+  );
+}
+
+// ── Risk Score Explanation Modal ─────────────────────────────
+
+function factorBarColor(score: number) {
+  if (score >= 8) return "bg-green-500";
+  if (score >= 5) return "bg-amber-500";
+  return "bg-red-500";
+}
+
+function RiskScoreModal({
+  risk,
+  open,
+  onOpenChange,
+}: {
+  risk: RiskSnapshot;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Shield className="h-5 w-5" />
+            Risk Score Breakdown
+          </DialogTitle>
+          <DialogDescription>
+            The risk score is a weighted composite of 5 factors. A higher score
+            (out of 10) means lower risk.
+          </DialogDescription>
+        </DialogHeader>
+
+        {/* Overall score */}
+        <div className="flex items-center gap-4 rounded-lg border p-4">
+          <div
+            className={`flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-full text-lg font-bold text-white ${
+              risk.riskScore >= 8
+                ? "bg-green-500"
+                : risk.riskScore >= 5
+                  ? "bg-amber-500"
+                  : "bg-red-500"
+            }`}
           >
-            {riskIcon(risk.riskScore)}
-            {risk.riskScore.toFixed(1)} / 10
-          </span>
-        </TooltipTrigger>
-        <TooltipContent side="left" className="max-w-xs">
-          <p className="font-semibold">{riskLabel(risk.riskScore)}</p>
-          <p className="text-xs">
-            Default probability: {risk.defaultProbability.toFixed(1)}%
+            {risk.riskScore.toFixed(1)}
+          </div>
+          <div>
+            <p className="font-semibold">{riskLabel(risk.riskScore)}</p>
+            <p className="text-sm text-muted-foreground">
+              {risk.defaultProbability.toFixed(1)}% estimated default
+              probability
+            </p>
+          </div>
+        </div>
+
+        {/* Factor breakdown */}
+        {risk.factors && risk.factors.length > 0 ? (
+          <div className="space-y-3">
+            {risk.factors.map((f) => (
+              <div key={f.name} className="space-y-1">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium">{f.name}</span>
+                  <span className="text-muted-foreground">
+                    {f.score.toFixed(1)}/10{" "}
+                    <span className="text-xs">
+                      ({(f.weight * 100).toFixed(0)}% weight)
+                    </span>
+                  </span>
+                </div>
+                <div className="h-2 w-full rounded-full bg-muted">
+                  <div
+                    className={`h-2 rounded-full transition-all ${factorBarColor(f.score)}`}
+                    style={{ width: `${(f.score / 10) * 100}%` }}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">{f.reason}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Detailed factor breakdown is not available for this assessment.
           </p>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+        )}
+
+        {/* How scoring works */}
+        <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground space-y-1">
+          <p className="font-medium text-foreground">How is this calculated?</p>
+          <p>
+            Each factor is scored 0&ndash;10 and multiplied by its weight. The
+            weighted scores are summed to produce the composite risk score. The
+            default probability is the inverse of the composite mapped to
+            0&ndash;100%.
+          </p>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

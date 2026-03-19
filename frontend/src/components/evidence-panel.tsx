@@ -4,7 +4,7 @@ import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { evidenceApi, type EvidenceAttachment } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, statusLabel } from "@/lib/format";
 import {
   Card,
   CardContent,
@@ -420,13 +420,13 @@ export function InstrumentLifecycleCard({
                         : "outline"
                 }
               >
-                {instrument.status}
+                {statusLabel(instrument.status)}
               </Badge>
             </div>
 
             <div className="grid grid-cols-2 gap-2 text-sm text-muted-foreground">
               <span>
-                Type: <span className="text-foreground">{instrument.type}</span>
+                Type: <span className="text-foreground">{statusLabel(instrument.type)}</span>
               </span>
               <span>
                 Amount:{" "}
@@ -461,8 +461,8 @@ export function InstrumentLifecycleCard({
                 {instrument.lifecycle.map((step, i) => (
                   <div key={i} className="flex items-center gap-2 text-sm">
                     {lifecycleIcon(step.status)}
-                    <span className="font-medium w-20">{step.status}</span>
-                    <span className="text-muted-foreground text-xs">
+                    <span className="font-medium min-w-[8rem] shrink-0">{statusLabel(step.status)}</span>
+                    <span className="text-muted-foreground text-xs whitespace-nowrap">
                       {formatDateTime(step.at)}
                     </span>
                     {step.bankRef && (

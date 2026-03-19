@@ -382,7 +382,7 @@ export default function LedgerPage() {
                           )}
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          {event.entityType} · {formatDateTime(event.createdAt)}{" "}
+                          {statusLabel(event.entityType)} · {formatDateTime(event.createdAt)}{" "}
                           · {statusLabel(event.actorRole)}
                         </p>
                       </div>

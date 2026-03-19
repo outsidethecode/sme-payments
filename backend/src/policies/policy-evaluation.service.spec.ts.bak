@@ -55,10 +55,10 @@ describe("PolicyEvaluationService", () => {
         findFirst: jest.fn().mockResolvedValue({ orgRole: "OWNER" }),
       },
       orgPermission: {
-        findUnique: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn().mockResolvedValue(null), // No overrides by default
       },
       orgDelegation: {
-        findFirst: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null), // No delegations by default
       },
     };
 
@@ -79,7 +79,7 @@ describe("PolicyEvaluationService", () => {
     };
 
     featureFlags = {
-      isEnabled: jest.fn().mockResolvedValue(true),
+      isEnabled: jest.fn().mockResolvedValue(true), // Engine ON by default
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -107,32 +107,8 @@ describe("PolicyEvaluationService", () => {
       expect(decision.allowed).toBe(true);
       expect(decision.autoApprove).toBe(true);
       expect(decision.gates.policy).toBe("NO_RULE");
+      // Should not query org or rules
       expect(prisma.organisation.findUnique).not.toHaveBeenCalled();
-    });
-
-    it("should check feature flag with organisationId", async () => {
-      featureFlags.isEnabled.mockResolvedValue(false);
-
-      await service.evaluate(baseInput);
-
-      expect(featureFlags.isEnabled).toHaveBeenCalledWith(
-        FeatureFlag.POLICY_ENGINE_V2,
-        "org-1",
-      );
-    });
-
-    it("should return consistent gate results when engine disabled", async () => {
-      featureFlags.isEnabled.mockResolvedValue(false);
-
-      const decision = await service.evaluate(baseInput);
-
-      expect(decision.gates).toEqual({
-        orgStatus: "PASS",
-        kybStatus: "SKIP",
-        permission: "SKIP",
-        policy: "NO_RULE",
-      });
-      expect(decision.requiresApproval).toBe(false);
     });
   });
 
@@ -181,21 +157,6 @@ describe("PolicyEvaluationService", () => {
       const decision = await service.evaluate(baseInput);
       expect(decision.gates.orgStatus).toBe("PASS");
     });
-
-    it("should deny when org is DEACTIVATED", async () => {
-      prisma.organisation.findUnique.mockResolvedValue({
-        id: "org-1",
-        status: "DEACTIVATED",
-        onboardingStatus: "COMPLETED",
-        type: "BUYER",
-      });
-
-      const decision = await service.evaluate(baseInput);
-
-      expect(decision.allowed).toBe(false);
-      expect(decision.gates.orgStatus).toBe("FAIL");
-      expect(decision.reason).toContain("DEACTIVATED");
-    });
   });
 
   // ── Gate 2: KYB / Onboarding ────────────────────────────
@@ -216,102 +177,12 @@ describe("PolicyEvaluationService", () => {
       expect(decision.reason).toContain("onboarding");
     });
 
-    it("should skip KYB check for PO_APPROVAL (non-financial)", async () => {
+    it("should skip KYB check for non-financial actions", async () => {
       const input = { ...baseInput, action: "PO_APPROVAL" as any };
 
       const decision = await service.evaluate(input);
 
       expect(decision.gates.kybStatus).toBe("SKIP");
-    });
-
-    it("should skip KYB check for DELIVERY_VERIFICATION (non-financial)", async () => {
-      const input = { ...baseInput, action: "DELIVERY_VERIFICATION" as any };
-
-      const decision = await service.evaluate(input);
-
-      expect(decision.gates.kybStatus).toBe("SKIP");
-    });
-
-    it("should skip KYB check for SUPPLIER_ACCEPTANCE (non-financial)", async () => {
-      prisma.organisation.findUnique.mockResolvedValue({
-        id: "org-1",
-        status: "ACTIVE",
-        onboardingStatus: "COMPLETED",
-        type: "SUPPLIER",
-        supplierTier: "BASIC",
-      });
-      const input = {
-        ...baseInput,
-        action: "SUPPLIER_ACCEPTANCE" as any,
-        actorOrgRole: "OWNER",
-      };
-
-      const decision = await service.evaluate(input);
-
-      expect(decision.gates.kybStatus).toBe("SKIP");
-    });
-
-    it("should require completed KYB for ESCROW_FUNDING", async () => {
-      prisma.organisation.findUnique.mockResolvedValue({
-        id: "org-1",
-        status: "ACTIVE",
-        onboardingStatus: "NOT_STARTED",
-        type: "BUYER",
-      });
-
-      const decision = await service.evaluate(baseInput);
-
-      expect(decision.allowed).toBe(false);
-      expect(decision.gates.kybStatus).toBe("FAIL");
-    });
-
-    it("should require completed KYB for SETTLEMENT", async () => {
-      prisma.organisation.findUnique.mockResolvedValue({
-        id: "org-1",
-        status: "ACTIVE",
-        onboardingStatus: "IN_PROGRESS",
-        type: "BUYER",
-      });
-      const input = {
-        ...baseInput,
-        action: "SETTLEMENT" as any,
-        actorOrgRole: "OWNER",
-      };
-
-      const decision = await service.evaluate(input);
-
-      expect(decision.allowed).toBe(false);
-      expect(decision.gates.kybStatus).toBe("FAIL");
-    });
-
-    it("should require completed KYB for EARLY_PAYMENT", async () => {
-      prisma.organisation.findUnique.mockResolvedValue({
-        id: "org-1",
-        status: "ACTIVE",
-        onboardingStatus: "NOT_STARTED",
-        type: "SUPPLIER",
-      });
-      const input = { ...baseInput, action: "EARLY_PAYMENT" as any };
-
-      const decision = await service.evaluate(input);
-
-      expect(decision.allowed).toBe(false);
-      expect(decision.gates.kybStatus).toBe("FAIL");
-    });
-
-    it("should require completed KYB for LP_FUNDING", async () => {
-      prisma.organisation.findUnique.mockResolvedValue({
-        id: "org-1",
-        status: "ACTIVE",
-        onboardingStatus: "IN_PROGRESS",
-        type: "LIQUIDITY_PARTNER",
-      });
-      const input = { ...baseInput, action: "LP_FUNDING" as any };
-
-      const decision = await service.evaluate(input);
-
-      expect(decision.allowed).toBe(false);
-      expect(decision.gates.kybStatus).toBe("FAIL");
     });
 
     it("should deny supplier without supplierTier for financial action", async () => {
@@ -332,26 +203,6 @@ describe("PolicyEvaluationService", () => {
       expect(decision.reason).toContain("Tier 1");
     });
 
-    it("should pass supplier with supplierTier for financial action", async () => {
-      prisma.organisation.findUnique.mockResolvedValue({
-        id: "org-1",
-        status: "ACTIVE",
-        onboardingStatus: "COMPLETED",
-        type: "SUPPLIER",
-        supplierTier: "BASIC",
-      });
-
-      const input = {
-        ...baseInput,
-        action: "EARLY_PAYMENT" as any,
-        actorOrgRole: "OWNER",
-      };
-
-      const decision = await service.evaluate(input);
-
-      expect(decision.gates.kybStatus).toBe("PASS");
-    });
-
     it("should deny LP without funding limit or participation agreement", async () => {
       prisma.organisation.findUnique.mockResolvedValue({
         id: "org-1",
@@ -369,24 +220,6 @@ describe("PolicyEvaluationService", () => {
       expect(decision.allowed).toBe(false);
       expect(decision.gates.kybStatus).toBe("FAIL");
       expect(decision.reason).toContain("funding limit");
-    });
-
-    it("should deny LP with funding limit but no participation agreement", async () => {
-      prisma.organisation.findUnique.mockResolvedValue({
-        id: "org-1",
-        status: "ACTIVE",
-        onboardingStatus: "COMPLETED",
-        type: "LIQUIDITY_PARTNER",
-        fundingLimitTotal: 10_000_000,
-        participationAgreementAcceptedAt: null,
-      });
-
-      const input = { ...baseInput, action: "LP_FUNDING" as any };
-
-      const decision = await service.evaluate(input);
-
-      expect(decision.allowed).toBe(false);
-      expect(decision.gates.kybStatus).toBe("FAIL");
     });
 
     it("should pass KYB for LP with all requirements met", async () => {
@@ -441,6 +274,7 @@ describe("PolicyEvaluationService", () => {
       ];
 
       for (const action of actions) {
+        // Reset mocks for each iteration
         prisma.organisation.findUnique.mockResolvedValue({
           id: "org-1",
           status: "ACTIVE",
@@ -489,136 +323,8 @@ describe("PolicyEvaluationService", () => {
       expect(decision.gates.permission).toBe("FAIL");
     });
 
-    it("should allow APPROVER for PO_APPROVAL", async () => {
-      const input = {
-        ...baseInput,
-        action: "PO_APPROVAL" as any,
-        actorOrgRole: "APPROVER",
-      };
-
-      const decision = await service.evaluate(input);
-
-      expect(decision.gates.permission).toBe("PASS");
-    });
-
-    it("should allow MEMBER for PO_APPROVAL", async () => {
-      const input = {
-        ...baseInput,
-        action: "PO_APPROVAL" as any,
-        actorOrgRole: "MEMBER",
-      };
-
-      const decision = await service.evaluate(input);
-
-      expect(decision.gates.permission).toBe("PASS");
-    });
-
-    it("should deny MEMBER for SETTLEMENT", async () => {
-      const input = {
-        ...baseInput,
-        action: "SETTLEMENT" as any,
-        actorOrgRole: "MEMBER",
-      };
-
-      const decision = await service.evaluate(input);
-
-      expect(decision.allowed).toBe(false);
-      expect(decision.gates.permission).toBe("FAIL");
-    });
-
-    it("should allow FINANCE for SETTLEMENT", async () => {
-      const input = {
-        ...baseInput,
-        action: "SETTLEMENT" as any,
-        actorOrgRole: "FINANCE",
-      };
-
-      const decision = await service.evaluate(input);
-
-      expect(decision.gates.permission).toBe("PASS");
-    });
-
-    it("should allow APPROVER for SUPPLIER_ACCEPTANCE", async () => {
-      prisma.organisation.findUnique.mockResolvedValue({
-        id: "org-1",
-        status: "ACTIVE",
-        onboardingStatus: "COMPLETED",
-        type: "SUPPLIER",
-        supplierTier: "BASIC",
-      });
-      const input = {
-        ...baseInput,
-        action: "SUPPLIER_ACCEPTANCE" as any,
-        actorOrgRole: "APPROVER",
-      };
-
-      const decision = await service.evaluate(input);
-
-      expect(decision.gates.permission).toBe("PASS");
-    });
-
-    it("should deny MEMBER for SUPPLIER_ACCEPTANCE", async () => {
-      prisma.organisation.findUnique.mockResolvedValue({
-        id: "org-1",
-        status: "ACTIVE",
-        onboardingStatus: "COMPLETED",
-        type: "SUPPLIER",
-        supplierTier: "BASIC",
-      });
-      const input = {
-        ...baseInput,
-        action: "SUPPLIER_ACCEPTANCE" as any,
-        actorOrgRole: "MEMBER",
-      };
-
-      const decision = await service.evaluate(input);
-
-      expect(decision.allowed).toBe(false);
-      expect(decision.gates.permission).toBe("FAIL");
-    });
-
-    it("should allow APPROVER for LP_FUNDING", async () => {
-      prisma.organisation.findUnique.mockResolvedValue({
-        id: "org-1",
-        status: "ACTIVE",
-        onboardingStatus: "COMPLETED",
-        type: "LIQUIDITY_PARTNER",
-        fundingLimitTotal: 10_000_000,
-        participationAgreementAcceptedAt: new Date(),
-      });
-      const input = {
-        ...baseInput,
-        action: "LP_FUNDING" as any,
-        actorOrgRole: "APPROVER",
-      };
-
-      const decision = await service.evaluate(input);
-
-      expect(decision.gates.permission).toBe("PASS");
-    });
-
-    it("should deny MEMBER for LP_FUNDING", async () => {
-      prisma.organisation.findUnique.mockResolvedValue({
-        id: "org-1",
-        status: "ACTIVE",
-        onboardingStatus: "COMPLETED",
-        type: "LIQUIDITY_PARTNER",
-        fundingLimitTotal: 10_000_000,
-        participationAgreementAcceptedAt: new Date(),
-      });
-      const input = {
-        ...baseInput,
-        action: "LP_FUNDING" as any,
-        actorOrgRole: "MEMBER",
-      };
-
-      const decision = await service.evaluate(input);
-
-      expect(decision.allowed).toBe(false);
-      expect(decision.gates.permission).toBe("FAIL");
-    });
-
     it("should respect per-org permission overrides", async () => {
+      // Override: allow MEMBER for ESCROW_FUNDING (normally denied)
       prisma.orgPermission.findUnique.mockResolvedValue({
         id: "perm-1",
         action: "ESCROW_FUNDING",
@@ -631,25 +337,8 @@ describe("PolicyEvaluationService", () => {
       expect(decision.gates.permission).toBe("PASS");
     });
 
-    it("should deny via per-org override when role not in allowedRoles", async () => {
-      prisma.orgPermission.findUnique.mockResolvedValue({
-        id: "perm-1",
-        action: "PO_APPROVAL",
-        allowedRoles: ["OWNER"], // Override: only OWNER can approve POs
-      });
-
-      const input = {
-        ...baseInput,
-        action: "PO_APPROVAL" as any,
-        actorOrgRole: "MEMBER", // MEMBER normally allowed for PO_APPROVAL, but override restricts
-      };
-      const decision = await service.evaluate(input);
-
-      expect(decision.allowed).toBe(false);
-      expect(decision.gates.permission).toBe("FAIL");
-    });
-
     it("should allow via active delegation when role is denied", async () => {
+      // MEMBER is normally denied for ESCROW_FUNDING
       prisma.orgDelegation.findFirst.mockResolvedValue({
         id: "del-1",
         actions: ["ESCROW_FUNDING"],
@@ -662,31 +351,6 @@ describe("PolicyEvaluationService", () => {
       const decision = await service.evaluate(input);
 
       expect(decision.gates.permission).toBe("PASS");
-    });
-
-    it("should deny when delegation is not found", async () => {
-      prisma.orgDelegation.findFirst.mockResolvedValue(null);
-
-      const input = { ...baseInput, actorOrgRole: "MEMBER" };
-      const decision = await service.evaluate(input);
-
-      expect(decision.allowed).toBe(false);
-      expect(decision.gates.permission).toBe("FAIL");
-    });
-
-    it("should include allowed roles in denial reason", async () => {
-      const input = {
-        ...baseInput,
-        action: "SETTLEMENT" as any,
-        actorOrgRole: "MEMBER",
-      };
-
-      const decision = await service.evaluate(input);
-
-      expect(decision.reason).toContain("MEMBER");
-      expect(decision.reason).toContain("SETTLEMENT");
-      expect(decision.reason).toContain("OWNER");
-      expect(decision.reason).toContain("FINANCE");
     });
   });
 
@@ -723,7 +387,7 @@ describe("PolicyEvaluationService", () => {
       expect(decision.matchedRule?.name).toBe("Auto-approve small escrow");
     });
 
-    it("should require manual approval when autoApprove=false", async () => {
+    it("should require manual approval when matching rule has autoApprove=false", async () => {
       prisma.policyRule.findMany.mockResolvedValue([
         {
           id: "rule-1",
@@ -784,61 +448,10 @@ describe("PolicyEvaluationService", () => {
         },
       ]);
 
+      // Amount is 100k which doesn't match minAmount of 1M
       const decision = await service.evaluate(baseInput);
 
       expect(decision.allowed).toBe(true);
-      expect(decision.gates.policy).toBe("NO_RULE");
-    });
-
-    it("should match rule when amount is at exact minAmount boundary", async () => {
-      prisma.policyRule.findMany.mockResolvedValue([
-        {
-          id: "rule-1",
-          name: "Min 100k",
-          conditions: { minAmount: 100_000_00 },
-          autoApprove: true,
-          priority: 10,
-        },
-      ]);
-
-      const decision = await service.evaluate(baseInput); // amountMinorUnits = 100_000_00
-
-      expect(decision.allowed).toBe(true);
-      expect(decision.gates.policy).toBe("PASS");
-    });
-
-    it("should match rule when amount is at exact maxAmount boundary", async () => {
-      prisma.policyRule.findMany.mockResolvedValue([
-        {
-          id: "rule-1",
-          name: "Up to 100k",
-          conditions: { maxAmount: 100_000_00 },
-          autoApprove: true,
-          priority: 10,
-        },
-      ]);
-
-      const decision = await service.evaluate(baseInput);
-
-      expect(decision.allowed).toBe(true);
-      expect(decision.gates.policy).toBe("PASS");
-    });
-
-    it("should default amountMinorUnits to 0 when not provided", async () => {
-      prisma.policyRule.findMany.mockResolvedValue([
-        {
-          id: "rule-1",
-          name: "Min 100",
-          conditions: { minAmount: 100 },
-          autoApprove: true,
-          priority: 10,
-        },
-      ]);
-
-      const input = { ...baseInput, amountMinorUnits: undefined };
-      const decision = await service.evaluate(input);
-
-      // 0 < 100, so rule shouldn't match
       expect(decision.gates.policy).toBe("NO_RULE");
     });
 
@@ -866,98 +479,6 @@ describe("PolicyEvaluationService", () => {
       expect(decision.approvalRequestId).toBe("existing-approval");
       expect(decision.reason).toContain("already pending");
     });
-
-    it("should create new approval request when none pending", async () => {
-      prisma.policyRule.findMany.mockResolvedValue([
-        {
-          id: "rule-1",
-          name: "Manual approval",
-          conditions: {},
-          autoApprove: false,
-          requiredApprovals: 1,
-          requiredRoles: ["APPROVER"],
-          priority: 10,
-        },
-      ]);
-
-      const decision = await service.evaluate(baseInput);
-
-      expect(approvals.createRequest).toHaveBeenCalledWith(
-        expect.objectContaining({
-          entityType: "PURCHASE_ORDER",
-          entityId: "po-1",
-          organisationId: "org-1",
-          policyRuleId: "rule-1",
-          requiredApprovals: 1,
-        }),
-      );
-      expect(decision.approvalRequestId).toBe("approval-req-1");
-    });
-
-    it("should include requiredRoles in approval reason", async () => {
-      prisma.policyRule.findMany.mockResolvedValue([
-        {
-          id: "rule-1",
-          name: "Two approvals needed",
-          conditions: {},
-          autoApprove: false,
-          requiredApprovals: 2,
-          requiredRoles: ["APPROVER", "FINANCE"],
-          priority: 10,
-        },
-      ]);
-
-      const decision = await service.evaluate(baseInput);
-
-      expect(decision.reason).toContain("2 approval(s)");
-      expect(decision.reason).toContain("APPROVER");
-      expect(decision.reason).toContain("FINANCE");
-    });
-
-    it("should fall through to next rule when first doesn't match amount", async () => {
-      prisma.policyRule.findMany.mockResolvedValue([
-        {
-          id: "rule-high",
-          name: "Large only (>500k)",
-          conditions: { minAmount: 500_000_00 },
-          autoApprove: false,
-          requiredApprovals: 2,
-          requiredRoles: ["APPROVER", "FINANCE"],
-          priority: 20,
-        },
-        {
-          id: "rule-low",
-          name: "Catch-all",
-          conditions: {},
-          autoApprove: true,
-          priority: 5,
-        },
-      ]);
-
-      const decision = await service.evaluate(baseInput); // 100k
-
-      expect(decision.matchedRule?.name).toBe("Catch-all");
-      expect(decision.autoApprove).toBe(true);
-    });
-
-    it("should allow when all rules have unmatched conditions", async () => {
-      prisma.policyRule.findMany.mockResolvedValue([
-        {
-          id: "rule-1",
-          name: "High amounts only",
-          conditions: { minAmount: 1_000_000_00 },
-          autoApprove: false,
-          requiredApprovals: 1,
-          requiredRoles: [],
-          priority: 10,
-        },
-      ]);
-
-      const decision = await service.evaluate(baseInput);
-
-      expect(decision.allowed).toBe(true);
-      expect(decision.gates.policy).toBe("NO_RULE");
-    });
   });
 
   // ── evaluateForActor convenience method ─────────────────
@@ -974,7 +495,7 @@ describe("PolicyEvaluationService", () => {
 
       expect(orgs.getOrgByUserId).toHaveBeenCalledWith("user-1");
       expect(prisma.orgMembership.findFirst).toHaveBeenCalled();
-      expect(decision.allowed).toBe(true);
+      expect(decision.allowed).toBe(true); // No rules = permissive
     });
 
     it("should allow when actor has no org and engine is disabled", async () => {
@@ -1004,33 +525,6 @@ describe("PolicyEvaluationService", () => {
 
       expect(decision.allowed).toBe(false);
       expect(decision.reason).toContain("no organisation");
-    });
-
-    it("should default to MEMBER role when no membership found", async () => {
-      prisma.orgMembership.findFirst.mockResolvedValue(null);
-
-      const decision = await service.evaluateForActor(
-        "user-1",
-        "ESCROW_FUNDING" as any,
-        "PURCHASE_ORDER",
-        "po-1",
-      );
-
-      // MEMBER is not allowed for ESCROW_FUNDING
-      expect(decision.allowed).toBe(false);
-      expect(decision.gates.permission).toBe("FAIL");
-    });
-
-    it("should pass optional metadata through", async () => {
-      const decision = await service.evaluateForActor(
-        "user-1",
-        "PO_APPROVAL" as any,
-        "PURCHASE_ORDER",
-        "po-1",
-        { amountMinorUnits: 50_000_00, currency: "SAR", metadata: { key: "val" } },
-      );
-
-      expect(decision.allowed).toBe(true);
     });
   });
 
@@ -1062,6 +556,7 @@ describe("PolicyEvaluationService", () => {
 
       await service.evaluate(baseInput);
 
+      // Denial fires in fire-and-forget mode, so logEvent is called
       expect(ledger.logEvent).toHaveBeenCalledWith(
         expect.objectContaining({
           eventType: "POLICY_EVALUATION",
@@ -1072,84 +567,13 @@ describe("PolicyEvaluationService", () => {
       );
     });
 
-    it("should log AUTO_APPROVED when rule matches with autoApprove", async () => {
-      prisma.policyRule.findMany.mockResolvedValue([
-        {
-          id: "rule-1",
-          name: "Auto-approve",
-          conditions: {},
-          autoApprove: true,
-          priority: 10,
-        },
-      ]);
-
-      await service.evaluate(baseInput);
-
-      expect(ledger.logEvent).toHaveBeenCalledWith(
-        expect.objectContaining({
-          eventType: "POLICY_EVALUATION",
-          payload: expect.objectContaining({
-            decision: "AUTO_APPROVED",
-            matchedRule: expect.objectContaining({ id: "rule-1", name: "Auto-approve" }),
-          }),
-        }),
-      );
-    });
-
-    it("should log APPROVAL_REQUIRED when manual approval needed", async () => {
-      prisma.policyRule.findMany.mockResolvedValue([
-        {
-          id: "rule-1",
-          name: "Manual",
-          conditions: {},
-          autoApprove: false,
-          requiredApprovals: 1,
-          requiredRoles: ["APPROVER"],
-          priority: 10,
-        },
-      ]);
-
-      await service.evaluate(baseInput);
-
-      expect(ledger.logEvent).toHaveBeenCalledWith(
-        expect.objectContaining({
-          eventType: "POLICY_EVALUATION",
-          payload: expect.objectContaining({
-            decision: "APPROVAL_REQUIRED",
-          }),
-        }),
-      );
-    });
-
     it("should not throw when ledger logging fails", async () => {
       ledger.logEvent.mockRejectedValue(new Error("DB down"));
 
       const decision = await service.evaluate(baseInput);
 
+      // Should still return a valid decision
       expect(decision.allowed).toBe(true);
-    });
-
-    it("should include actor info in log", async () => {
-      await service.evaluate(baseInput);
-
-      expect(ledger.logEvent).toHaveBeenCalledWith(
-        expect.objectContaining({
-          actorId: "user-1",
-          actorRole: "OWNER",
-        }),
-      );
-    });
-
-    it("should include amount in log payload", async () => {
-      await service.evaluate(baseInput);
-
-      expect(ledger.logEvent).toHaveBeenCalledWith(
-        expect.objectContaining({
-          payload: expect.objectContaining({
-            amountMinorUnits: 100_000_00,
-          }),
-        }),
-      );
     });
   });
 });

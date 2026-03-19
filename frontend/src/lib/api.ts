@@ -152,6 +152,14 @@ export interface PaymentLock {
   releasedAt: string | null;
 }
 
+export interface RiskFactorScore {
+  name: string;
+  score: number;
+  weight: number;
+  weighted: number;
+  reason: string;
+}
+
 export interface RiskSnapshot {
   riskScore: number;
   defaultProbability: number;
@@ -162,6 +170,7 @@ export interface RiskSnapshot {
   bankReference: string | null;
   expectedSettlement: string | null;
   evidencePackAvailable: boolean;
+  factors: RiskFactorScore[];
 }
 
 export interface EarlyPaymentRequest {

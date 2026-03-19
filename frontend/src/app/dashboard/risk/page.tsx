@@ -3,7 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
 import { riskApi, type FraudFlag, type ExposureReport } from "@/lib/api";
-import { formatCurrency, formatDateTime } from "@/lib/format";
+import { formatCurrency, formatDateTime, statusLabel } from "@/lib/format";
 import {
   Card,
   CardContent,
@@ -229,7 +229,7 @@ export default function RiskPage() {
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <Badge className={SEVERITY_COLORS[flag.severity] ?? ""}>
-                          {flag.severity}
+                          {statusLabel(flag.severity)}
                         </Badge>
                         <span className="font-mono text-sm">
                           {flag.ruleCode}

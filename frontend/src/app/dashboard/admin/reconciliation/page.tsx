@@ -7,7 +7,7 @@ import {
   ReconciliationReport,
   ReconciliationAlert,
 } from "@/lib/api";
-import { formatDateTime, formatCurrency } from "@/lib/format";
+import { formatDateTime, formatCurrency, statusLabel } from "@/lib/format";
 import {
   Card,
   CardContent,
@@ -279,10 +279,10 @@ export default function ReconciliationPage() {
                           …
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline">{alert.expected}</Badge>
+                          <Badge variant="outline">{statusLabel(alert.expected)}</Badge>
                         </TableCell>
                         <TableCell>
-                          <Badge variant="destructive">{alert.actual}</Badge>
+                          <Badge variant="destructive">{statusLabel(alert.actual)}</Badge>
                         </TableCell>
                         <TableCell className="font-mono text-xs">
                           {alert.externalRef.slice(0, 16)}

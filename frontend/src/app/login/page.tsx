@@ -15,49 +15,122 @@ import {
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
+import {
+  Building2,
+  Package,
+  Landmark,
+  Settings,
+} from "lucide-react";
 
 const DEMO_ACCOUNTS = [
-  // UK accounts
-  { email: "buyer@acme.co.uk", label: "🇬🇧 Buyer – Acme Retail", role: "BUYER" },
-  {
-    email: "buyer@greenfield.co.uk",
-    label: "🇬🇧 Buyer – Greenfield Mfg",
-    role: "BUYER",
-  },
-  {
-    email: "supplier@swiftlogistics.co.uk",
-    label: "🇬🇧 Supplier – Swift Logistics",
-    role: "SUPPLIER",
-  },
-  {
-    email: "supplier@brightworks.co.uk",
-    label: "🇬🇧 Supplier – Brightworks Eng",
-    role: "SUPPLIER",
-  },
-  {
-    email: "lp@capitalbridge.co.uk",
-    label: "🇬🇧 LP – Capital Bridge",
-    role: "LP",
-  },
-  // KSA accounts (Sharia-compliant)
+  // ── KSA Buyer Team – Al-Rajhi Trading Co ────────────────
   {
     email: "buyer@alrajhi.sa",
-    label: "🇸🇦 Buyer – Al-Rajhi Trading",
+    label: "Ahmed Al-Rashid (Owner)",
     role: "BUYER",
+    group: "buyer",
   },
+  {
+    email: "approver@alrajhi.sa",
+    label: "Khalid Al-Harbi (Approver)",
+    role: "BUYER",
+    group: "buyer",
+  },
+  {
+    email: "finance@alrajhi.sa",
+    label: "Layla Al-Qahtani (Finance)",
+    role: "BUYER",
+    group: "buyer",
+  },
+  {
+    email: "member@alrajhi.sa",
+    label: "Omar Al-Dosari (Member)",
+    role: "BUYER",
+    group: "buyer",
+  },
+  {
+    email: "viewer@alrajhi.sa",
+    label: "Sara Al-Ghamdi (Viewer)",
+    role: "BUYER",
+    group: "buyer",
+  },
+  // ── KSA Supplier Team – Noor Supply Chain ───────────────
   {
     email: "supplier@noorsupply.sa",
-    label: "🇸🇦 Supplier – Noor Supply Chain",
+    label: "Noor Al-Fahad (Owner)",
     role: "SUPPLIER",
+    group: "supplier",
   },
   {
-    email: "lp@tamweel.sa",
-    label: "🇸🇦 LP – Tamweel Capital",
-    role: "LP",
+    email: "approver@noorsupply.sa",
+    label: "Faisal Al-Otaibi (Approver)",
+    role: "SUPPLIER",
+    group: "supplier",
   },
-  // Admin
-  { email: "admin@platform.co.uk", label: "⚙️ Platform Admin", role: "ADMIN" },
+  {
+    email: "finance@noorsupply.sa",
+    label: "Hana Al-Mutairi (Finance)",
+    role: "SUPPLIER",
+    group: "supplier",
+  },
+  {
+    email: "member@noorsupply.sa",
+    label: "Yusuf Al-Shammari (Member)",
+    role: "SUPPLIER",
+    group: "supplier",
+  },
+  {
+    email: "viewer@noorsupply.sa",
+    label: "Mona Al-Zahrani (Viewer)",
+    role: "SUPPLIER",
+    group: "supplier",
+  },
+  // ── KSA LP Team – Tamweel Capital ───────────────────────
+  {
+    email: "lp@tamweel.sa",
+    label: "Tamweel Capital (Owner)",
+    role: "LP",
+    group: "lp",
+  },
+  {
+    email: "approver@tamweel.sa",
+    label: "Abdulaziz Al-Subaie (Approver)",
+    role: "LP",
+    group: "lp",
+  },
+  {
+    email: "finance@tamweel.sa",
+    label: "Reem Al-Anazi (Finance)",
+    role: "LP",
+    group: "lp",
+  },
+  {
+    email: "member@tamweel.sa",
+    label: "Tariq Al-Dossary (Member)",
+    role: "LP",
+    group: "lp",
+  },
+  {
+    email: "viewer@tamweel.sa",
+    label: "Nouf Al-Rajhi (Viewer)",
+    role: "LP",
+    group: "lp",
+  },
+  // ── Admin ───────────────────────────────────────────────
+  {
+    email: "admin@platform.co.uk",
+    label: "Platform Admin (Admin)",
+    role: "ADMIN",
+    group: "admin",
+  },
 ];
+
+const GROUP_CONFIG: Record<string, { label: string; Icon: React.FC<React.SVGProps<SVGSVGElement>> }> = {
+  buyer: { label: "Buyer Team – Al-Rajhi Trading Co", Icon: Building2 },
+  supplier: { label: "Supplier Team – Noor Supply Chain", Icon: Package },
+  lp: { label: "LP Team – Tamweel Capital", Icon: Landmark },
+  admin: { label: "Platform", Icon: Settings },
+};
 
 export default function LoginPage() {
   const router = useRouter();
@@ -149,28 +222,43 @@ export default function LoginPage() {
         {/* Demo Accounts */}
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Demo Accounts</CardTitle>
+            <CardTitle className="text-base">
+              KSA Demo Accounts
+            </CardTitle>
             <CardDescription>
-              Click to instantly sign in as any role
+              Click to sign in as any team member role – test PO approvals,
+              escrow, settlement & more
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-2">
-            <Separator className="mb-3" />
-            <div className="grid gap-2">
-              {DEMO_ACCOUNTS.map((acc) => (
-                <Button
-                  key={acc.email}
-                  variant="outline"
-                  size="sm"
-                  className="w-full justify-start text-left"
-                  disabled={loading}
-                  onClick={() => handleDemoLogin(acc.email)}
-                >
-                  <span className="mr-2 inline-block w-2 h-2 rounded-full bg-primary" />
-                  {acc.label}
-                </Button>
-              ))}
-            </div>
+          <CardContent className="space-y-4">
+            {(["buyer", "supplier", "lp", "admin"] as const).map((group) => {
+              const accounts = DEMO_ACCOUNTS.filter(
+                (a) => a.group === group,
+              );
+              if (accounts.length === 0) return null;
+              return (
+                <div key={group}>
+                  <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    {(() => { const cfg = GROUP_CONFIG[group]; return cfg ? <><cfg.Icon className="h-3.5 w-3.5" />{cfg.label}</> : null; })()}
+                  </p>
+                  <div className="grid gap-1.5">
+                    {accounts.map((acc) => (
+                      <Button
+                        key={acc.email}
+                        variant="outline"
+                        size="sm"
+                        className="w-full justify-start text-left"
+                        disabled={loading}
+                        onClick={() => handleDemoLogin(acc.email)}
+                      >
+                        {acc.label}
+                      </Button>
+                    ))}
+                  </div>
+                  {group !== "admin" && <Separator className="mt-3" />}
+                </div>
+              );
+            })}
           </CardContent>
         </Card>
       </div>
