@@ -3,6 +3,7 @@ import { AuthService } from "./auth.service";
 import { UsersService } from "../users/users.service";
 import { OrganisationsService } from "../organisations/organisations.service";
 import { InvitationsService } from "../invitations/invitations.service";
+import { PolicyTemplateService } from "../policies/policy-template.service";
 import { JwtService } from "@nestjs/jwt";
 import { ConflictException, UnauthorizedException } from "@nestjs/common";
 import * as bcrypt from "bcrypt";
@@ -15,6 +16,7 @@ describe("AuthService", () => {
   let orgsService: Record<string, jest.Mock>;
   let invitationsService: Record<string, jest.Mock>;
   let jwtService: Record<string, jest.Mock>;
+  let policyTemplateService: Record<string, jest.Mock>;
 
   const mockUser = {
     id: "user-1",
@@ -67,6 +69,12 @@ describe("AuthService", () => {
       sign: jest.fn().mockReturnValue("mock-jwt-token"),
     };
 
+    policyTemplateService = {
+      seedDefaultPolicies: jest
+        .fn()
+        .mockResolvedValue({ created: 0, skipped: 0, rules: [] }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
@@ -74,6 +82,7 @@ describe("AuthService", () => {
         { provide: OrganisationsService, useValue: orgsService },
         { provide: InvitationsService, useValue: invitationsService },
         { provide: JwtService, useValue: jwtService },
+        { provide: PolicyTemplateService, useValue: policyTemplateService },
       ],
     }).compile();
 

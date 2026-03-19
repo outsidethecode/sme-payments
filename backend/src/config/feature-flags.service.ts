@@ -13,6 +13,11 @@ export enum FeatureFlag {
   EARLY_PAYMENTS = "EARLY_PAYMENTS",
   MULTI_CURRENCY = "MULTI_CURRENCY",
   ESCROW_TRANSACTIONS = "ESCROW_TRANSACTIONS",
+  POLICY_ENGINE_V2 = "POLICY_ENGINE_V2",
+  SUPPLIER_APPROVALS = "SUPPLIER_APPROVALS",
+  LP_FUNDING_APPROVALS = "LP_FUNDING_APPROVALS",
+  DELEGATION = "DELEGATION",
+  ESCALATION = "ESCALATION",
 }
 
 /** Resolved flag status including its source */
@@ -33,6 +38,11 @@ const BUILTIN_DEFAULTS: Record<FeatureFlag, boolean> = {
   [FeatureFlag.EARLY_PAYMENTS]: true, // shipped — default ON
   [FeatureFlag.MULTI_CURRENCY]: true, // shipped — default ON
   [FeatureFlag.ESCROW_TRANSACTIONS]: true, // shipped — default ON
+  [FeatureFlag.POLICY_ENGINE_V2]: false, // new — default OFF until pilot
+  [FeatureFlag.SUPPLIER_APPROVALS]: false, // Phase 9 — OFF until pilot
+  [FeatureFlag.LP_FUNDING_APPROVALS]: false, // Phase 9 — OFF until pilot
+  [FeatureFlag.DELEGATION]: false, // Phase 9 — OFF until pilot
+  [FeatureFlag.ESCALATION]: false, // Phase 9 — OFF until pilot
 };
 
 /**

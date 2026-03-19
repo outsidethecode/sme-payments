@@ -48,6 +48,7 @@ import {
 } from "@/components/ui/table";
 import { toast } from "sonner";
 import Link from "next/link";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import {
   ArrowLeft,
   Send,
@@ -379,6 +380,20 @@ export default function PurchaseOrderDetailPage() {
         </div>
         <EvidencePackButton purchaseOrderId={id} />
       </div>
+
+      {/* Pending Approval Banner */}
+      {po.status === "PENDING_APPROVAL" && (
+        <Alert className="border-yellow-500/50 bg-yellow-50 dark:bg-yellow-950/20">
+          <Clock className="h-4 w-4 text-yellow-600" />
+          <AlertTitle className="text-yellow-800 dark:text-yellow-200">
+            Awaiting Approval
+          </AlertTitle>
+          <AlertDescription className="text-yellow-700 dark:text-yellow-300">
+            This purchase order requires approval before it can be sent to the supplier. Team members with the appropriate role can approve it on the{" "}
+            <Link href="/dashboard/approvals" className="inline underline font-medium">Approvals page</Link>.
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Actions */}
       <div className="flex flex-wrap gap-2">

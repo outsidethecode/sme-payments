@@ -257,7 +257,16 @@ async function main() {
   async function seedPolicy(
     orgId: string,
     data: {
-      ruleType: "PO_APPROVAL" | "PO_ORDER_LIMITS" | "FUNDING_LIMIT";
+      ruleType:
+        | "PO_APPROVAL"
+        | "PO_ORDER_LIMITS"
+        | "FUNDING_LIMIT"
+        | "ESCROW_FUNDING"
+        | "SUPPLIER_ACCEPTANCE"
+        | "SETTLEMENT"
+        | "EARLY_PAYMENT"
+        | "LP_FUNDING"
+        | "DELIVERY_VERIFICATION";
       name: string;
       conditions: Record<string, unknown>;
       requiredApprovals: number;
@@ -355,6 +364,46 @@ async function main() {
     priority: 1,
   });
 
+  // ── KSA Buyer Escrow Funding Rules ─────────────────────────
+  await seedPolicy(orgKsaBuyer.id, {
+    ruleType: "ESCROW_FUNDING",
+    name: "Auto-approve escrow ≤ 100,000 SAR",
+    conditions: { minAmount: 0, maxAmount: 100_000_00 },
+    requiredApprovals: 0,
+    requiredRoles: [],
+    autoApprove: true,
+    priority: 10,
+  });
+  await seedPolicy(orgKsaBuyer.id, {
+    ruleType: "ESCROW_FUNDING",
+    name: "Large escrow funding approval (SAR)",
+    conditions: { minAmount: 100_000_01, maxAmount: 999_999_999_99 },
+    requiredApprovals: 1,
+    requiredRoles: ["FINANCE"],
+    autoApprove: false,
+    priority: 5,
+  });
+
+  // ── KSA Buyer Settlement Rules ─────────────────────────────
+  await seedPolicy(orgKsaBuyer.id, {
+    ruleType: "SETTLEMENT",
+    name: "Auto-settle ≤ 200,000 SAR",
+    conditions: { minAmount: 0, maxAmount: 200_000_00 },
+    requiredApprovals: 0,
+    requiredRoles: [],
+    autoApprove: true,
+    priority: 10,
+  });
+  await seedPolicy(orgKsaBuyer.id, {
+    ruleType: "SETTLEMENT",
+    name: "Large settlement approval (SAR)",
+    conditions: { minAmount: 200_000_01, maxAmount: 999_999_999_99 },
+    requiredApprovals: 1,
+    requiredRoles: ["FINANCE", "OWNER"],
+    autoApprove: false,
+    priority: 5,
+  });
+
   // ── UK Buyer PO Order Limits ───────────────────────────────
   await seedPolicy(orgBuyer1.id, {
     ruleType: "PO_ORDER_LIMITS",
@@ -398,6 +447,221 @@ async function main() {
     requiredRoles: [],
     autoApprove: true,
     priority: 1,
+  });
+
+  // ── UK Buyer Escrow Funding Rules ──────────────────────────
+  await seedPolicy(orgBuyer1.id, {
+    ruleType: "ESCROW_FUNDING",
+    name: "Auto-approve escrow ≤ £25,000",
+    conditions: { minAmount: 0, maxAmount: 25_000_00 },
+    requiredApprovals: 0,
+    requiredRoles: [],
+    autoApprove: true,
+    priority: 10,
+  });
+  await seedPolicy(orgBuyer1.id, {
+    ruleType: "ESCROW_FUNDING",
+    name: "Large escrow funding approval",
+    conditions: { minAmount: 25_000_01, maxAmount: 999_999_999_99 },
+    requiredApprovals: 1,
+    requiredRoles: ["FINANCE"],
+    autoApprove: false,
+    priority: 5,
+  });
+
+  // ── UK Buyer Settlement Rules ──────────────────────────────
+  await seedPolicy(orgBuyer1.id, {
+    ruleType: "SETTLEMENT",
+    name: "Auto-settle ≤ £50,000",
+    conditions: { minAmount: 0, maxAmount: 50_000_00 },
+    requiredApprovals: 0,
+    requiredRoles: [],
+    autoApprove: true,
+    priority: 10,
+  });
+  await seedPolicy(orgBuyer1.id, {
+    ruleType: "SETTLEMENT",
+    name: "Large settlement approval",
+    conditions: { minAmount: 50_000_01, maxAmount: 999_999_999_99 },
+    requiredApprovals: 1,
+    requiredRoles: ["FINANCE", "OWNER"],
+    autoApprove: false,
+    priority: 5,
+  });
+
+  // ── UK Buyer Delivery Verification ─────────────────────────
+  await seedPolicy(orgBuyer1.id, {
+    ruleType: "DELIVERY_VERIFICATION",
+    name: "Auto-verify delivery ≤ £50,000",
+    conditions: { minAmount: 0, maxAmount: 50_000_00 },
+    requiredApprovals: 0,
+    requiredRoles: [],
+    autoApprove: true,
+    priority: 10,
+  });
+  await seedPolicy(orgBuyer1.id, {
+    ruleType: "DELIVERY_VERIFICATION",
+    name: "Large delivery verification",
+    conditions: { minAmount: 50_000_01, maxAmount: 999_999_999_99 },
+    requiredApprovals: 1,
+    requiredRoles: ["FINANCE"],
+    autoApprove: false,
+    priority: 5,
+  });
+
+  // ── UK Supplier Policy Rules ───────────────────────────────
+  await seedPolicy(orgSupplier1.id, {
+    ruleType: "SUPPLIER_ACCEPTANCE",
+    name: "Auto-accept POs ≤ £20,000",
+    conditions: { minAmount: 0, maxAmount: 20_000_00 },
+    requiredApprovals: 0,
+    requiredRoles: [],
+    autoApprove: true,
+    priority: 10,
+  });
+  await seedPolicy(orgSupplier1.id, {
+    ruleType: "SUPPLIER_ACCEPTANCE",
+    name: "Large PO acceptance approval",
+    conditions: { minAmount: 20_000_01, maxAmount: 999_999_999_99 },
+    requiredApprovals: 1,
+    requiredRoles: ["APPROVER", "OWNER"],
+    autoApprove: false,
+    priority: 5,
+  });
+  await seedPolicy(orgSupplier1.id, {
+    ruleType: "EARLY_PAYMENT",
+    name: "Auto-approve early pay ≤ £15,000",
+    conditions: { minAmount: 0, maxAmount: 15_000_00 },
+    requiredApprovals: 0,
+    requiredRoles: [],
+    autoApprove: true,
+    priority: 10,
+  });
+  await seedPolicy(orgSupplier1.id, {
+    ruleType: "EARLY_PAYMENT",
+    name: "Large early pay approval",
+    conditions: { minAmount: 15_000_01, maxAmount: 999_999_999_99 },
+    requiredApprovals: 1,
+    requiredRoles: ["FINANCE"],
+    autoApprove: false,
+    priority: 5,
+  });
+
+  // ── UK LP Funding Tiers ────────────────────────────────────
+  await seedPolicy(orgLP.id, {
+    ruleType: "LP_FUNDING",
+    name: "Auto-fund ≤ £25,000",
+    conditions: { minAmount: 0, maxAmount: 25_000_00 },
+    requiredApprovals: 0,
+    requiredRoles: [],
+    autoApprove: true,
+    priority: 10,
+  });
+  await seedPolicy(orgLP.id, {
+    ruleType: "LP_FUNDING",
+    name: "Large LP funding approval",
+    conditions: { minAmount: 25_000_01, maxAmount: 100_000_00 },
+    requiredApprovals: 1,
+    requiredRoles: ["APPROVER"],
+    autoApprove: false,
+    priority: 5,
+  });
+  await seedPolicy(orgLP.id, {
+    ruleType: "LP_FUNDING",
+    name: "Major LP commitment (2 approvers)",
+    conditions: { minAmount: 100_000_01, maxAmount: 999_999_999_99 },
+    requiredApprovals: 2,
+    requiredRoles: ["APPROVER", "FINANCE"],
+    autoApprove: false,
+    priority: 1,
+  });
+
+  // ══════════════════════════════════════════════════════════════
+  // TEAM MEMBERS — APPROVER + FINANCE for testing
+  // ══════════════════════════════════════════════════════════════
+
+  // Helper: add team member if not already in org
+  async function seedTeamMember(opts: {
+    email: string;
+    name: string;
+    role: UserRole;
+    orgId: string;
+    orgRole: OrgRole;
+  }) {
+    const user = await prisma.user.upsert({
+      where: { email: opts.email },
+      update: {},
+      create: {
+        email: opts.email,
+        password,
+        name: opts.name,
+        role: opts.role,
+        companyName: "Team Member",
+        balance: 0,
+      },
+    });
+    const existing = await prisma.orgMembership.findUnique({
+      where: { userId: user.id },
+    });
+    if (!existing) {
+      await prisma.orgMembership.create({
+        data: {
+          userId: user.id,
+          organisationId: opts.orgId,
+          orgRole: opts.orgRole,
+          isDefault: true,
+        },
+      });
+    }
+    return user;
+  }
+
+  // UK Buyer 1 team
+  const buyer1Approver = await seedTeamMember({
+    email: "approver@acme.co.uk",
+    name: "Emma Thornton",
+    role: UserRole.BUYER,
+    orgId: orgBuyer1.id,
+    orgRole: OrgRole.APPROVER,
+  });
+  const buyer1Finance = await seedTeamMember({
+    email: "finance@acme.co.uk",
+    name: "Robert Chen",
+    role: UserRole.BUYER,
+    orgId: orgBuyer1.id,
+    orgRole: OrgRole.FINANCE,
+  });
+
+  // UK Supplier 1 team
+  const supplier1Approver = await seedTeamMember({
+    email: "approver@swiftlogistics.co.uk",
+    name: "Linda Patel",
+    role: UserRole.SUPPLIER,
+    orgId: orgSupplier1.id,
+    orgRole: OrgRole.APPROVER,
+  });
+  const supplier1Finance = await seedTeamMember({
+    email: "finance@swiftlogistics.co.uk",
+    name: "Mark Williams",
+    role: UserRole.SUPPLIER,
+    orgId: orgSupplier1.id,
+    orgRole: OrgRole.FINANCE,
+  });
+
+  // UK LP team
+  const lpApprover = await seedTeamMember({
+    email: "approver@capitalbridge.co.uk",
+    name: "Victoria Adams",
+    role: UserRole.LIQUIDITY_PARTNER,
+    orgId: orgLP.id,
+    orgRole: OrgRole.APPROVER,
+  });
+  const lpFinance = await seedTeamMember({
+    email: "finance@capitalbridge.co.uk",
+    name: "Charles Wright",
+    role: UserRole.LIQUIDITY_PARTNER,
+    orgId: orgLP.id,
+    orgRole: OrgRole.FINANCE,
   });
 
   // ── Escrow Accounts ─────────────────────────────────────────
@@ -451,17 +715,35 @@ async function main() {
   console.log("");
   console.log(`✅ Admin:      ${admin.email}`);
   console.log("");
+  console.log("✅ Team members (APPROVER / FINANCE):");
+  console.log(
+    `   Buyer 1:    ${buyer1Approver.email} (APPROVER), ${buyer1Finance.email} (FINANCE)`,
+  );
+  console.log(
+    `   Supplier 1: ${supplier1Approver.email} (APPROVER), ${supplier1Finance.email} (FINANCE)`,
+  );
+  console.log(
+    `   LP:         ${lpApprover.email} (APPROVER), ${lpFinance.email} (FINANCE)`,
+  );
+  console.log("");
   console.log("✅ Escrow accounts:");
   console.log(`   GBP: ${escrowGBP.label} (${escrowGBP.id})`);
   console.log(`   SAR: ${escrowSAR.label} (${escrowSAR.id})`);
   console.log("");
   console.log("✅ Seeded policy rules:");
   console.log(
-    "   KSA Buyer:  3 PO approval tiers (auto ≤50k, 1 approver ≤200k, 2 approvers >200k SAR)",
+    "   KSA Buyer:  3 PO approval tiers + ESCROW_FUNDING (2 tiers), SETTLEMENT (2 tiers)",
   );
   console.log(
     "   UK Buyer 1: 3 PO approval tiers (auto ≤£10k, 1 approver ≤£50k, 2 approvers >£50k)",
   );
+  console.log(
+    "   UK Buyer 1: ESCROW_FUNDING (2 tiers), SETTLEMENT (2 tiers), DELIVERY_VERIFICATION (2 tiers)",
+  );
+  console.log(
+    "   UK Supplier 1: SUPPLIER_ACCEPTANCE (2 tiers), EARLY_PAYMENT (2 tiers)",
+  );
+  console.log("   UK LP:      LP_FUNDING (3 tiers), FUNDING_LIMIT");
   console.log(
     "   KSA LP:     Funding limits (5M SAR total, 40% buyer, 30% supplier, 90d tenor, 250bps)",
   );

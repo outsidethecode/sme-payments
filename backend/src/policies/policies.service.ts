@@ -2,8 +2,10 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  Logger,
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
+import { LedgerService } from "../ledger/ledger.service";
 import { PolicyRuleType } from "@prisma/client";
 
 /** Shape of policy rule conditions JSON */
@@ -51,12 +53,17 @@ export interface PolicyEvaluation {
 
 @Injectable()
 export class PoliciesService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(PoliciesService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly ledger: LedgerService,
+  ) {}
 
   // ── CRUD ──────────────────────────────────────────────────
 
   async create(input: CreatePolicyRuleInput) {
-    return this.prisma.policyRule.create({
+    const rule = await this.prisma.policyRule.create({
       data: {
         organisationId: input.organisationId,
         ruleType: input.ruleType,
@@ -69,6 +76,30 @@ export class PoliciesService {
         metadata: input.metadata as any,
       },
     });
+
+    // Audit trail
+    this.ledger
+      .logEvent({
+        entityType: "POLICY_RULE",
+        entityId: rule.id,
+        eventType: "POLICY_RULE_CREATED",
+        actorId: "SYSTEM",
+        actorRole: "ADMIN",
+        payload: {
+          organisationId: input.organisationId,
+          ruleType: input.ruleType,
+          name: input.name,
+          conditions: input.conditions,
+          requiredApprovals: rule.requiredApprovals,
+          autoApprove: rule.autoApprove,
+          priority: rule.priority,
+        },
+      })
+      .catch((err) =>
+        this.logger.warn(`Failed to log policy create audit: ${err.message}`),
+      );
+
+    return rule;
   }
 
   async findById(id: string) {
@@ -109,7 +140,7 @@ export class PoliciesService {
     const existing = await this.prisma.policyRule.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException("Policy rule not found");
 
-    return this.prisma.policyRule.update({
+    const updated = await this.prisma.policyRule.update({
       where: { id },
       data: {
         ...(data.name !== undefined && { name: data.name }),
@@ -130,6 +161,33 @@ export class PoliciesService {
         ...(data.metadata !== undefined && { metadata: data.metadata as any }),
       },
     });
+
+    // Audit trail — capture before/after
+    this.ledger
+      .logEvent({
+        entityType: "POLICY_RULE",
+        entityId: id,
+        eventType: "POLICY_RULE_UPDATED",
+        actorId: "SYSTEM",
+        actorRole: "ADMIN",
+        payload: {
+          organisationId: existing.organisationId,
+          before: {
+            name: existing.name,
+            conditions: existing.conditions,
+            requiredApprovals: existing.requiredApprovals,
+            autoApprove: existing.autoApprove,
+            active: existing.active,
+            priority: existing.priority,
+          },
+          after: data,
+        },
+      })
+      .catch((err) =>
+        this.logger.warn(`Failed to log policy update audit: ${err.message}`),
+      );
+
+    return updated;
   }
 
   async delete(id: string) {
@@ -137,10 +195,30 @@ export class PoliciesService {
     if (!existing) throw new NotFoundException("Policy rule not found");
 
     // Soft delete — mark inactive
-    return this.prisma.policyRule.update({
+    const deleted = await this.prisma.policyRule.update({
       where: { id },
       data: { active: false },
     });
+
+    // Audit trail
+    this.ledger
+      .logEvent({
+        entityType: "POLICY_RULE",
+        entityId: id,
+        eventType: "POLICY_RULE_DELETED",
+        actorId: "SYSTEM",
+        actorRole: "ADMIN",
+        payload: {
+          organisationId: existing.organisationId,
+          ruleType: existing.ruleType,
+          name: existing.name,
+        },
+      })
+      .catch((err) =>
+        this.logger.warn(`Failed to log policy delete audit: ${err.message}`),
+      );
+
+    return deleted;
   }
 
   // ── Policy Evaluation ─────────────────────────────────────

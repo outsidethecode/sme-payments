@@ -2,10 +2,12 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { NotFoundException } from "@nestjs/common";
 import { PoliciesService } from "./policies.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { LedgerService } from "../ledger/ledger.service";
 
 describe("PoliciesService", () => {
   let service: PoliciesService;
   let prisma: Record<string, any>;
+  let ledger: Record<string, any>;
 
   beforeEach(async () => {
     prisma = {
@@ -24,10 +26,15 @@ describe("PoliciesService", () => {
       },
     };
 
+    ledger = {
+      logEvent: jest.fn().mockResolvedValue({ id: "evt-1" }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PoliciesService,
         { provide: PrismaService, useValue: prisma },
+        { provide: LedgerService, useValue: ledger },
       ],
     }).compile();
 

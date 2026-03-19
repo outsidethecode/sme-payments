@@ -4,11 +4,16 @@ import {
   BadRequestException,
   ForbiddenException,
   NotFoundException,
+  OnModuleInit,
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { LedgerService, SignatureData } from "../ledger/ledger.service";
 import { UsersService } from "../users/users.service";
 import { PoliciesService } from "../policies/policies.service";
+import {
+  PolicyEvaluationService,
+  PolicyDecision,
+} from "../policies/policy-evaluation.service";
 import { ApprovalsService } from "../approvals/approvals.service";
 import { OrganisationsService } from "../organisations/organisations.service";
 import { SettlementService } from "../settlements/settlement.service";
@@ -20,6 +25,7 @@ import {
   FeatureFlagService,
   FeatureFlag,
 } from "../config/feature-flags.service";
+import { ApprovalCallbackRegistry } from "../approvals/approval-callback.registry";
 
 // Simple PO reference generator
 function generateReference(): string {
@@ -70,7 +76,7 @@ export interface CreatePOInput {
 }
 
 @Injectable()
-export class PurchaseOrdersService {
+export class PurchaseOrdersService implements OnModuleInit {
   private readonly logger = new Logger(PurchaseOrdersService.name);
 
   constructor(
@@ -78,6 +84,7 @@ export class PurchaseOrdersService {
     private readonly ledger: LedgerService,
     private readonly users: UsersService,
     private readonly policies: PoliciesService,
+    private readonly policyEngine: PolicyEvaluationService,
     private readonly approvals: ApprovalsService,
     private readonly orgs: OrganisationsService,
     private readonly settlement: SettlementService,
@@ -85,7 +92,25 @@ export class PurchaseOrdersService {
     private readonly instrumentService: InstrumentService,
     private readonly escrowAccounting: EscrowAccountingService,
     private readonly featureFlags: FeatureFlagService,
+    private readonly callbackRegistry: ApprovalCallbackRegistry,
   ) {}
+
+  onModuleInit() {
+    // Register approval callbacks so the generic ApprovalController can
+    // dispatch post-approval work without knowing about PO internals.
+    this.callbackRegistry.register(
+      "PURCHASE_ORDER",
+      async (entityId, approvedBy) => {
+        await this.onApprovalComplete(entityId, approvedBy);
+      },
+    );
+    this.callbackRegistry.registerRejection(
+      "PURCHASE_ORDER",
+      async (entityId, rejectedBy) => {
+        await this.onApprovalRejected(entityId, rejectedBy);
+      },
+    );
+  }
 
   async create(input: CreatePOInput) {
     // Validate supplier exists and is a supplier
@@ -460,10 +485,76 @@ export class PurchaseOrdersService {
     return this.formatPO(updated);
   }
 
+  /**
+   * Called by ApprovalCallbackRegistry when a PO approval is REJECTED.
+   * Moves the PO back to DRAFT so the buyer can revise or re-submit.
+   */
+  async onApprovalRejected(poId: string, rejectedBy: string) {
+    const po = await this.requireStatus(poId, "PENDING_APPROVAL");
+
+    const updated = await this.prisma.purchaseOrder.update({
+      where: { id: poId },
+      data: { status: "DRAFT" },
+      include: {
+        buyer: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            companyName: true,
+          },
+        },
+        supplier: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            companyName: true,
+          },
+        },
+        paymentLock: true,
+      },
+    });
+
+    await this.ledger.logEvent({
+      entityType: "PURCHASE_ORDER",
+      entityId: poId,
+      eventType: "PO_APPROVAL_REJECTED",
+      actorId: rejectedBy,
+      actorRole: "BUYER",
+      payload: { supplierId: po.supplierId, revertedTo: "DRAFT" },
+    });
+
+    return this.formatPO(updated);
+  }
+
   async accept(id: string, actorId: string, sig?: SignatureData) {
     const po = await this.requireStatus(id, "SENT");
     if (po.supplierId !== actorId)
       throw new ForbiddenException("Only the supplier can accept");
+
+    // ── Policy engine gate ──────────────────────────────────
+    const decision = await this.policyEngine.evaluateForActor(
+      actorId,
+      "SUPPLIER_ACCEPTANCE" as any,
+      "PURCHASE_ORDER",
+      id,
+      { amountMinorUnits: po.amount, currency: po.currency },
+    );
+    if (!decision.allowed) {
+      if (decision.requiresApproval) {
+        return {
+          pendingApproval: true,
+          approvalRequestId: decision.approvalRequestId,
+          reason: decision.reason,
+        };
+      }
+      throw new ForbiddenException(
+        decision.reason || "Action denied by policy engine",
+      );
+    }
 
     // Update PO status — commercial acceptance only (no funds move yet)
     const updated = await this.prisma.purchaseOrder.update({
@@ -563,6 +654,27 @@ export class PurchaseOrdersService {
     const po = await this.requireStatus(id, "ACCEPTED");
     if (po.buyerId !== actorId)
       throw new ForbiddenException("Only the buyer can fund escrow");
+
+    // ── Policy engine gate ──────────────────────────────────
+    const decision = await this.policyEngine.evaluateForActor(
+      actorId,
+      "ESCROW_FUNDING" as any,
+      "PURCHASE_ORDER",
+      id,
+      { amountMinorUnits: po.amount, currency: po.currency },
+    );
+    if (!decision.allowed) {
+      if (decision.requiresApproval) {
+        return {
+          pendingApproval: true,
+          approvalRequestId: decision.approvalRequestId,
+          reason: decision.reason,
+        };
+      }
+      throw new ForbiddenException(
+        decision.reason || "Action denied by policy engine",
+      );
+    }
 
     // Idempotency: if lock already exists, return current PO + escrow info
     const existingLock = await this.prisma.paymentLock.findUnique({
@@ -796,21 +908,26 @@ export class PurchaseOrdersService {
       where: { currency, active: true },
     });
 
-    // Credit escrow account shadow balance
+    // Credit escrow account shadow balance + journal atomically
     if (escrowAccount) {
-      await this.prisma.escrowAccount.update({
-        where: { id: escrowAccount.id },
-        data: { balanceMinor: { increment: po.amount } },
-      });
+      await this.prisma.$transaction(async (tx) => {
+        await tx.escrowAccount.update({
+          where: { id: escrowAccount.id },
+          data: { balanceMinor: { increment: po.amount } },
+        });
 
-      // Record deposit in escrow transaction journal
-      await this.escrowAccounting.recordDeposit({
-        escrowAccountId: escrowAccount.id,
-        amountMinor: po.amount,
-        currency,
-        purchaseOrderId: po.id,
-        counterpartyId: po.buyerId,
-        reference: `DEPOSIT ${po.referenceNumber}`,
+        // Record deposit in escrow transaction journal
+        await this.escrowAccounting.recordDeposit(
+          {
+            escrowAccountId: escrowAccount.id,
+            amountMinor: po.amount,
+            currency,
+            purchaseOrderId: po.id,
+            counterpartyId: po.buyerId,
+            reference: `DEPOSIT ${po.referenceNumber}`,
+          },
+          tx,
+        );
       });
     }
 
@@ -1345,6 +1462,27 @@ export class PurchaseOrdersService {
     if (po.buyerId !== actorId)
       throw new ForbiddenException("Only the buyer can verify delivery");
 
+    // ── Policy engine gate ──────────────────────────────────
+    const decision = await this.policyEngine.evaluateForActor(
+      actorId,
+      "DELIVERY_VERIFICATION" as any,
+      "PURCHASE_ORDER",
+      id,
+      { amountMinorUnits: po.amount, currency: po.currency },
+    );
+    if (!decision.allowed) {
+      if (decision.requiresApproval) {
+        return {
+          pendingApproval: true,
+          approvalRequestId: decision.approvalRequestId,
+          reason: decision.reason,
+        };
+      }
+      throw new ForbiddenException(
+        decision.reason || "Action denied by policy engine",
+      );
+    }
+
     const updated = await this.prisma.purchaseOrder.update({
       where: { id },
       data: { status: "VERIFIED", verifiedAt: new Date() },
@@ -1436,6 +1574,27 @@ export class PurchaseOrdersService {
       throw new ForbiddenException(
         "Only the buyer can acknowledge the obligation",
       );
+
+    // ── Policy engine gate ──────────────────────────────────
+    const decision = await this.policyEngine.evaluateForActor(
+      actorId,
+      "SETTLEMENT" as any,
+      "PURCHASE_ORDER",
+      id,
+      { amountMinorUnits: po.amount, currency: po.currency },
+    );
+    if (!decision.allowed) {
+      if (decision.requiresApproval) {
+        return {
+          pendingApproval: true,
+          approvalRequestId: decision.approvalRequestId,
+          reason: decision.reason,
+        };
+      }
+      throw new ForbiddenException(
+        decision.reason || "Action denied by policy engine",
+      );
+    }
 
     // ── Load instrument + early pay ──────────────────────────
     const instrument = await this.prisma.paymentInstrument.findUnique({

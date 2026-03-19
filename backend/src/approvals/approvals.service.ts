@@ -92,7 +92,7 @@ export class ApprovalsService {
    */
   async findPendingByOrg(organisationId: string) {
     return this.prisma.approvalRequest.findMany({
-      where: { organisationId, status: "PENDING" },
+      where: { organisationId, status: { in: ["PENDING", "ESCALATED"] } },
       include: {
         policyRule: { select: { id: true, name: true, requiredRoles: true } },
         approvals: {
@@ -133,7 +133,8 @@ export class ApprovalsService {
 
     if (!request) throw new NotFoundException("Approval request not found");
 
-    if (request.status !== "PENDING") {
+    // Allow voting on PENDING and ESCALATED requests
+    if (request.status !== "PENDING" && request.status !== "ESCALATED") {
       throw new BadRequestException(
         `Approval request is already ${request.status}`,
       );

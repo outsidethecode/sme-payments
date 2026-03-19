@@ -8,6 +8,7 @@ import {
 import { PrismaService } from "../prisma/prisma.service";
 import { LedgerService, SignatureData } from "../ledger/ledger.service";
 import { PoliciesService } from "../policies/policies.service";
+import { PolicyEvaluationService } from "../policies/policy-evaluation.service";
 import { OrganisationsService } from "../organisations/organisations.service";
 import { SettlementService } from "../settlements/settlement.service";
 import { InstrumentService } from "../settlements/instrument.service";
@@ -29,6 +30,7 @@ export class EarlyPaymentsService {
     private prisma: PrismaService,
     private ledger: LedgerService,
     private policies: PoliciesService,
+    private policyEngine: PolicyEvaluationService,
     private orgs: OrganisationsService,
     private settlement: SettlementService,
     private instrumentService: InstrumentService,
@@ -78,6 +80,27 @@ export class EarlyPaymentsService {
     if (!po.paymentLock || po.paymentLock.status !== "LOCKED") {
       throw new BadRequestException(
         "PO must have a locked payment to request early payment",
+      );
+    }
+
+    // ── Policy engine gate ──────────────────────────────────
+    const epDecision = await this.policyEngine.evaluateForActor(
+      supplierId,
+      "EARLY_PAYMENT" as any,
+      "EARLY_PAYMENT",
+      purchaseOrderId,
+      { amountMinorUnits: po.amount, currency: po.currency },
+    );
+    if (!epDecision.allowed) {
+      if (epDecision.requiresApproval) {
+        return {
+          pendingApproval: true,
+          approvalRequestId: epDecision.approvalRequestId,
+          reason: epDecision.reason,
+        } as any;
+      }
+      throw new ForbiddenException(
+        epDecision.reason || "Action denied by policy engine",
       );
     }
 
@@ -419,6 +442,30 @@ export class EarlyPaymentsService {
     if (lp.balance < request.netAdvance) {
       throw new BadRequestException(
         `Insufficient balance. Required: ${request.netAdvance}, Available: ${lp.balance}`,
+      );
+    }
+
+    // ── Policy engine v2 gate ────────────────────────────────
+    const lpFundDecision = await this.policyEngine.evaluateForActor(
+      lpId,
+      "LP_FUNDING" as any,
+      "EARLY_PAYMENT",
+      id,
+      {
+        amountMinorUnits: request.netAdvance,
+        currency: request.purchaseOrder.currency,
+      },
+    );
+    if (!lpFundDecision.allowed) {
+      if (lpFundDecision.requiresApproval) {
+        return {
+          pendingApproval: true,
+          approvalRequestId: lpFundDecision.approvalRequestId,
+          reason: lpFundDecision.reason,
+        } as any;
+      }
+      throw new ForbiddenException(
+        lpFundDecision.reason || "Action denied by policy engine",
       );
     }
 

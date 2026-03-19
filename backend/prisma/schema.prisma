@@ -46,6 +46,8 @@ model User {
   disputesResolved       Dispute[]              @relation("DisputeResolver")
   fraudFlags             FraudFlag[]
   lpExposureSnapshots    LpExposureSnapshot[]   @relation("LPExposure")
+  delegationsGiven       OrgDelegation[]         @relation("DelegationsGiven")
+  delegationsReceived    OrgDelegation[]         @relation("DelegationsReceived")
 
   @@map("users")
 }
@@ -63,6 +65,7 @@ enum OrgRole {
   APPROVER
   FINANCE
   MEMBER
+  VIEWER
 }
 
 enum Jurisdiction {
@@ -142,6 +145,8 @@ model Organisation {
   approvalRequests ApprovalRequest[]
   sentInvitations  Invitation[]  @relation("InviterOrg")
   featureFlagOverrides FeatureFlagOverride[]
+  permissions      OrgPermission[]
+  delegations      OrgDelegation[]
 
   @@map("organisations")
 }
@@ -190,6 +195,13 @@ enum PolicyRuleType {
   PO_APPROVAL
   PO_ORDER_LIMITS
   FUNDING_LIMIT
+  ESCROW_FUNDING
+  SUPPLIER_ACCEPTANCE
+  SETTLEMENT
+  EARLY_PAYMENT
+  LP_FUNDING
+  DISPUTE_RESOLUTION
+  DELIVERY_VERIFICATION
 }
 
 enum ApprovalStatus {
@@ -892,4 +904,42 @@ model FeatureFlagOverride {
   @@unique([flag, organisationId])
   @@index([flag])
   @@map("feature_flag_overrides")
+}
+
+// ── Org Permissions (per-org action→role overrides) ─────────
+
+model OrgPermission {
+  id             String   @id @default(uuid())
+  organisationId String   @map("organisation_id")
+  action         String   // e.g. "PO_APPROVAL", "ESCROW_FUNDING"
+  allowedRoles   String[] @map("allowed_roles") // OrgRole values
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organisation Organisation @relation(fields: [organisationId], references: [id])
+
+  @@unique([organisationId, action])
+  @@map("org_permissions")
+}
+
+// ── Org Delegations (proxy voting / authority transfer) ─────
+
+model OrgDelegation {
+  id              String   @id @default(uuid())
+  organisationId  String   @map("organisation_id")
+  delegatorUserId String   @map("delegator_user_id")
+  delegateUserId  String   @map("delegate_user_id")
+  actions         String[] // Actions delegated, e.g. ["VOTE_APPROVAL", "ESCROW_FUNDING"]
+  validFrom       DateTime @default(now()) @map("valid_from")
+  validTo         DateTime @map("valid_to")
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  organisation Organisation @relation(fields: [organisationId], references: [id])
+  delegator    User         @relation("DelegationsGiven", fields: [delegatorUserId], references: [id])
+  delegate     User         @relation("DelegationsReceived", fields: [delegateUserId], references: [id])
+
+  @@index([organisationId])
+  @@index([delegateUserId])
+  @@map("org_delegations")
 }

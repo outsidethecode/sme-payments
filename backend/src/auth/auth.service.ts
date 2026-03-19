@@ -9,6 +9,7 @@ import * as bcrypt from "bcrypt";
 import { UsersService } from "../users/users.service";
 import { OrganisationsService } from "../organisations/organisations.service";
 import { InvitationsService } from "../invitations/invitations.service";
+import { PolicyTemplateService } from "../policies/policy-template.service";
 import {
   OrgType,
   Jurisdiction,
@@ -24,6 +25,7 @@ export class AuthService {
     private readonly orgsService: OrganisationsService,
     private readonly invitationsService: InvitationsService,
     private readonly jwtService: JwtService,
+    private readonly policyTemplateService: PolicyTemplateService,
   ) {}
 
   async register(data: {
@@ -63,6 +65,13 @@ export class AuthService {
       },
       user.id,
     );
+
+    // Auto-seed default policy templates for the new org
+    this.policyTemplateService
+      .seedDefaultPolicies(organisation.id, orgType, jurisdiction)
+      .catch((err) =>
+        console.warn(`Failed to seed default policies: ${err.message}`),
+      );
 
     const token = this.generateToken(
       user.id,
@@ -210,6 +219,13 @@ export class AuthService {
       },
       user.id,
     );
+
+    // Auto-seed default policy templates for the new org
+    this.policyTemplateService
+      .seedDefaultPolicies(organisation.id, orgType, jurisdiction)
+      .catch((err) =>
+        console.warn(`Failed to seed default policies: ${err.message}`),
+      );
 
     // Mark invitation as accepted
     await this.invitationsService.accept(data.invitationToken);

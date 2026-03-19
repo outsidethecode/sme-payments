@@ -420,7 +420,7 @@ describe("Approvals & Policies (e2e)", () => {
       approvalRequestId = appRes.body[0].id;
     });
 
-    it("should reject and keep PO in PENDING_APPROVAL", async () => {
+    it("should reject and revert PO back to DRAFT", async () => {
       const res = await request(app.getHttpServer())
         .post(`/api/approvals/${approvalRequestId}/decide`)
         .set("Authorization", `Bearer ${approverToken}`)
@@ -430,13 +430,13 @@ describe("Approvals & Policies (e2e)", () => {
       expect(res.body.approvalRequest.status).toBe("REJECTED");
       expect(res.body.finalStatus).toBe("REJECTED");
 
-      // PO stays in PENDING_APPROVAL (not auto-transitioned)
+      // PO reverts to DRAFT after rejection callback
       const poRes = await request(app.getHttpServer())
         .get(`/api/purchase-orders/${poId}`)
         .set("Authorization", `Bearer ${buyerToken}`)
         .expect(200);
 
-      expect(poRes.body.status).toBe("PENDING_APPROVAL");
+      expect(poRes.body.status).toBe("DRAFT");
     });
   });
 

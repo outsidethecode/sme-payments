@@ -14,6 +14,7 @@ import { IsString, IsOptional, IsEnum } from "class-validator";
 import { ApprovalDecision } from "@prisma/client";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { ApprovalsService } from "./approvals.service";
+import { ApprovalCallbackRegistry } from "./approval-callback.registry";
 import { PurchaseOrdersService } from "../purchase-orders/purchase-orders.service";
 
 class SubmitDecisionDto {
@@ -36,6 +37,7 @@ class SubmitDecisionDto {
 export class ApprovalsController {
   constructor(
     private readonly approvalsService: ApprovalsService,
+    private readonly callbackRegistry: ApprovalCallbackRegistry,
     @Inject(forwardRef(() => PurchaseOrdersService))
     private readonly poService: PurchaseOrdersService,
   ) {}
@@ -79,15 +81,30 @@ export class ApprovalsController {
       signature: dto.signature,
     });
 
-    // Post-approval callback: auto-transition PO from PENDING_APPROVAL → SENT
-    if (
-      result.finalStatus === "APPROVED" &&
-      result.approvalRequest.entityType === "PURCHASE_ORDER"
-    ) {
-      await this.poService.onApprovalComplete(
-        result.approvalRequest.entityId,
-        req.user.id,
-      );
+    // Post-approval callback: delegate to registry (backward-compat: PO fallback)
+    if (result.finalStatus === "APPROVED") {
+      const entityType = result.approvalRequest.entityType;
+      const entityId = result.approvalRequest.entityId;
+
+      // Try the registry first
+      const registeredTypes = this.callbackRegistry.getRegisteredTypes();
+      if (registeredTypes.includes(entityType)) {
+        await this.callbackRegistry.onApproved(
+          entityType,
+          entityId,
+          req.user.id,
+        );
+      } else if (entityType === "PURCHASE_ORDER") {
+        // Backward-compat: direct PO callback
+        await this.poService.onApprovalComplete(entityId, req.user.id);
+      }
+    }
+
+    // Post-rejection callback
+    if (result.finalStatus === "REJECTED") {
+      const entityType = result.approvalRequest.entityType;
+      const entityId = result.approvalRequest.entityId;
+      await this.callbackRegistry.onRejected(entityType, entityId, req.user.id);
     }
 
     return result;

@@ -47,7 +47,7 @@ export interface User {
   role: "BUYER" | "SUPPLIER" | "LIQUIDITY_PARTNER" | "ADMIN";
   companyName: string;
   organisationId?: string;
-  orgRole?: "OWNER" | "APPROVER" | "FINANCE" | "MEMBER";
+  orgRole?: "OWNER" | "APPROVER" | "FINANCE" | "MEMBER" | "VIEWER";
   jurisdiction?: "UK" | "KSA";
   currency?: "GBP" | "SAR";
 }
@@ -666,7 +666,17 @@ export interface ApprovalRequest {
 export interface PolicyRule {
   id: string;
   organisationId: string;
-  ruleType: "PO_APPROVAL" | "FUNDING_LIMIT";
+  ruleType:
+    | "PO_APPROVAL"
+    | "PO_ORDER_LIMITS"
+    | "FUNDING_LIMIT"
+    | "ESCROW_FUNDING"
+    | "SUPPLIER_ACCEPTANCE"
+    | "SETTLEMENT"
+    | "EARLY_PAYMENT"
+    | "LP_FUNDING"
+    | "DISPUTE_RESOLUTION"
+    | "DELIVERY_VERIFICATION";
   name: string;
   conditions: Record<string, unknown>;
   requiredApprovals: number;
@@ -720,6 +730,73 @@ export const policiesApi = {
     ),
   exposure: (orgId: string) =>
     api.get<LPExposure>(`/policies/exposure/${orgId}`),
+  templates: (orgType: string, jurisdiction: string) =>
+    api.get<{
+      orgType: string;
+      jurisdiction: string;
+      count: number;
+      templates: {
+        ruleType: string;
+        name: string;
+        conditions: Record<string, unknown>;
+        requiredApprovals: number;
+        requiredRoles: string[];
+        autoApprove: boolean;
+        priority: number;
+      }[];
+    }>(`/policies/templates/${orgType}/${jurisdiction}`),
+  readiness: (orgId: string) =>
+    api.get<{
+      organisationId: string;
+      organisationName: string;
+      orgType: string;
+      jurisdiction: string;
+      readyPercentage: number;
+      checks: {
+        key: string;
+        label: string;
+        complete: boolean;
+      }[];
+    }>(`/policies/readiness/${orgId}`),
+  seedDefaults: (orgId: string) =>
+    api.post<{ created: number; skipped: number; rules: string[] }>(
+      `/policies/org/${orgId}/seed-defaults`,
+    ),
+  resetDefaults: (orgId: string) =>
+    api.post<{ created: number; skipped: number; rules: string[] }>(
+      `/policies/org/${orgId}/reset-defaults`,
+    ),
+  seedMyDefaults: () =>
+    api.post<{ created: number; skipped: number; rules: string[] }>(
+      "/policies/seed-my-defaults",
+    ),
+  resetMyDefaults: () =>
+    api.post<{ created: number; skipped: number; rules: string[] }>(
+      "/policies/reset-my-defaults",
+    ),
+  simulate: (amount: number, ruleType: string) =>
+    api.post<{
+      matched: boolean;
+      rule: {
+        id: string;
+        name: string;
+        ruleType: string;
+        requiredApprovals: number;
+        requiredRoles: string[];
+        autoApprove: boolean;
+      } | null;
+      message?: string;
+    }>("/policies/simulate", { amount, ruleType }),
+  createMyRule: (data: {
+    organisationId: string;
+    ruleType: string;
+    name: string;
+    conditions: Record<string, unknown>;
+    requiredApprovals?: number;
+    requiredRoles?: string[];
+    autoApprove?: boolean;
+    priority?: number;
+  }) => api.post<PolicyRule>("/policies/create-my-rule", data),
 };
 
 // ── Onboarding ────────────────────────────────────────────────
@@ -1040,4 +1117,78 @@ export const riskApi = {
     }),
   checkFunding: (lpId: string, amount: number) =>
     api.post("/risk/lp/check-funding", { lpId, amount }),
+};
+
+// ── Organisations & Team ──────────────────────────────────────
+
+export interface OrgMemberRaw {
+  id: string;
+  userId: string;
+  orgRole: string;
+  user: { id: string; email: string; name: string; role: string };
+}
+
+export interface OrgMember {
+  id: string;
+  userId: string;
+  name: string;
+  email: string;
+  orgRole: string;
+}
+
+export interface OrgPermission {
+  id: string;
+  organisationId: string;
+  action: string;
+  allowedRoles: string[];
+}
+
+export interface OrgDelegation {
+  id: string;
+  organisationId: string;
+  delegatorUserId: string;
+  delegateUserId: string;
+  actions: string[];
+  validFrom: string;
+  validTo: string;
+  active: boolean;
+  delegator?: { id: string; name: string; email: string };
+  delegate?: { id: string; name: string; email: string };
+  organisation?: { id: string; name: string };
+}
+
+export const organisationsApi = {
+  me: () => api.get("/organisations/me"),
+  members: (orgId: string) =>
+    api.get<OrgMemberRaw[]>(`/organisations/${orgId}/members`),
+  updateMemberRole: (orgId: string, userId: string, orgRole: string) =>
+    api.patch(`/organisations/${orgId}/members/${userId}`, { orgRole }),
+  removeMember: (orgId: string, userId: string) =>
+    api.delete(`/organisations/${orgId}/members/${userId}`),
+  inviteTeamMember: (
+    orgId: string,
+    data: { email: string; name: string; password: string; orgRole: string },
+  ) => api.post(`/organisations/${orgId}/invite-member`, data),
+
+  // Permissions
+  getPermissions: (orgId: string) =>
+    api.get<OrgPermission[]>(`/organisations/${orgId}/permissions`),
+  setPermission: (orgId: string, action: string, allowedRoles: string[]) =>
+    api.put<OrgPermission>(`/organisations/${orgId}/permissions/${action}`, {
+      allowedRoles,
+    }),
+  deletePermission: (orgId: string, action: string) =>
+    api.delete(`/organisations/${orgId}/permissions/${action}`),
+
+  // Delegations
+  createDelegation: (
+    orgId: string,
+    data: { delegateUserId: string; actions: string[]; validTo: string },
+  ) => api.post<OrgDelegation>(`/organisations/${orgId}/delegations`, data),
+  getDelegations: (orgId: string) =>
+    api.get<OrgDelegation[]>(`/organisations/${orgId}/delegations`),
+  revokeDelegation: (orgId: string, delegationId: string) =>
+    api.delete(`/organisations/${orgId}/delegations/${delegationId}`),
+  myDelegations: () =>
+    api.get<OrgDelegation[]>("/organisations/delegations/mine"),
 };

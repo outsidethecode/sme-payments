@@ -25,6 +25,7 @@ import {
   ChevronDown,
   ShieldCheck,
   UserPlus,
+  Users,
   ClipboardCheck,
   ArrowRightLeft,
   Scale,
@@ -60,6 +61,12 @@ const NAV_ITEMS = [
     label: "Approvals",
     icon: ShieldCheck,
     roles: ["BUYER", "ADMIN"],
+  },
+  {
+    href: "/dashboard/team",
+    label: "Team",
+    icon: Users,
+    roles: ["BUYER", "SUPPLIER", "LIQUIDITY_PARTNER", "ADMIN"],
   },
   {
     href: "/dashboard/invitations",
@@ -126,6 +133,12 @@ const NAV_ITEMS = [
     label: "Feature Flags",
     icon: ToggleLeft,
     roles: ["ADMIN"],
+  },
+  {
+    href: "/dashboard/policies",
+    label: "Policies",
+    icon: ShieldCheck,
+    roles: ["BUYER", "SUPPLIER", "LIQUIDITY_PARTNER", "ADMIN"],
   },
   {
     href: "/dashboard/admin",

@@ -240,8 +240,18 @@ export default function ApprovalsPage() {
                     </div>
                   )}
 
-                  {req.status === "PENDING" && (
-                    <div className="flex gap-2">
+                  {(req.status === "PENDING" || req.status === "ESCALATED") && (
+                    <div className="flex items-center gap-2">
+                      {req.status === "ESCALATED" && (
+                        <Badge variant="destructive" className="mr-2">
+                          ⚡ Escalated
+                        </Badge>
+                      )}
+                      {req.expiresAt && (
+                        <span className="text-xs text-muted-foreground mr-2">
+                          Expires {new Date(req.expiresAt).toLocaleDateString()}
+                        </span>
+                      )}
                       <Button
                         size="sm"
                         className="bg-green-600 hover:bg-green-700"

@@ -14,7 +14,7 @@ import { SettlementsModule } from "../settlements/settlements.module";
   imports: [
     LedgerModule,
     UsersModule,
-    PoliciesModule,
+    forwardRef(() => PoliciesModule),
     forwardRef(() => ApprovalsModule),
     OrganisationsModule,
     SettlementsModule,
