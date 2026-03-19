@@ -123,7 +123,7 @@ export class PolicyEvaluationService {
     if (!org) {
       // No org means engine can't run; if engine is off, allow anyway
       const enabled = await this.featureFlags.isEnabled(
-        FeatureFlag.POLICY_ENGINE_V2,
+        FeatureFlag.POLICY_ENGINE,
       );
       if (!enabled) {
         return {
@@ -174,20 +174,20 @@ export class PolicyEvaluationService {
    * Evaluate the policy pipeline for a state-machine transition.
    *
    * Gate order:
-   *   1. Feature flag check (POLICY_ENGINE_V2 must be enabled)
+   *   1. Feature flag check (POLICY_ENGINE must be enabled)
    *   2. Org status (must be ACTIVE)
    *   3. KYB / onboarding (must be COMPLETED for financial actions)
    *   4. Permission check (OrgRole × Action matrix)
    *   5. Policy rule match (conditions, priority-ordered)
    *   6. Approval decision (auto/manual/skip)
    *
-   * If POLICY_ENGINE_V2 is disabled for the org → returns allowed immediately
+   * If POLICY_ENGINE is disabled for the org → returns allowed immediately
    * (backward compatibility).
    */
   async evaluate(input: PolicyEvaluationInput): Promise<PolicyDecision> {
     // ── Gate 0: Feature flag ────────────────────────────────
     const engineEnabled = await this.featureFlags.isEnabled(
-      FeatureFlag.POLICY_ENGINE_V2,
+      FeatureFlag.POLICY_ENGINE,
       input.organisationId,
     );
 

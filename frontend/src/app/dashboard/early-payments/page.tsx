@@ -143,7 +143,8 @@ function SupplierView() {
   });
 
   // Compute a representative amount for policy simulation
-  const maxAmount = pos?.reduce((max, po) => Math.max(max, po.totalAmountPennies ?? 0), 0) ?? 0;
+  const maxAmount =
+    pos?.reduce((max, po) => Math.max(max, po.totalAmountPennies ?? 0), 0) ?? 0;
 
   const { data: epPolicy } = useQuery({
     queryKey: ["policy-simulate", "EARLY_PAYMENT", maxAmount],
@@ -155,9 +156,7 @@ function SupplierView() {
   // Role guard: check if user's orgRole is allowed by policy
   const policyRoles = epPolicy?.rule?.requiredRoles ?? [];
   const allowedRoles =
-    policyRoles.length > 0
-      ? policyRoles
-      : ["OWNER", "FINANCE"]; // default — matches backend EARLY_PAYMENT allowed roles
+    policyRoles.length > 0 ? policyRoles : ["OWNER", "FINANCE"]; // default — matches backend EARLY_PAYMENT allowed roles
   const userOrgRole = (user as any)?.orgRole;
   const canRequest = allowedRoles.includes(userOrgRole);
 
@@ -212,8 +211,8 @@ function SupplierView() {
             <div className="mt-2 flex items-start gap-2 rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3 text-sm text-amber-800 dark:text-amber-200">
               <Info className="h-4 w-4 mt-0.5 flex-shrink-0" />
               <span>
-                Your role (<strong>{userOrgRole}</strong>) cannot request early payments.
-                Required: {allowedRoles.join(", ")}.
+                Your role (<strong>{userOrgRole}</strong>) cannot request early
+                payments. Required: {allowedRoles.join(", ")}.
               </span>
             </div>
           )}
@@ -290,7 +289,9 @@ function SupplierView() {
                             {signing ? "Signing…" : "Request"}
                           </Button>
                         ) : (
-                          <span className="text-xs text-muted-foreground">No permission</span>
+                          <span className="text-xs text-muted-foreground">
+                            No permission
+                          </span>
                         )}
                       </TableCell>
                     </TableRow>
@@ -410,7 +411,10 @@ function RiskBadge({ risk }: { risk: RiskSnapshot }) {
         </TooltipProvider>
         <button
           type="button"
-          onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            setOpen(true);
+          }}
           className="text-muted-foreground hover:text-foreground transition-colors"
           aria-label="View risk score breakdown"
         >

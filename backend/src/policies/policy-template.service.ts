@@ -545,7 +545,7 @@ export class PolicyTemplateService {
     const flags = await this.prisma.featureFlagOverride.findMany({
       where: { organisationId },
     });
-    const policyV2Flag = flags.find((f) => f.flag === "POLICY_ENGINE_V2");
+    const policyFlag = flags.find((f) => f.flag === "POLICY_ENGINE");
 
     const checks = [
       {
@@ -583,7 +583,7 @@ export class PolicyTemplateService {
       {
         key: "feature_flags",
         label: "Feature flags enabled",
-        complete: policyV2Flag?.enabled === true,
+        complete: policyFlag?.enabled === true,
       },
       {
         key: "terms_accepted",

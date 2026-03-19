@@ -15,12 +15,7 @@ import {
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import {
-  Building2,
-  Package,
-  Landmark,
-  Settings,
-} from "lucide-react";
+import { Building2, Package, Landmark, Settings } from "lucide-react";
 
 const DEMO_ACCOUNTS = [
   // ── KSA Buyer Team – Al-Rajhi Trading Co ────────────────
@@ -125,7 +120,10 @@ const DEMO_ACCOUNTS = [
   },
 ];
 
-const GROUP_CONFIG: Record<string, { label: string; Icon: React.FC<React.SVGProps<SVGSVGElement>> }> = {
+const GROUP_CONFIG: Record<
+  string,
+  { label: string; Icon: React.FC<React.SVGProps<SVGSVGElement>> }
+> = {
   buyer: { label: "Buyer Team – Al-Rajhi Trading Co", Icon: Building2 },
   supplier: { label: "Supplier Team – Noor Supply Chain", Icon: Package },
   lp: { label: "LP Team – Tamweel Capital", Icon: Landmark },
@@ -222,9 +220,7 @@ export default function LoginPage() {
         {/* Demo Accounts */}
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">
-              KSA Demo Accounts
-            </CardTitle>
+            <CardTitle className="text-base">KSA Demo Accounts</CardTitle>
             <CardDescription>
               Click to sign in as any team member role – test PO approvals,
               escrow, settlement & more
@@ -232,14 +228,20 @@ export default function LoginPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             {(["buyer", "supplier", "lp", "admin"] as const).map((group) => {
-              const accounts = DEMO_ACCOUNTS.filter(
-                (a) => a.group === group,
-              );
+              const accounts = DEMO_ACCOUNTS.filter((a) => a.group === group);
               if (accounts.length === 0) return null;
               return (
                 <div key={group}>
                   <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                    {(() => { const cfg = GROUP_CONFIG[group]; return cfg ? <><cfg.Icon className="h-3.5 w-3.5" />{cfg.label}</> : null; })()}
+                    {(() => {
+                      const cfg = GROUP_CONFIG[group];
+                      return cfg ? (
+                        <>
+                          <cfg.Icon className="h-3.5 w-3.5" />
+                          {cfg.label}
+                        </>
+                      ) : null;
+                    })()}
                   </p>
                   <div className="grid gap-1.5">
                     {accounts.map((acc) => (

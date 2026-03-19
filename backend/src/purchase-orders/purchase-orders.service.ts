@@ -342,7 +342,9 @@ export class PurchaseOrdersService implements OnModuleInit {
   async send(id: string, actorId: string, sig?: SignatureData) {
     const po = await this.requireStatus(id, "DRAFT");
     if (!(await this.isSameOrg(actorId, po.buyerId)))
-      throw new ForbiddenException("Only the buyer organisation can send this PO");
+      throw new ForbiddenException(
+        "Only the buyer organisation can send this PO",
+      );
 
     // ── Policy evaluation ────────────────────────────────────
     const buyerOrg = await this.orgs.getOrgByUserId(actorId);
@@ -689,7 +691,9 @@ export class PurchaseOrdersService implements OnModuleInit {
 
     const po = await this.requireStatus(id, "ACCEPTED");
     if (!(await this.isSameOrg(actorId, po.buyerId)))
-      throw new ForbiddenException("Only the buyer organisation can fund escrow");
+      throw new ForbiddenException(
+        "Only the buyer organisation can fund escrow",
+      );
 
     // ── Policy engine gate ──────────────────────────────────
     const decision = await this.policyEngine.evaluateForActor(
@@ -1123,7 +1127,10 @@ export class PurchaseOrdersService implements OnModuleInit {
       const lastRevision = po.revisions.sort(
         (a, b) => b.revision - a.revision,
       )[0];
-      if (lastRevision && (await this.isSameOrg(actorId, lastRevision.proposedBy))) {
+      if (
+        lastRevision &&
+        (await this.isSameOrg(actorId, lastRevision.proposedBy))
+      ) {
         throw new BadRequestException(
           "Your organisation already proposed the latest revision. Wait for the other party to respond.",
         );
@@ -1432,7 +1439,9 @@ export class PurchaseOrdersService implements OnModuleInit {
       );
     }
     if (!(await this.isSameOrg(actorId, po.supplierId)))
-      throw new ForbiddenException("Only the supplier organisation can mark shipment");
+      throw new ForbiddenException(
+        "Only the supplier organisation can mark shipment",
+      );
 
     // Defensive guard: ensure payment is actually secured before shipment
     if (
@@ -1495,7 +1504,9 @@ export class PurchaseOrdersService implements OnModuleInit {
       );
     }
     if (!(await this.isSameOrg(actorId, po.supplierId)))
-      throw new ForbiddenException("Only the supplier organisation can mark delivery");
+      throw new ForbiddenException(
+        "Only the supplier organisation can mark delivery",
+      );
 
     const updated = await this.prisma.purchaseOrder.update({
       where: { id },
@@ -1540,7 +1551,9 @@ export class PurchaseOrdersService implements OnModuleInit {
   async verifyDelivery(id: string, actorId: string, sig?: SignatureData) {
     const po = await this.requireStatus(id, "DELIVERED");
     if (!(await this.isSameOrg(actorId, po.buyerId)))
-      throw new ForbiddenException("Only the buyer organisation can verify delivery");
+      throw new ForbiddenException(
+        "Only the buyer organisation can verify delivery",
+      );
 
     // ── Policy engine gate ──────────────────────────────────
     const decision = await this.policyEngine.evaluateForActor(

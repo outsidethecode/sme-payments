@@ -130,7 +130,9 @@ describe("PolicyTemplateService", () => {
       const poApproval = templates.filter((t) => t.ruleType === "PO_APPROVAL");
       expect(poApproval.length).toBe(3);
       // First tier should be auto-approve
-      expect(poApproval.find((t) => t.autoApprove && t.priority === 10)).toBeDefined();
+      expect(
+        poApproval.find((t) => t.autoApprove && t.priority === 10),
+      ).toBeDefined();
       // Second tier: 1 approver
       expect(poApproval.find((t) => t.requiredApprovals === 1)).toBeDefined();
       // Third tier: 2 approvers
@@ -229,11 +231,7 @@ describe("PolicyTemplateService", () => {
         ...args.data,
       }));
 
-      const result = await service.seedDefaultPolicies(
-        "org-1",
-        "BUYER",
-        "KSA",
-      );
+      const result = await service.seedDefaultPolicies("org-1", "BUYER", "KSA");
       expect(result.created).toBe(8);
       expect(result.skipped).toBe(0);
     });
@@ -355,11 +353,7 @@ describe("PolicyTemplateService", () => {
     });
 
     it("should return 0 for unknown jurisdiction", async () => {
-      const result = await service.seedDefaultPolicies(
-        "org-1",
-        "BUYER",
-        "EU",
-      );
+      const result = await service.seedDefaultPolicies("org-1", "BUYER", "EU");
       expect(result.created).toBe(0);
       expect(result.skipped).toBe(0);
     });
@@ -372,7 +366,11 @@ describe("PolicyTemplateService", () => {
       }));
       ledger.logEvent.mockRejectedValue(new Error("Ledger down"));
 
-      const result = await service.seedDefaultPolicies("org-1", "SUPPLIER", "UK");
+      const result = await service.seedDefaultPolicies(
+        "org-1",
+        "SUPPLIER",
+        "UK",
+      );
       expect(result.created).toBe(4);
     });
 
@@ -528,7 +526,7 @@ describe("PolicyTemplateService", () => {
         { id: "r1", active: true },
       ]);
       prisma.featureFlagOverride.findMany.mockResolvedValue([
-        { flag: "POLICY_ENGINE_V2", enabled: true },
+        { flag: "POLICY_ENGINE", enabled: true },
       ]);
 
       const result = await service.getPilotReadiness("org-1");
@@ -576,7 +574,9 @@ describe("PolicyTemplateService", () => {
           },
         ],
       });
-      prisma.policyRule.findMany.mockResolvedValue([{ id: "r1", active: true }]);
+      prisma.policyRule.findMany.mockResolvedValue([
+        { id: "r1", active: true },
+      ]);
       prisma.featureFlagOverride.findMany.mockResolvedValue([]);
 
       const result = await service.getPilotReadiness("org-1");
@@ -602,13 +602,13 @@ describe("PolicyTemplateService", () => {
           },
         ],
       });
-      prisma.policyRule.findMany.mockResolvedValue([{ id: "r1", active: true }]);
+      prisma.policyRule.findMany.mockResolvedValue([
+        { id: "r1", active: true },
+      ]);
       prisma.featureFlagOverride.findMany.mockResolvedValue([]);
 
       const result = await service.getPilotReadiness("org-1");
-      const financeCheck = result!.checks.find(
-        (c) => c.key === "has_finance",
-      );
+      const financeCheck = result!.checks.find((c) => c.key === "has_finance");
       expect(financeCheck!.complete).toBe(true);
     });
 
@@ -675,7 +675,7 @@ describe("PolicyTemplateService", () => {
       expect(result!.jurisdiction).toBe("KSA");
     });
 
-    it("should check feature flag POLICY_ENGINE_V2", async () => {
+    it("should check feature flag POLICY_ENGINE", async () => {
       prisma.organisation.findUnique.mockResolvedValue({
         id: "org-1",
         name: "Test",
@@ -688,13 +688,11 @@ describe("PolicyTemplateService", () => {
       });
       prisma.policyRule.findMany.mockResolvedValue([]);
       prisma.featureFlagOverride.findMany.mockResolvedValue([
-        { flag: "POLICY_ENGINE_V2", enabled: true },
+        { flag: "POLICY_ENGINE", enabled: true },
       ]);
 
       const result = await service.getPilotReadiness("org-1");
-      const flagCheck = result!.checks.find(
-        (c) => c.key === "feature_flags",
-      );
+      const flagCheck = result!.checks.find((c) => c.key === "feature_flags");
       expect(flagCheck!.complete).toBe(true);
     });
 
@@ -711,13 +709,11 @@ describe("PolicyTemplateService", () => {
       });
       prisma.policyRule.findMany.mockResolvedValue([]);
       prisma.featureFlagOverride.findMany.mockResolvedValue([
-        { flag: "POLICY_ENGINE_V2", enabled: false },
+        { flag: "POLICY_ENGINE", enabled: false },
       ]);
 
       const result = await service.getPilotReadiness("org-1");
-      const flagCheck = result!.checks.find(
-        (c) => c.key === "feature_flags",
-      );
+      const flagCheck = result!.checks.find((c) => c.key === "feature_flags");
       expect(flagCheck!.complete).toBe(false);
     });
 
@@ -736,9 +732,7 @@ describe("PolicyTemplateService", () => {
       prisma.featureFlagOverride.findMany.mockResolvedValue([]);
 
       const result = await service.getPilotReadiness("org-1");
-      const policyCheck = result!.checks.find(
-        (c) => c.key === "policy_rules",
-      );
+      const policyCheck = result!.checks.find((c) => c.key === "policy_rules");
       expect(policyCheck!.complete).toBe(false);
     });
   });

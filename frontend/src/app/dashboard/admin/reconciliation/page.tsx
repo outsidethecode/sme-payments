@@ -279,10 +279,14 @@ export default function ReconciliationPage() {
                           …
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline">{statusLabel(alert.expected)}</Badge>
+                          <Badge variant="outline">
+                            {statusLabel(alert.expected)}
+                          </Badge>
                         </TableCell>
                         <TableCell>
-                          <Badge variant="destructive">{statusLabel(alert.actual)}</Badge>
+                          <Badge variant="destructive">
+                            {statusLabel(alert.actual)}
+                          </Badge>
                         </TableCell>
                         <TableCell className="font-mono text-xs">
                           {alert.externalRef.slice(0, 16)}

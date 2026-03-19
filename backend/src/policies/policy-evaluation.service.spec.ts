@@ -99,7 +99,7 @@ describe("PolicyEvaluationService", () => {
   // ── Gate 0: Feature Flag ────────────────────────────────
 
   describe("Gate 0: Feature Flag", () => {
-    it("should allow all actions when POLICY_ENGINE_V2 is disabled", async () => {
+    it("should allow all actions when POLICY_ENGINE is disabled", async () => {
       featureFlags.isEnabled.mockResolvedValue(false);
 
       const decision = await service.evaluate(baseInput);
@@ -116,7 +116,7 @@ describe("PolicyEvaluationService", () => {
       await service.evaluate(baseInput);
 
       expect(featureFlags.isEnabled).toHaveBeenCalledWith(
-        FeatureFlag.POLICY_ENGINE_V2,
+        FeatureFlag.POLICY_ENGINE,
         "org-1",
       );
     });
@@ -1027,7 +1027,11 @@ describe("PolicyEvaluationService", () => {
         "PO_APPROVAL" as any,
         "PURCHASE_ORDER",
         "po-1",
-        { amountMinorUnits: 50_000_00, currency: "SAR", metadata: { key: "val" } },
+        {
+          amountMinorUnits: 50_000_00,
+          currency: "SAR",
+          metadata: { key: "val" },
+        },
       );
 
       expect(decision.allowed).toBe(true);
@@ -1090,7 +1094,10 @@ describe("PolicyEvaluationService", () => {
           eventType: "POLICY_EVALUATION",
           payload: expect.objectContaining({
             decision: "AUTO_APPROVED",
-            matchedRule: expect.objectContaining({ id: "rule-1", name: "Auto-approve" }),
+            matchedRule: expect.objectContaining({
+              id: "rule-1",
+              name: "Auto-approve",
+            }),
           }),
         }),
       );

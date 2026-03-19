@@ -693,7 +693,7 @@ New feature flags:
 
 | Flag | Default | Purpose |
 |---|---|---|
-| `POLICY_ENGINE_V2` | `false` | Enables the new `PolicyEvaluationService` pipeline |
+| `POLICY_ENGINE` | `false` | Enables the `PolicyEvaluationService` pipeline |
 | `SUPPLIER_APPROVALS` | `false` | Enables supplier-side approval workflows |
 | `LP_FUNDING_APPROVALS` | `false` | Enables LP-side approval workflows |
 | `DELEGATION` | `false` | Enables proxy voting / delegation |
@@ -747,7 +747,7 @@ Update `seed.ts` to:
 
 - Template seeding on new org registration → correct default rules created
 - Policy simulator returns correct predictions
-- Feature flag `POLICY_ENGINE_V2` disabled → old behavior preserved (backward compat)
+- Feature flag `POLICY_ENGINE` disabled → old behavior preserved (backward compat)
 - Feature flag enabled for one org → only that org gets new policy checks
 - Pilot readiness check for a fully configured org → all green
 - Pilot readiness check for incomplete org → shows missing items
@@ -768,7 +768,7 @@ Update `seed.ts` to:
 
 | Risk | Mitigation |
 |---|---|
-| Backward compatibility — existing tests assume no policy gates on new transitions | Feature flag `POLICY_ENGINE_V2` defaults to `false`; all new gates check the flag first |
+| Backward compatibility — existing tests assume no policy gates on new transitions | Feature flag `POLICY_ENGINE` defaults to `false`; all new gates check the flag first |
 | Performance — PolicyEvaluationService adds DB queries to every transition | Cache policy rules per org with short TTL (30s); org status cached in JWT payload |
 | Complexity — too many approval states can confuse users | Approval overlay (no new PO states); clear UI showing "pending approval" badges |
 | Delegation abuse — user delegates authority permanently | Enforce `validTo` as mandatory; max duration 30 days; OWNER-only delegation creation |

@@ -125,12 +125,18 @@ export default function DisputesPage() {
       ) : (
         <div className="space-y-4">
           {disputes.map((d: Dispute) => (
-            <Card key={d.id} className="transition-colors hover:border-foreground/20">
+            <Card
+              key={d.id}
+              className="transition-colors hover:border-foreground/20"
+            >
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
                   <div>
                     <CardTitle className="text-base">
-                      <Link href={`/dashboard/disputes/${d.id}`} className="hover:underline">
+                      <Link
+                        href={`/dashboard/disputes/${d.id}`}
+                        className="hover:underline"
+                      >
                         {d.purchaseOrder?.referenceNumber ?? d.purchaseOrderId}
                       </Link>
                     </CardTitle>

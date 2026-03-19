@@ -382,8 +382,9 @@ export default function LedgerPage() {
                           )}
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          {statusLabel(event.entityType)} · {formatDateTime(event.createdAt)}{" "}
-                          · {statusLabel(event.actorRole)}
+                          {statusLabel(event.entityType)} ·{" "}
+                          {formatDateTime(event.createdAt)} ·{" "}
+                          {statusLabel(event.actorRole)}
                         </p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">

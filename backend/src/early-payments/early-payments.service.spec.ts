@@ -40,8 +40,20 @@ function makePO(overrides: Record<string, unknown> = {}) {
     currency: "SAR",
     referenceNumber: "PO-TEST-001",
     paymentLock: { id: "lock-1", status: "LOCKED", amount: 100_000 },
-    buyer: { id: BUYER_ID, email: "b@test.com", name: "Buyer", role: "BUYER", companyName: "Buyer Co" },
-    supplier: { id: SUPPLIER_ID, email: "s@test.com", name: "Supplier", role: "SUPPLIER", companyName: "Supplier Co" },
+    buyer: {
+      id: BUYER_ID,
+      email: "b@test.com",
+      name: "Buyer",
+      role: "BUYER",
+      companyName: "Buyer Co",
+    },
+    supplier: {
+      id: SUPPLIER_ID,
+      email: "s@test.com",
+      name: "Supplier",
+      role: "SUPPLIER",
+      companyName: "Supplier Co",
+    },
     ...overrides,
   };
 }
@@ -101,7 +113,13 @@ const mockPrisma = {
   platformFee: { create: jest.fn() },
   $transaction: jest.fn((fn: (tx: any) => any) =>
     fn({
-      earlyPaymentRequest: { update: jest.fn().mockResolvedValue(makeEPRequest({ status: "FUNDED", liquidityPartnerId: LP_ID })) },
+      earlyPaymentRequest: {
+        update: jest
+          .fn()
+          .mockResolvedValue(
+            makeEPRequest({ status: "FUNDED", liquidityPartnerId: LP_ID }),
+          ),
+      },
       platformFee: { create: jest.fn() },
     }),
   ),
@@ -163,7 +181,9 @@ describe("EarlyPaymentsService", () => {
     mockPolicies.evaluateLPFunding.mockResolvedValue({ allowed: true });
     mockLedger.logEvent.mockResolvedValue({ id: "evt-1", eventType: "test" });
     mockLedger.buildReceipt.mockReturnValue({ hash: "abc" });
-    mockSettlement.transferAdvance.mockResolvedValue({ externalRef: "ext-123" });
+    mockSettlement.transferAdvance.mockResolvedValue({
+      externalRef: "ext-123",
+    });
     mockSettlement.getAdapterName.mockReturnValue("mock-adapter");
     mockOrgs.getOrgByUserId.mockImplementation((userId: string) => {
       if (userId === SUPPLIER_ID) return ORG_SUPPLIER;
@@ -174,9 +194,11 @@ describe("EarlyPaymentsService", () => {
     mockPrisma.$transaction.mockImplementation((fn: (tx: any) => any) =>
       fn({
         earlyPaymentRequest: {
-          update: jest.fn().mockResolvedValue(
-            makeEPRequest({ status: "FUNDED", liquidityPartnerId: LP_ID }),
-          ),
+          update: jest
+            .fn()
+            .mockResolvedValue(
+              makeEPRequest({ status: "FUNDED", liquidityPartnerId: LP_ID }),
+            ),
         },
         platformFee: { create: jest.fn() },
       }),
@@ -244,21 +266,26 @@ describe("EarlyPaymentsService", () => {
     // ── Status eligibility ────────────────────────────────
 
     describe("status eligibility", () => {
-      it.each(["DRAFT", "SENT", "ACCEPTED", "NEGOTIATION", "REJECTED", "SETTLED", "DISPUTED"])(
-        "should reject PO in %s status",
-        async (status) => {
-          mockPrisma.purchaseOrder.findUnique.mockResolvedValue(
-            makePO({ status }),
-          );
+      it.each([
+        "DRAFT",
+        "SENT",
+        "ACCEPTED",
+        "NEGOTIATION",
+        "REJECTED",
+        "SETTLED",
+        "DISPUTED",
+      ])("should reject PO in %s status", async (status) => {
+        mockPrisma.purchaseOrder.findUnique.mockResolvedValue(
+          makePO({ status }),
+        );
 
-          await expect(
-            service.requestEarlyPayment(PO_ID, SUPPLIER_ID),
-          ).rejects.toThrow(BadRequestException);
-          await expect(
-            service.requestEarlyPayment(PO_ID, SUPPLIER_ID),
-          ).rejects.toThrow("FULFILLMENT, SHIPPED, or DELIVERED");
-        },
-      );
+        await expect(
+          service.requestEarlyPayment(PO_ID, SUPPLIER_ID),
+        ).rejects.toThrow(BadRequestException);
+        await expect(
+          service.requestEarlyPayment(PO_ID, SUPPLIER_ID),
+        ).rejects.toThrow("FULFILLMENT, SHIPPED, or DELIVERED");
+      });
 
       it.each(["FULFILLMENT", "SHIPPED", "DELIVERED"])(
         "should accept PO in %s status",
@@ -298,7 +325,9 @@ describe("EarlyPaymentsService", () => {
 
     it("should reject when paymentLock is not in LOCKED status", async () => {
       mockPrisma.purchaseOrder.findUnique.mockResolvedValue(
-        makePO({ paymentLock: { id: "lock-1", status: "RELEASED", amount: 100_000 } }),
+        makePO({
+          paymentLock: { id: "lock-1", status: "RELEASED", amount: 100_000 },
+        }),
       );
 
       await expect(
@@ -319,7 +348,9 @@ describe("EarlyPaymentsService", () => {
 
     it("should return pending approval when policy requires it", async () => {
       mockPrisma.purchaseOrder.findUnique.mockResolvedValue(makePO());
-      mockPolicyEngine.evaluateForActor.mockResolvedValue(policyPendingApproval);
+      mockPolicyEngine.evaluateForActor.mockResolvedValue(
+        policyPendingApproval,
+      );
 
       const result = await service.requestEarlyPayment(PO_ID, SUPPLIER_ID);
       expect(result.pendingApproval).toBe(true);
@@ -395,11 +426,13 @@ describe("EarlyPaymentsService", () => {
       });
       mockPrisma.earlyPaymentRequest.findUnique.mockResolvedValue(null);
       mockPrisma.earlyPaymentRequest.create.mockImplementation(({ data }) => {
-        return Promise.resolve(makeEPRequest({
-          faceValue: data.faceValue,
-          serviceFee: data.serviceFee,
-          netAdvance: data.netAdvance,
-        }));
+        return Promise.resolve(
+          makeEPRequest({
+            faceValue: data.faceValue,
+            serviceFee: data.serviceFee,
+            netAdvance: data.netAdvance,
+          }),
+        );
       });
 
       await service.requestEarlyPayment(PO_ID, SUPPLIER_ID);
@@ -515,8 +548,8 @@ describe("EarlyPaymentsService", () => {
         liquidityPartnerId: LP_ID,
       });
       mockPrisma.earlyPaymentRequest.findUnique
-        .mockResolvedValueOnce(funded)   // first call: initial fetch
-        .mockResolvedValueOnce(funded);  // second call: full fetch
+        .mockResolvedValueOnce(funded) // first call: initial fetch
+        .mockResolvedValueOnce(funded); // second call: full fetch
 
       const result = await service.fund(EP_ID, LP_ID);
       expect(result).toBeDefined();
@@ -627,7 +660,9 @@ describe("EarlyPaymentsService", () => {
       mockPrisma.earlyPaymentRequest.findUnique.mockResolvedValue(
         makeEPRequest(),
       );
-      mockPolicyEngine.evaluateForActor.mockResolvedValue(policyPendingApproval);
+      mockPolicyEngine.evaluateForActor.mockResolvedValue(
+        policyPendingApproval,
+      );
 
       const result = await service.fund(EP_ID, LP_ID);
       expect(result.pendingApproval).toBe(true);

@@ -12,7 +12,7 @@ import {
  * 1. Approval escalation — overdue PENDING → ESCALATED (widens required roles to include OWNER)
  * 2. Approval expiry — past-due PENDING/ESCALATED → EXPIRED
  *
- * Both are gated behind POLICY_ENGINE_V2 feature flag.
+ * Both are gated behind POLICY_ENGINE feature flag.
  */
 @Injectable()
 export class EscalationService {
@@ -29,7 +29,7 @@ export class EscalationService {
   @Cron(CronExpression.EVERY_10_MINUTES)
   async processEscalations() {
     const enabled = await this.featureFlags.isEnabled(
-      FeatureFlag.POLICY_ENGINE_V2,
+      FeatureFlag.POLICY_ENGINE,
     );
     if (!enabled) return;
 
@@ -94,7 +94,7 @@ export class EscalationService {
   @Cron(CronExpression.EVERY_HOUR)
   async processExpiries() {
     const enabled = await this.featureFlags.isEnabled(
-      FeatureFlag.POLICY_ENGINE_V2,
+      FeatureFlag.POLICY_ENGINE,
     );
     if (!enabled) return;
 

@@ -4,11 +4,7 @@ import { useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
-import {
-  disputesApi,
-  evidenceApi,
-  type EvidenceAttachment,
-} from "@/lib/api";
+import { disputesApi, evidenceApi, type EvidenceAttachment } from "@/lib/api";
 import { formatCurrency, formatDateTime, statusLabel } from "@/lib/format";
 import {
   Card,
@@ -86,8 +82,7 @@ function evidenceTypeLabel(type: string) {
 }
 
 function fileIcon(mimeType: string) {
-  if (mimeType.startsWith("image/"))
-    return <ImageIcon className="h-4 w-4" />;
+  if (mimeType.startsWith("image/")) return <ImageIcon className="h-4 w-4" />;
   if (mimeType === "application/pdf") return <FileText className="h-4 w-4" />;
   return <Package className="h-4 w-4" />;
 }
@@ -149,7 +144,8 @@ export default function DisputeDetailPage() {
       submitEvidenceMutation.mutate([evidenceId]);
     },
     onError: (err: unknown) => {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      const msg = (err as { response?: { data?: { message?: string } } })
+        ?.response?.data?.message;
       toast.error(msg || "Upload failed");
     },
   });
@@ -167,7 +163,8 @@ export default function DisputeDetailPage() {
       if (fileInputRef.current) fileInputRef.current.value = "";
     },
     onError: (err: unknown) => {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      const msg = (err as { response?: { data?: { message?: string } } })
+        ?.response?.data?.message;
       toast.error(msg || "Failed to submit evidence");
     },
   });
@@ -188,7 +185,11 @@ export default function DisputeDetailPage() {
       resolutionNotes?: string;
     }) =>
       disputesApi.resolve(id, {
-        outcome: data.outcome as "FULL_REFUND" | "PARTIAL_REFUND" | "RELEASE_TO_SUPPLIER" | "REWORK",
+        outcome: data.outcome as
+          | "FULL_REFUND"
+          | "PARTIAL_REFUND"
+          | "RELEASE_TO_SUPPLIER"
+          | "REWORK",
         refundAmount: data.refundAmount,
         resolutionNotes: data.resolutionNotes,
       }),
@@ -231,12 +232,13 @@ export default function DisputeDetailPage() {
   const isBuyer = user?.role === "BUYER";
   const isSupplier = user?.role === "SUPPLIER";
   const canSubmitEvidence =
-    (isBuyer || isSupplier) &&
-    dispute?.status !== "RESOLVED";
+    (isBuyer || isSupplier) && dispute?.status !== "RESOLVED";
 
   const buyerEvidenceIds = new Set(dispute?.buyerEvidence ?? []);
   const supplierEvidenceIds = new Set(dispute?.supplierEvidence ?? []);
-  const buyerAttachments = attachments.filter((a) => buyerEvidenceIds.has(a.id));
+  const buyerAttachments = attachments.filter((a) =>
+    buyerEvidenceIds.has(a.id),
+  );
   const supplierAttachments = attachments.filter((a) =>
     supplierEvidenceIds.has(a.id),
   );
@@ -244,9 +246,7 @@ export default function DisputeDetailPage() {
   /* ── loading / error ── */
 
   if (isLoading) {
-    return (
-      <div className="p-6 text-muted-foreground">Loading dispute…</div>
-    );
+    return <div className="p-6 text-muted-foreground">Loading dispute…</div>;
   }
 
   if (!dispute) {
@@ -280,7 +280,8 @@ export default function DisputeDetailPage() {
             </Badge>
             {dispute.outcome && (
               <Badge variant="outline">
-                {OUTCOME_LABELS[dispute.outcome] ?? statusLabel(dispute.outcome)}
+                {OUTCOME_LABELS[dispute.outcome] ??
+                  statusLabel(dispute.outcome)}
               </Badge>
             )}
           </div>
@@ -340,14 +341,15 @@ export default function DisputeDetailPage() {
             </div>
           </div>
 
-          {dispute.refundAmount !== null && dispute.refundAmount !== undefined && (
-            <div className="text-sm">
-              <span className="text-muted-foreground">Refund Amount:</span>{" "}
-              <span className="font-medium">
-                {formatCurrency(dispute.refundAmount, currency)}
-              </span>
-            </div>
-          )}
+          {dispute.refundAmount !== null &&
+            dispute.refundAmount !== undefined && (
+              <div className="text-sm">
+                <span className="text-muted-foreground">Refund Amount:</span>{" "}
+                <span className="font-medium">
+                  {formatCurrency(dispute.refundAmount, currency)}
+                </span>
+              </div>
+            )}
 
           {dispute.resolutionNotes && (
             <div className="rounded bg-muted p-3 text-sm">
@@ -466,9 +468,7 @@ export default function DisputeDetailPage() {
                 disabled={reviewMutation.isPending}
               >
                 <Clock className="mr-2 h-4 w-4" />
-                {reviewMutation.isPending
-                  ? "Updating…"
-                  : "Mark Under Review"}
+                {reviewMutation.isPending ? "Updating…" : "Mark Under Review"}
               </Button>
             )}
 
@@ -604,7 +604,9 @@ function EvidenceList({
   // If we have loaded attachments matching the IDs, show them.
   // Otherwise fall back to a count.
   const displayAttachments =
-    attachments.length > 0 ? attachments : allAttachments.filter((a) => evidenceIds.includes(a.id));
+    attachments.length > 0
+      ? attachments
+      : allAttachments.filter((a) => evidenceIds.includes(a.id));
 
   return (
     <Card>
@@ -629,10 +631,8 @@ function EvidenceList({
                   <div className="min-w-0">
                     <p className="truncate font-medium">{att.filename}</p>
                     <p className="text-xs text-muted-foreground">
-                      {att.type
-                        ? evidenceTypeLabel(att.type)
-                        : "—"}{" "}
-                      · {formatBytes(att.sizeBytes)}
+                      {att.type ? evidenceTypeLabel(att.type) : "—"} ·{" "}
+                      {formatBytes(att.sizeBytes)}
                     </p>
                   </div>
                 </div>

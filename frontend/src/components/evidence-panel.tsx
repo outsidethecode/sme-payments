@@ -426,7 +426,10 @@ export function InstrumentLifecycleCard({
 
             <div className="grid grid-cols-2 gap-2 text-sm text-muted-foreground">
               <span>
-                Type: <span className="text-foreground">{statusLabel(instrument.type)}</span>
+                Type:{" "}
+                <span className="text-foreground">
+                  {statusLabel(instrument.type)}
+                </span>
               </span>
               <span>
                 Amount:{" "}
@@ -461,7 +464,9 @@ export function InstrumentLifecycleCard({
                 {instrument.lifecycle.map((step, i) => (
                   <div key={i} className="flex items-center gap-2 text-sm">
                     {lifecycleIcon(step.status)}
-                    <span className="font-medium min-w-[8rem] shrink-0">{statusLabel(step.status)}</span>
+                    <span className="font-medium min-w-[8rem] shrink-0">
+                      {statusLabel(step.status)}
+                    </span>
                     <span className="text-muted-foreground text-xs whitespace-nowrap">
                       {formatDateTime(step.at)}
                     </span>

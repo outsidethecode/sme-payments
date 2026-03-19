@@ -240,78 +240,89 @@ export default function ApprovalsPage() {
                     </div>
                   )}
 
-                  {(req.status === "PENDING" || req.status === "ESCALATED") && (() => {
-                    const requiredRoles = req.policyRule?.requiredRoles ?? [];
-                    const canDecide =
-                      requiredRoles.length === 0 ||
-                      (user?.orgRole != null && requiredRoles.includes(user.orgRole));
+                  {(req.status === "PENDING" || req.status === "ESCALATED") &&
+                    (() => {
+                      const requiredRoles = req.policyRule?.requiredRoles ?? [];
+                      const canDecide =
+                        requiredRoles.length === 0 ||
+                        (user?.orgRole != null &&
+                          requiredRoles.includes(user.orgRole));
 
-                    // Check if the current user has already voted
-                    const alreadyVoted = req.approvals?.some(
-                      (a) => a.user.id === user?.id,
-                    );
+                      // Check if the current user has already voted
+                      const alreadyVoted = req.approvals?.some(
+                        (a) => a.user.id === user?.id,
+                      );
 
-                    if (alreadyVoted) {
+                      if (alreadyVoted) {
+                        return (
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <CheckCircle2 className="h-4 w-4 shrink-0 text-green-500" />
+                            <span>
+                              You have already submitted your decision.
+                            </span>
+                          </div>
+                        );
+                      }
+
+                      if (!canDecide) {
+                        return (
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <AlertCircle className="h-4 w-4 shrink-0" />
+                            <span>
+                              Your role ({user?.orgRole ?? "unknown"}) cannot
+                              approve this request. Requires:{" "}
+                              {requiredRoles
+                                .map(
+                                  (r) => r.charAt(0) + r.slice(1).toLowerCase(),
+                                )
+                                .join(" or ")}
+                              .
+                            </span>
+                          </div>
+                        );
+                      }
+
                       return (
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <CheckCircle2 className="h-4 w-4 shrink-0 text-green-500" />
-                          <span>You have already submitted your decision.</span>
+                        <div className="flex items-center gap-2">
+                          {req.status === "ESCALATED" && (
+                            <Badge variant="destructive" className="mr-2">
+                              <AlertCircle className="h-3 w-3 mr-1" />
+                              Escalated
+                            </Badge>
+                          )}
+                          {req.expiresAt && (
+                            <span className="text-xs text-muted-foreground mr-2">
+                              Expires{" "}
+                              {new Date(req.expiresAt).toLocaleDateString()}
+                            </span>
+                          )}
+                          <Button
+                            size="sm"
+                            className="bg-green-600 hover:bg-green-700"
+                            onClick={() => {
+                              setSelectedRequest(req);
+                              setDecision("APPROVE");
+                              setComment("");
+                            }}
+                          >
+                            <ShieldCheck className="h-4 w-4 mr-1" />
+                            Approve
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => {
+                              setSelectedRequest(req);
+                              setDecision("REJECT");
+                              setComment("");
+                            }}
+                          >
+                            <ShieldX className="h-4 w-4 mr-1" />
+                            Reject
+                          </Button>
                         </div>
                       );
-                    }
-
-                    if (!canDecide) {
-                      return (
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <AlertCircle className="h-4 w-4 shrink-0" />
-                          <span>
-                            Your role ({user?.orgRole ?? "unknown"}) cannot approve this
-                            request. Requires: {requiredRoles.map((r) => r.charAt(0) + r.slice(1).toLowerCase()).join(" or ")}.
-                          </span>
-                        </div>
-                      );
-                    }
-
-                    return (
-                      <div className="flex items-center gap-2">
-                        {req.status === "ESCALATED" && (
-                          <Badge variant="destructive" className="mr-2">
-                            <AlertCircle className="h-3 w-3 mr-1" />
-                            Escalated
-                          </Badge>
-                        )}
-                        {req.expiresAt && (
-                          <span className="text-xs text-muted-foreground mr-2">
-                            Expires {new Date(req.expiresAt).toLocaleDateString()}
-                          </span>
-                        )}
-                        <Button
-                          size="sm"
-                          className="bg-green-600 hover:bg-green-700"
-                          onClick={() => {
-                            setSelectedRequest(req);
-                            setDecision("APPROVE");
-                            setComment("");
-                          }}
-                        >
-                          <ShieldCheck className="h-4 w-4 mr-1" />
-                          Approve
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => {
-                            setSelectedRequest(req);
-                            setDecision("REJECT");
-                            setComment("");
-                          }}
-                        >
-                          <ShieldX className="h-4 w-4 mr-1" />
-                          Reject
-                        </Button>
-                      </div>
-                    );
-                  })()}
+                    })()}
                 </CardContent>
               </Card>
             );
