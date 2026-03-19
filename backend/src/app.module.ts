@@ -18,6 +18,7 @@ import { LedgerModule } from "./ledger/ledger.module";
 import { AdminModule } from "./admin/admin.module";
 import { PasskeysModule } from "./passkeys/passkeys.module";
 import { KybModule } from "./kyb/kyb.module";
+import { IdentityModule } from "./identity/identity.module";
 import { InvitationsModule } from "./invitations/invitations.module";
 import { OnboardingModule } from "./onboarding/onboarding.module";
 import { EvidenceModule } from "./evidence/evidence.module";
@@ -64,6 +65,7 @@ import { CorrelationIdMiddleware } from "./common/correlation-id.middleware";
     AdminModule,
     PasskeysModule,
     KybModule,
+    IdentityModule,
     InvitationsModule,
     OnboardingModule,
     EvidenceModule,

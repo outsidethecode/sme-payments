@@ -2,6 +2,7 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { OnboardingService } from "./onboarding.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { KybService } from "../kyb/kyb.service";
+import { IdentityService } from "../identity/identity.service";
 import {
   NotFoundException,
   BadRequestException,
@@ -12,6 +13,7 @@ describe("OnboardingService", () => {
   let service: OnboardingService;
   let prisma: Record<string, any>;
   let kybService: Record<string, jest.Mock>;
+  let identityService: Record<string, jest.Mock>;
 
   const mockBuyerOrg = {
     id: "org-buyer-1",
@@ -55,6 +57,9 @@ describe("OnboardingService", () => {
         findUnique: jest.fn(),
         update: jest.fn(),
       },
+      user: {
+        findUnique: jest.fn().mockResolvedValue(null),
+      },
     };
 
     kybService = {
@@ -62,11 +67,18 @@ describe("OnboardingService", () => {
       checkSanctions: jest.fn(),
     };
 
+    identityService = {
+      initiate: jest.fn(),
+      checkStatus: jest.fn(),
+      getVerificationStatus: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         OnboardingService,
         { provide: PrismaService, useValue: prisma },
         { provide: KybService, useValue: kybService },
+        { provide: IdentityService, useValue: identityService },
       ],
     }).compile();
 
@@ -80,8 +92,9 @@ describe("OnboardingService", () => {
       const result = await service.getStatus("org-buyer-1");
 
       expect(result.type).toBe("BUYER");
-      expect(result.steps.kyb).toBeDefined();
-      expect(result.steps.paymentMethod).toBeDefined();
+      expect((result.steps as any).kyb).toBeDefined();
+      expect((result.steps as any).paymentMethod).toBeDefined();
+      expect((result.steps as any).identity).toBeDefined();
     });
 
     it("should throw NotFoundException for unknown org", async () => {

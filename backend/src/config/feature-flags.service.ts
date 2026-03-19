@@ -18,6 +18,7 @@ export enum FeatureFlag {
   LP_FUNDING_APPROVALS = "LP_FUNDING_APPROVALS",
   DELEGATION = "DELEGATION",
   ESCALATION = "ESCALATION",
+  REAL_IDENTITY_PROVIDER = "REAL_IDENTITY_PROVIDER",
 }
 
 /** Resolved flag status including its source */
@@ -43,6 +44,7 @@ const BUILTIN_DEFAULTS: Record<FeatureFlag, boolean> = {
   [FeatureFlag.LP_FUNDING_APPROVALS]: false, // Phase 9 — OFF until pilot
   [FeatureFlag.DELEGATION]: false, // Phase 9 — OFF until pilot
   [FeatureFlag.ESCALATION]: false, // Phase 9 — OFF until pilot
+  [FeatureFlag.REAL_IDENTITY_PROVIDER]: false, // OFF — use mock identity; ON → Nafath API
 };
 
 /**

@@ -28,6 +28,13 @@ model User {
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
+  // Identity verification (Nafath / government ID)
+  nationalIdHash         String?   @unique @map("national_id_hash")   // SHA-256 for uniqueness — prevents duplicate registrations
+  identityProvider       String?   @map("identity_provider")          // "NAFATH" | "MOCK"
+  identityVerifiedAt     DateTime? @map("identity_verified_at")
+  identityVerifiedName   String?   @map("identity_verified_name")     // Name returned by government ID provider
+  identityData           Json?     @map("identity_data")              // Full provider response (encrypted at rest)
+
   // Relations
   passkeys               UserPasskey[]
   orgMemberships         OrgMembership[]

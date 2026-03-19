@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
+import { onboardingApi } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
@@ -163,6 +165,15 @@ export default function DashboardLayout({
   const router = useRouter();
   const pathname = usePathname();
 
+  // ── Onboarding gate (must be before any early return to satisfy Rules of Hooks) ──
+  const isAdmin = user?.role === "ADMIN";
+  const { data: onboardingStatus } = useQuery({
+    queryKey: ["onboarding"],
+    queryFn: () => onboardingApi.status().then((r) => r.data),
+    enabled: !isAdmin && !!user,
+    staleTime: 30_000,
+  });
+
   useEffect(() => {
     if (!loading && !user) {
       router.push("/login");
@@ -180,6 +191,18 @@ export default function DashboardLayout({
   if (!user) return null;
 
   const visibleNav = NAV_ITEMS.filter((item) => item.roles.includes(user.role));
+
+  const onboardingComplete =
+    isAdmin || onboardingStatus?.onboardingStatus === "COMPLETED";
+
+  // Pages allowed before onboarding is complete
+  const isAlwaysAllowed = (path: string) =>
+    path === "/dashboard" ||
+    path === "/dashboard/onboarding" ||
+    path.startsWith("/dashboard/onboarding/");
+
+  const isAllowedPage = isAlwaysAllowed(pathname);
+
   const initials = user.name
     .split(" ")
     .map((n) => n[0])
@@ -204,12 +227,16 @@ export default function DashboardLayout({
             const active =
               pathname === item.href ||
               (item.href !== "/dashboard" && pathname.startsWith(item.href));
+            const gated = !onboardingComplete && !isAlwaysAllowed(item.href);
             return (
-              <Link key={item.href} href={item.href}>
+              <Link key={item.href} href={gated ? "#" : item.href}>
                 <Button
                   variant={active ? "secondary" : "ghost"}
-                  className="w-full justify-start gap-2"
+                  className={`w-full justify-start gap-2 ${
+                    gated ? "opacity-40 pointer-events-none" : ""
+                  }`}
                   size="sm"
+                  disabled={gated}
                 >
                   <item.icon className="h-4 w-4" />
                   {item.label}
@@ -266,7 +293,25 @@ export default function DashboardLayout({
 
         <div className="p-6">
           <PasskeyBanner />
-          {children}
+          {!onboardingComplete && !isAllowedPage ? (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/20 p-6 text-center space-y-3">
+              <ClipboardCheck className="mx-auto h-10 w-10 text-amber-600" />
+              <h2 className="text-lg font-semibold text-amber-800 dark:text-amber-200">
+                Complete Onboarding First
+              </h2>
+              <p className="text-sm text-amber-700 dark:text-amber-300">
+                Your organisation must complete onboarding before accessing
+                platform features.
+              </p>
+              <Link href="/dashboard/onboarding">
+                <Button size="sm" className="mt-2">
+                  Go to Onboarding
+                </Button>
+              </Link>
+            </div>
+          ) : (
+            children
+          )}
         </div>
       </main>
     </div>

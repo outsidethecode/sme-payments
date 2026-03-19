@@ -7,6 +7,7 @@ import {
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { KybService } from "../kyb/kyb.service";
+import { IdentityService } from "../identity/identity.service";
 import { OnboardingStatus, OrgType, SupplierTier } from "@prisma/client";
 
 @Injectable()
@@ -16,13 +17,14 @@ export class OnboardingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly kybService: KybService,
+    private readonly identityService: IdentityService,
   ) {}
 
   /**
    * Get onboarding status for an organisation.
    */
-  async getStatus(orgId: string) {
-    const org = await this.prisma.organisation.findUnique({
+  async getStatus(orgId: string, userId?: string) {
+    let org = await this.prisma.organisation.findUnique({
       where: { id: orgId },
       select: {
         id: true,
@@ -36,6 +38,7 @@ export class OnboardingService {
         termsAcceptedAt: true,
         kybProvider: true,
         kybVerifiedAt: true,
+        kybData: true,
         supplierTier: true,
         fundingLimitTotal: true,
         fundingAccountRef: true,
@@ -47,10 +50,61 @@ export class OnboardingService {
       throw new NotFoundException("Organisation not found");
     }
 
+    // Fetch identity verification status for the calling user
+    let identityVerified = false;
+    let identityVerifiedName: string | null = null;
+    if (userId) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { identityVerifiedAt: true, identityVerifiedName: true },
+      });
+      if (user?.identityVerifiedAt) {
+        identityVerified = true;
+        identityVerifiedName = user.identityVerifiedName;
+      }
+    }
+
     // Build step checklist based on org type
-    const steps = this.buildSteps(org);
+    const steps = this.buildSteps(org, {
+      identityVerified,
+      identityVerifiedName,
+    });
+
+    // Self-heal: if stored status says COMPLETED but steps aren't actually done,
+    // recompute the correct status from the real field state.
+    const correctStatus = this.computeStatus(org);
+    if (org.onboardingStatus !== correctStatus) {
+      this.logger.warn(
+        `Org ${orgId} status mismatch: stored=${org.onboardingStatus}, computed=${correctStatus} — fixing`,
+      );
+      await this.prisma.organisation.update({
+        where: { id: orgId },
+        data: { onboardingStatus: correctStatus },
+      });
+      org = { ...org, onboardingStatus: correctStatus };
+    }
 
     return { ...org, steps };
+  }
+
+  // ── Identity verification ──
+
+  /**
+   * Initiate identity verification for the current user.
+   */
+  async initiateIdentityVerification(userId: string, nationalId: string) {
+    return this.identityService.initiate(userId, nationalId);
+  }
+
+  /**
+   * Check identity verification status and persist if verified.
+   */
+  async checkIdentityStatus(
+    userId: string,
+    transactionId: string,
+    nationalId: string,
+  ) {
+    return this.identityService.checkStatus(userId, transactionId, nationalId);
   }
 
   /**
@@ -312,10 +366,68 @@ export class OnboardingService {
     return org;
   }
 
-  private buildSteps(org: any) {
+  /**
+   * Compute what onboardingStatus SHOULD be based on actual field state.
+   */
+  private computeStatus(org: any): OnboardingStatus {
+    switch (org.type) {
+      case OrgType.BUYER: {
+        const kybDone = !!org.kybVerifiedAt;
+        const paymentDone = !!org.bankIban;
+        if (kybDone && paymentDone) return OnboardingStatus.COMPLETED;
+        if (org.kybVerifiedAt) return OnboardingStatus.KYB_VERIFIED;
+        if (kybDone === false && org.kybData)
+          return OnboardingStatus.KYB_FAILED;
+        if (org.registrationNo || org.authorizedSignatory)
+          return OnboardingStatus.IN_PROGRESS;
+        return OnboardingStatus.NOT_STARTED;
+      }
+      case OrgType.SUPPLIER: {
+        // Tier 1 (BASIC) = COMPLETED — supplier can transact.
+        // Requires: supplierTier + bankIban + termsAcceptedAt
+        if (org.supplierTier && org.bankIban && org.termsAcceptedAt)
+          return OnboardingStatus.COMPLETED;
+        if (org.registrationNo || org.bankIban)
+          return OnboardingStatus.IN_PROGRESS;
+        return OnboardingStatus.NOT_STARTED;
+      }
+      case OrgType.LIQUIDITY_PARTNER: {
+        if (
+          org.fundingAccountRef &&
+          org.fundingLimitTotal &&
+          org.participationAgreementAcceptedAt
+        )
+          return OnboardingStatus.COMPLETED;
+        if (org.fundingAccountRef || org.fundingLimitTotal)
+          return OnboardingStatus.IN_PROGRESS;
+        return OnboardingStatus.NOT_STARTED;
+      }
+      default:
+        return OnboardingStatus.NOT_STARTED;
+    }
+  }
+
+  private buildSteps(
+    org: any,
+    identity: {
+      identityVerified: boolean;
+      identityVerifiedName: string | null;
+    } = {
+      identityVerified: false,
+      identityVerifiedName: null,
+    },
+  ) {
+    const identityStep = {
+      identity: {
+        complete: identity.identityVerified,
+        verifiedName: identity.identityVerifiedName,
+      },
+    };
+
     switch (org.type) {
       case OrgType.BUYER:
         return {
+          ...identityStep,
           kyb: {
             complete: !!org.kybVerifiedAt,
             registrationNo: org.registrationNo,
@@ -331,6 +443,7 @@ export class OnboardingService {
 
       case OrgType.SUPPLIER:
         return {
+          ...identityStep,
           tier1: {
             complete: !!org.supplierTier,
             registrationNo: org.registrationNo,
@@ -347,6 +460,7 @@ export class OnboardingService {
 
       case OrgType.LIQUIDITY_PARTNER:
         return {
+          ...identityStep,
           profile: {
             complete: !!org.fundingAccountRef && !!org.fundingLimitTotal,
             fundingAccountRef: org.fundingAccountRef,
@@ -360,7 +474,7 @@ export class OnboardingService {
         };
 
       default:
-        return {};
+        return { ...identityStep };
     }
   }
 }

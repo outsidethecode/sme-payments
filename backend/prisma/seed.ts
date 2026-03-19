@@ -54,23 +54,15 @@ async function seedUserWithOrg(opts: {
     org = existingMembership.organisation;
   } else {
     // Create new org + membership on first run
+    // Status is NOT_STARTED — real onboarding steps must be completed via the UI
     org = await prisma.organisation.create({
       data: {
         name: opts.companyName,
         type: opts.orgType,
-        registrationNo: opts.companyNumber ?? null,
         jurisdiction: opts.jurisdiction,
         currency: opts.currency,
         shariaCompliant: opts.shariaCompliant ?? false,
-        onboardingStatus: OnboardingStatus.COMPLETED,
-        termsAcceptedAt: new Date(),
-        bankIban:
-          opts.jurisdiction === Jurisdiction.KSA
-            ? `SA03800000006080${Math.random().toString().slice(2, 12)}`
-            : `GB29NWBK601613${Math.random().toString().slice(2, 10)}`,
-        supplierTier:
-          opts.supplierTier ??
-          (opts.orgType === OrgType.SUPPLIER ? SupplierTier.BASIC : null),
+        onboardingStatus: OnboardingStatus.NOT_STARTED,
       },
     });
 

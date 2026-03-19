@@ -5,6 +5,7 @@ import {
   Body,
   UseGuards,
   Request,
+  Query,
 } from "@nestjs/common";
 import { ApiTags, ApiBearerAuth, ApiOperation } from "@nestjs/swagger";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
@@ -18,6 +19,7 @@ import {
   SupplierTier2Dto,
   LpOnboardingDto,
 } from "./dto/onboarding.dto";
+import { InitiateIdentityDto } from "../identity/dto/identity.dto";
 
 @ApiTags("Onboarding")
 @Controller("onboarding")
@@ -29,7 +31,38 @@ export class OnboardingController {
   @Get("status")
   @ApiOperation({ summary: "Get onboarding status and step checklist" })
   async getStatus(@Request() req: any) {
-    return this.onboardingService.getStatus(req.user.organisationId);
+    return this.onboardingService.getStatus(
+      req.user.organisationId,
+      req.user.id,
+    );
+  }
+
+  // ── Identity verification endpoints ──
+
+  @Post("identity/initiate")
+  @ApiOperation({ summary: "Initiate identity verification (Nafath / mock)" })
+  async initiateIdentity(
+    @Body() dto: InitiateIdentityDto,
+    @Request() req: any,
+  ) {
+    return this.onboardingService.initiateIdentityVerification(
+      req.user.id,
+      dto.nationalId,
+    );
+  }
+
+  @Get("identity/status")
+  @ApiOperation({ summary: "Check identity verification status" })
+  async checkIdentityStatus(
+    @Query("transactionId") transactionId: string,
+    @Query("nationalId") nationalId: string,
+    @Request() req: any,
+  ) {
+    return this.onboardingService.checkIdentityStatus(
+      req.user.id,
+      transactionId,
+      nationalId,
+    );
   }
 
   // ── Buyer endpoints ──

@@ -80,6 +80,113 @@ import {
   CheckCircle,
 } from "lucide-react";
 
+// ── Unified Policy Banner ──
+
+function PolicyBanner({
+  title,
+  description,
+  policyName,
+  requiredApprovals,
+  requiredRoles,
+  currentApprovals,
+  autoApprove,
+  userRole,
+  noPermissionText,
+  actionLink,
+}: {
+  title: string;
+  description?: string;
+  policyName: string;
+  requiredApprovals?: number;
+  requiredRoles?: string[];
+  currentApprovals?: number;
+  autoApprove?: boolean;
+  userRole?: string | null;
+  noPermissionText?: string;
+  actionLink?: { href: string; label: string };
+}) {
+  const rolesFormatted = requiredRoles
+    ?.map((r) => r.charAt(0) + r.slice(1).toLowerCase())
+    .join(" or ");
+
+  // Check permission
+  const effectiveRoles = (
+    requiredRoles && requiredRoles.length > 0
+      ? requiredRoles
+      : ["OWNER", "APPROVER", "FINANCE"]
+  ).map((r) => r.toUpperCase());
+  const hasPermission = userRole && effectiveRoles.includes(userRole);
+
+  return (
+    <Alert className="border-amber-500/50 bg-amber-50 dark:bg-amber-950/20">
+      <Clock className="h-4 w-4 text-amber-600" />
+      <AlertTitle className="text-amber-800 dark:text-amber-200">
+        {title}
+      </AlertTitle>
+      <AlertDescription className="text-amber-700 dark:text-amber-300 space-y-2">
+        {description && (
+          <p>
+            {description}
+            {actionLink && (
+              <>
+                {" "}
+                <Link href={actionLink.href} className="underline font-medium">
+                  {actionLink.label}
+                </Link>
+                .
+              </>
+            )}
+          </p>
+        )}
+        <div className="mt-2 rounded-md bg-amber-100/60 dark:bg-amber-900/30 px-3 py-2 text-sm space-y-1">
+          <p className="font-medium">Policy: {policyName}</p>
+          <p>
+            {autoApprove ? (
+              <>
+                This amount qualifies for{" "}
+                <span className="font-semibold">auto-approval</span>.
+              </>
+            ) : (
+              <>
+                Requires{" "}
+                <span className="font-semibold">
+                  {requiredApprovals ?? 1}{" "}
+                  {(requiredApprovals ?? 1) === 1 ? "approval" : "approvals"}
+                </span>
+                {rolesFormatted && (
+                  <>
+                    {" "}
+                    from a team member with the{" "}
+                    <span className="font-semibold">{rolesFormatted}</span> role
+                  </>
+                )}
+                .
+              </>
+            )}
+          </p>
+          {currentApprovals !== undefined &&
+            requiredApprovals !== undefined && (
+              <p>
+                Progress: {currentApprovals} of {requiredApprovals} received.
+              </p>
+            )}
+        </div>
+        {noPermissionText && !hasPermission && userRole && (
+          <p className="flex items-center gap-1.5 text-sm text-amber-700 dark:text-amber-400">
+            <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+            Your role (
+            <span className="font-semibold">
+              {userRole.charAt(0)}
+              {userRole.slice(1).toLowerCase()}
+            </span>
+            ) {noPermissionText}
+          </p>
+        )}
+      </AlertDescription>
+    </Alert>
+  );
+}
+
 export default function PurchaseOrderDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
@@ -493,290 +600,73 @@ export default function PurchaseOrderDetailPage() {
 
       {/* Pending Approval Banner */}
       {po.status === "PENDING_APPROVAL" && (
-        <Alert className="border-yellow-500/50 bg-yellow-50 dark:bg-yellow-950/20">
-          <Clock className="h-4 w-4 text-yellow-600" />
-          <AlertTitle className="text-yellow-800 dark:text-yellow-200">
-            Awaiting Approval
-          </AlertTitle>
-          <AlertDescription className="text-yellow-700 dark:text-yellow-300 space-y-2">
-            <p>
-              This purchase order requires approval before it can be sent to the
-              supplier. Team members with the appropriate role can approve it on
-              the{" "}
-              <Link
-                href="/dashboard/approvals"
-                className="underline font-medium"
-              >
-                Approvals page
-              </Link>
-              .
-            </p>
-            {pendingApproval && (
-              <div className="mt-2 rounded-md bg-yellow-100/60 dark:bg-yellow-900/30 px-3 py-2 text-sm space-y-1">
-                <p className="font-medium">
-                  Policy:{" "}
-                  {pendingApproval.policyRule?.name ?? "Organisation policy"}
-                </p>
-                <p>
-                  Requires{" "}
-                  <span className="font-semibold">
-                    {pendingApproval.requiredApprovals}{" "}
-                    {pendingApproval.requiredApprovals === 1
-                      ? "approval"
-                      : "approvals"}
-                  </span>
-                  {pendingApproval.policyRule?.requiredRoles &&
-                    pendingApproval.policyRule.requiredRoles.length > 0 && (
-                      <>
-                        {" "}
-                        from a team member with the{" "}
-                        <span className="font-semibold">
-                          {pendingApproval.policyRule.requiredRoles
-                            .map((r) => r.charAt(0) + r.slice(1).toLowerCase())
-                            .join(" or ")}
-                        </span>{" "}
-                        role
-                      </>
-                    )}
-                  .
-                </p>
-                <p>
-                  Progress: {pendingApproval.currentApprovals} of{" "}
-                  {pendingApproval.requiredApprovals} received.
-                </p>
-              </div>
-            )}
-          </AlertDescription>
-        </Alert>
+        <PolicyBanner
+          title="Awaiting Approval"
+          description="This purchase order requires approval before it can be sent to the supplier. Team members with the appropriate role can approve it on the"
+          actionLink={{ href: "/dashboard/approvals", label: "Approvals page" }}
+          policyName={
+            pendingApproval?.policyRule?.name ?? "Organisation policy"
+          }
+          requiredApprovals={pendingApproval?.requiredApprovals}
+          requiredRoles={pendingApproval?.policyRule?.requiredRoles}
+          currentApprovals={pendingApproval?.currentApprovals}
+          userRole={user?.orgRole}
+        />
       )}
 
       {/* Supplier Acceptance Policy Banner */}
       {isSupplier && po.status === "SENT" && supplierPolicy?.rule && (
-        <Alert className="border-blue-500/50 bg-blue-50 dark:bg-blue-950/20">
-          <Info className="h-4 w-4 text-blue-600" />
-          <AlertTitle className="text-blue-800 dark:text-blue-200">
-            Supplier Acceptance Policy
-          </AlertTitle>
-          <AlertDescription className="text-blue-700 dark:text-blue-300 space-y-2">
-            <div className="rounded-md bg-blue-100/60 dark:bg-blue-900/30 px-3 py-2 text-sm space-y-1">
-              <p className="font-medium">Policy: {supplierPolicy.rule.name}</p>
-              <p>
-                {supplierPolicy.rule.autoApprove ? (
-                  <>
-                    This amount qualifies for{" "}
-                    <span className="font-semibold">auto-approval</span>.
-                  </>
-                ) : (
-                  <>
-                    Requires{" "}
-                    <span className="font-semibold">
-                      {supplierPolicy.rule.requiredApprovals}{" "}
-                      {supplierPolicy.rule.requiredApprovals === 1
-                        ? "approval"
-                        : "approvals"}
-                    </span>{" "}
-                    from a team member with the{" "}
-                    <span className="font-semibold">
-                      {supplierPolicy.rule.requiredRoles
-                        .map(
-                          (r: string) => r.charAt(0) + r.slice(1).toLowerCase(),
-                        )
-                        .join(" or ")}
-                    </span>{" "}
-                    role.
-                  </>
-                )}
-              </p>
-            </div>
-            {(() => {
-              const defRoles = ["OWNER", "APPROVER", "FINANCE"];
-              const rr = supplierPolicy.rule.requiredRoles;
-              const effectiveRoles = (rr && rr.length > 0 ? rr : defRoles).map(
-                (r: string) => r.toUpperCase(),
-              );
-              const hasPermission =
-                user?.orgRole && effectiveRoles.includes(user.orgRole);
-              if (hasPermission) return null;
-              return (
-                <p className="flex items-center gap-1.5 text-sm text-amber-700 dark:text-amber-400">
-                  <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                  Your role (
-                  <span className="font-semibold">
-                    {user?.orgRole?.charAt(0)}
-                    {user?.orgRole?.slice(1).toLowerCase()}
-                  </span>
-                  ) does not have permission to act on this PO.
-                </p>
-              );
-            })()}
-          </AlertDescription>
-        </Alert>
+        <PolicyBanner
+          title="Supplier Acceptance Policy"
+          description="Your organisation's policy for accepting purchase orders."
+          policyName={supplierPolicy.rule.name}
+          requiredApprovals={supplierPolicy.rule.requiredApprovals}
+          requiredRoles={supplierPolicy.rule.requiredRoles}
+          autoApprove={supplierPolicy.rule.autoApprove}
+          userRole={user?.orgRole}
+          noPermissionText="does not have permission to act on this PO."
+        />
       )}
 
       {/* Negotiation Policy Banner */}
       {canRespondToCounter && negotiationPolicy?.rule && (
-        <Alert className="border-blue-500/50 bg-blue-50 dark:bg-blue-950/20">
-          <Info className="h-4 w-4 text-blue-600" />
-          <AlertTitle className="text-blue-800 dark:text-blue-200">
-            Negotiation Policy
-          </AlertTitle>
-          <AlertDescription className="text-blue-700 dark:text-blue-300 space-y-2">
-            <div className="rounded-md bg-blue-100/60 dark:bg-blue-900/30 px-3 py-2 text-sm space-y-1">
-              <p className="font-medium">
-                Policy: {negotiationPolicy.rule.name}
-              </p>
-              <p>
-                Responding to a counter-proposal requires the{" "}
-                <span className="font-semibold">
-                  {negotiationPolicy.rule.requiredRoles
-                    .map((r: string) => r.charAt(0) + r.slice(1).toLowerCase())
-                    .join(" or ")}
-                </span>{" "}
-                role.
-              </p>
-            </div>
-            {!user?.orgRole ||
-            !(negotiationPolicy.rule.requiredRoles ?? [])
-              .map((r: string) => r.toUpperCase())
-              .includes(user.orgRole) ? (
-              <p className="flex items-center gap-1.5 text-sm text-amber-700 dark:text-amber-400">
-                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                Your role (
-                <span className="font-semibold">
-                  {user?.orgRole?.charAt(0)}
-                  {user?.orgRole?.slice(1).toLowerCase()}
-                </span>
-                ) does not have permission to respond to this counter-proposal.
-              </p>
-            ) : null}
-          </AlertDescription>
-        </Alert>
+        <PolicyBanner
+          title="Negotiation Policy"
+          description="Your organisation's policy for responding to counter-proposals."
+          policyName={negotiationPolicy.rule.name}
+          requiredApprovals={negotiationPolicy.rule.requiredApprovals}
+          requiredRoles={negotiationPolicy.rule.requiredRoles}
+          userRole={user?.orgRole}
+          noPermissionText="does not have permission to respond to this counter-proposal."
+        />
       )}
 
       {/* Supplier Fulfillment Policy Banner */}
       {isSupplier && po.status === "FULFILLMENT" && earlyPayPolicy?.rule && (
-        <Alert className="border-blue-500/50 bg-blue-50 dark:bg-blue-950/20">
-          <Info className="h-4 w-4 text-blue-600" />
-          <AlertTitle className="text-blue-800 dark:text-blue-200">
-            Early Payment Policy
-          </AlertTitle>
-          <AlertDescription className="text-blue-700 dark:text-blue-300 space-y-2">
-            <div className="rounded-md bg-blue-100/60 dark:bg-blue-900/30 px-3 py-2 text-sm space-y-1">
-              <p className="font-medium">Policy: {earlyPayPolicy.rule.name}</p>
-              <p>
-                {earlyPayPolicy.rule.autoApprove ? (
-                  <>
-                    This amount qualifies for{" "}
-                    <span className="font-semibold">auto-approval</span>.
-                  </>
-                ) : (
-                  <>
-                    Requires{" "}
-                    <span className="font-semibold">
-                      {earlyPayPolicy.rule.requiredApprovals}{" "}
-                      {earlyPayPolicy.rule.requiredApprovals === 1
-                        ? "approval"
-                        : "approvals"}
-                    </span>{" "}
-                    from a team member with the{" "}
-                    <span className="font-semibold">
-                      {earlyPayPolicy.rule.requiredRoles
-                        .map(
-                          (r: string) => r.charAt(0) + r.slice(1).toLowerCase(),
-                        )
-                        .join(" or ")}
-                    </span>{" "}
-                    role.
-                  </>
-                )}
-              </p>
-            </div>
-            {(() => {
-              const defRoles = ["OWNER", "FINANCE"];
-              const rr = earlyPayPolicy.rule.requiredRoles;
-              const effectiveRoles = (rr && rr.length > 0 ? rr : defRoles).map(
-                (r: string) => r.toUpperCase(),
-              );
-              const hasPermission =
-                user?.orgRole && effectiveRoles.includes(user.orgRole);
-              if (hasPermission) return null;
-              return (
-                <p className="flex items-center gap-1.5 text-sm text-amber-700 dark:text-amber-400">
-                  <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                  Your role (
-                  <span className="font-semibold">
-                    {user?.orgRole?.charAt(0)}
-                    {user?.orgRole?.slice(1).toLowerCase()}
-                  </span>
-                  ) does not have permission to request early payment.
-                </p>
-              );
-            })()}
-          </AlertDescription>
-        </Alert>
+        <PolicyBanner
+          title="Early Payment Policy"
+          description="Your organisation's policy for requesting early payment."
+          policyName={earlyPayPolicy.rule.name}
+          requiredApprovals={earlyPayPolicy.rule.requiredApprovals}
+          requiredRoles={earlyPayPolicy.rule.requiredRoles}
+          autoApprove={earlyPayPolicy.rule.autoApprove}
+          userRole={user?.orgRole}
+          noPermissionText="does not have permission to request early payment."
+        />
       )}
 
       {/* Buyer Delivery Verification Policy Banner */}
       {isBuyer && po.status === "DELIVERED" && deliveryPolicy?.rule && (
-        <Alert className="border-blue-500/50 bg-blue-50 dark:bg-blue-950/20">
-          <Info className="h-4 w-4 text-blue-600" />
-          <AlertTitle className="text-blue-800 dark:text-blue-200">
-            Delivery Verification Policy
-          </AlertTitle>
-          <AlertDescription className="text-blue-700 dark:text-blue-300 space-y-2">
-            <div className="rounded-md bg-blue-100/60 dark:bg-blue-900/30 px-3 py-2 text-sm space-y-1">
-              <p className="font-medium">Policy: {deliveryPolicy.rule.name}</p>
-              <p>
-                {deliveryPolicy.rule.autoApprove ? (
-                  <>
-                    This amount qualifies for{" "}
-                    <span className="font-semibold">auto-approval</span>.
-                  </>
-                ) : (
-                  <>
-                    Requires{" "}
-                    <span className="font-semibold">
-                      {deliveryPolicy.rule.requiredApprovals}{" "}
-                      {deliveryPolicy.rule.requiredApprovals === 1
-                        ? "approval"
-                        : "approvals"}
-                    </span>{" "}
-                    from a team member with the{" "}
-                    <span className="font-semibold">
-                      {deliveryPolicy.rule.requiredRoles
-                        .map(
-                          (r: string) => r.charAt(0) + r.slice(1).toLowerCase(),
-                        )
-                        .join(" or ")}
-                    </span>{" "}
-                    role.
-                  </>
-                )}
-              </p>
-            </div>
-            {(() => {
-              const defRoles = ["OWNER", "FINANCE"];
-              const rr = deliveryPolicy.rule.requiredRoles;
-              const effectiveRoles = (rr && rr.length > 0 ? rr : defRoles).map(
-                (r: string) => r.toUpperCase(),
-              );
-              const hasPermission =
-                user?.orgRole && effectiveRoles.includes(user.orgRole);
-              if (hasPermission) return null;
-              return (
-                <p className="flex items-center gap-1.5 text-sm text-amber-700 dark:text-amber-400">
-                  <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                  Your role (
-                  <span className="font-semibold">
-                    {user?.orgRole?.charAt(0)}
-                    {user?.orgRole?.slice(1).toLowerCase()}
-                  </span>
-                  ) does not have permission to verify delivery.
-                </p>
-              );
-            })()}
-          </AlertDescription>
-        </Alert>
+        <PolicyBanner
+          title="Delivery Verification Policy"
+          description="Your organisation's policy for verifying delivery."
+          policyName={deliveryPolicy.rule.name}
+          requiredApprovals={deliveryPolicy.rule.requiredApprovals}
+          requiredRoles={deliveryPolicy.rule.requiredRoles}
+          autoApprove={deliveryPolicy.rule.autoApprove}
+          userRole={user?.orgRole}
+          noPermissionText="does not have permission to verify delivery."
+        />
       )}
 
       {/* Resolved Dispute Banner — shown when PO was resolved from a dispute */}

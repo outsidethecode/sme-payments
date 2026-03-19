@@ -20,13 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  ToggleLeft,
-  ToggleRight,
-  Building2,
-  Globe,
-  X,
-} from "lucide-react";
+import { ToggleLeft, ToggleRight, Building2, Globe, X } from "lucide-react";
 import api from "@/lib/api";
 
 /** Human-friendly descriptions for each flag */
@@ -49,6 +43,8 @@ const FLAG_DESCRIPTIONS: Record<string, string> = {
     "Allow authority delegation between organisation members (Phase 9)",
   ESCALATION:
     "Enable automatic approval escalation and expiry handling (Phase 9)",
+  REAL_IDENTITY_PROVIDER:
+    "Use Nafath identity provider instead of mock verification (KSA)",
 };
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -118,9 +114,7 @@ export default function FeatureFlagsPage() {
       enabled: boolean;
       organisationId: string;
     }) =>
-      featureFlagApi
-        .toggle(flag, enabled, organisationId)
-        .then((r) => r.data),
+      featureFlagApi.toggle(flag, enabled, organisationId).then((r) => r.data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["feature-flags"] });
     },

@@ -24,8 +24,10 @@ import {
   Building2,
   CreditCard,
   BadgeCheck,
+  Fingerprint,
+  Loader2,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 
 const STATUS_LABEL: Record<string, string> = {
   NOT_STARTED: "Not Started",
@@ -53,6 +55,178 @@ function StepIcon({ complete }: { complete: boolean }) {
     <CheckCircle2 className="h-5 w-5 text-green-600" />
   ) : (
     <Circle className="h-5 w-5 text-muted-foreground" />
+  );
+}
+
+// ── Identity Verification (Step 0 — shared by all roles) ──
+
+function IdentityVerificationStep({ status }: { status: OnboardingStatus }) {
+  const queryClient = useQueryClient();
+  const [nationalId, setNationalId] = useState("");
+  const [transactionId, setTransactionId] = useState<string | null>(null);
+  const [randomCode, setRandomCode] = useState<string | null>(null);
+  const [polling, setPolling] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const nationalIdRef = useRef("");
+
+  const identityDone = status.steps?.identity?.complete;
+  const verifiedName = status.steps?.identity?.verifiedName as string | null;
+
+  const initiateMutation = useMutation({
+    mutationFn: () => onboardingApi.initiateIdentity({ nationalId }),
+    onSuccess: (res) => {
+      const d = res.data;
+      if (d.verified) {
+        // Already verified (shouldn't happen on initiate, but just in case)
+        queryClient.invalidateQueries({ queryKey: ["onboarding"] });
+        setPolling(false);
+        return;
+      }
+      if (d.transactionId) {
+        setTransactionId(d.transactionId);
+        nationalIdRef.current = nationalId;
+        setRandomCode(d.random ?? null);
+        setPolling(true);
+        setError(null);
+      }
+    },
+    onError: (err: any) => {
+      setError(err?.response?.data?.message || "Identity verification failed");
+    },
+  });
+
+  const pollStatus = useCallback(async () => {
+    if (!transactionId) return;
+    try {
+      const res = await onboardingApi.checkIdentityStatus(
+        transactionId,
+        nationalIdRef.current,
+      );
+      if (res.data.verified) {
+        setPolling(false);
+        queryClient.invalidateQueries({ queryKey: ["onboarding"] });
+      } else if (
+        res.data.errorMessage &&
+        !res.data.errorMessage.includes("WAITING")
+      ) {
+        setPolling(false);
+        setError(res.data.errorMessage || "Verification rejected");
+      }
+      // PENDING — keep polling
+    } catch {
+      // network error, keep polling
+    }
+  }, [transactionId, queryClient]);
+
+  useEffect(() => {
+    if (polling && transactionId) {
+      pollRef.current = setInterval(pollStatus, 3000);
+      return () => {
+        if (pollRef.current) clearInterval(pollRef.current);
+      };
+    }
+  }, [polling, transactionId, pollStatus]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, []);
+
+  if (identityDone) {
+    return (
+      <Card className="border-green-200">
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="h-5 w-5 text-green-600" />
+            <CardTitle className="text-base">
+              Step 0: Identity Verified
+            </CardTitle>
+          </div>
+          <CardDescription>
+            {verifiedName
+              ? `Verified as ${verifiedName}`
+              : "Your identity has been verified"}
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center gap-2">
+          <StepIcon complete={false} />
+          <CardTitle className="text-base">
+            Step 0: Identity Verification
+          </CardTitle>
+        </div>
+        <CardDescription>
+          Verify your identity using your National ID. In KSA this uses the
+          Nafath app.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {!polling ? (
+          <>
+            <div className="space-y-1">
+              <Label htmlFor="nationalId">National ID</Label>
+              <Input
+                id="nationalId"
+                value={nationalId}
+                onChange={(e) => setNationalId(e.target.value)}
+                placeholder="e.g. 1234567890"
+                maxLength={10}
+              />
+            </div>
+            {error && <p className="text-sm text-destructive">{error}</p>}
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={() => {
+                  setError(null);
+                  initiateMutation.mutate();
+                }}
+                disabled={
+                  nationalId.length !== 10 || initiateMutation.isPending
+                }
+                size="sm"
+              >
+                {initiateMutation.isPending
+                  ? "Starting…"
+                  : "Start Verification"}
+                <Fingerprint className="ml-2 h-4 w-4" />
+              </Button>
+              {nationalId.length > 0 && nationalId.length < 10 && (
+                <span className="text-xs text-muted-foreground">
+                  {10 - nationalId.length} digits remaining
+                </span>
+              )}
+            </div>
+          </>
+        ) : (
+          <div className="space-y-2">
+            {randomCode && (
+              <div className="rounded-md border bg-muted p-4 text-center">
+                <p className="text-sm text-muted-foreground">
+                  Open the Nafath app and select this number:
+                </p>
+                <p className="mt-1 text-3xl font-bold tracking-wide">
+                  {randomCode}
+                </p>
+              </div>
+            )}
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Waiting for verification…
+            </div>
+            {error && <p className="text-sm text-destructive">{error}</p>}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -96,11 +270,15 @@ function BuyerOnboarding({
 
   const kybDone = status.steps?.kyb?.complete;
   const paymentDone = status.steps?.paymentMethod?.complete;
+  const identityDone = status.steps?.identity?.complete;
 
   return (
     <div className="space-y-4">
+      {/* Step 0: Identity */}
+      <IdentityVerificationStep status={status} />
+
       {/* Step 1: KYB-lite */}
-      <Card>
+      <Card className={!identityDone ? "opacity-50 pointer-events-none" : ""}>
         <CardHeader className="pb-3">
           <div className="flex items-center gap-2">
             <StepIcon complete={!!kybDone} />
@@ -226,11 +404,15 @@ function SupplierOnboarding({ status }: { status: OnboardingStatus }) {
 
   const tier1Done = status.steps?.tier1?.complete;
   const tier2Done = status.steps?.tier2?.complete;
+  const identityDone = status.steps?.identity?.complete;
 
   return (
     <div className="space-y-4">
+      {/* Step 0: Identity */}
+      <IdentityVerificationStep status={status} />
+
       {/* Tier 1 */}
-      <Card>
+      <Card className={!identityDone ? "opacity-50 pointer-events-none" : ""}>
         <CardHeader className="pb-3">
           <div className="flex items-center gap-2">
             <StepIcon complete={!!tier1Done} />
@@ -366,10 +548,14 @@ function LPOnboarding({ status }: { status: OnboardingStatus }) {
   });
 
   const profileDone = status.steps?.profile?.complete;
+  const identityDone = status.steps?.identity?.complete;
 
   return (
     <div className="space-y-4">
-      <Card>
+      {/* Step 0: Identity */}
+      <IdentityVerificationStep status={status} />
+
+      <Card className={!identityDone ? "opacity-50 pointer-events-none" : ""}>
         <CardHeader className="pb-3">
           <div className="flex items-center gap-2">
             <StepIcon complete={!!profileDone} />

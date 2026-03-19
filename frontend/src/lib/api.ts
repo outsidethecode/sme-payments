@@ -847,8 +847,33 @@ export interface KybResult {
   errorMessage?: string;
 }
 
+export interface IdentityInitiateResult {
+  transactionId?: string;
+  random?: string;
+  provider: string;
+  verified?: boolean;
+  verifiedName?: string;
+  message?: string;
+}
+
+export interface IdentityStatusResult {
+  verified: boolean;
+  provider: string;
+  transactionId?: string;
+  fullNameEn?: string;
+  fullNameAr?: string;
+  errorMessage?: string;
+  verifiedAt?: string;
+}
+
 export const onboardingApi = {
   status: () => api.get<OnboardingStatus>("/onboarding/status"),
+  initiateIdentity: (data: { nationalId: string }) =>
+    api.post<IdentityInitiateResult>("/onboarding/identity/initiate", data),
+  checkIdentityStatus: (transactionId: string, nationalId: string) =>
+    api.get<IdentityStatusResult>(
+      `/onboarding/identity/status?transactionId=${encodeURIComponent(transactionId)}&nationalId=${encodeURIComponent(nationalId)}`,
+    ),
   buyerKyb: (data: { registrationNo: string; authorizedSignatory: string }) =>
     api.post<KybResult>("/onboarding/buyer/kyb", data),
   buyerPayment: (data: { bankIban: string }) =>
