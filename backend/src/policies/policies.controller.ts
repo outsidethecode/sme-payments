@@ -24,6 +24,11 @@ import {
 import { PolicyRuleType } from "@prisma/client";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RolesGuard } from "../auth/roles.guard";
+import {
+  OnboardingGuard,
+  RequireOnboarding,
+} from "../common/guards/onboarding.guard";
+import { PasskeyGuard, RequirePasskey } from "../common/guards/passkey.guard";
 import { Roles } from "../auth/roles.decorator";
 import { PoliciesService, PolicyConditions } from "./policies.service";
 import { OrganisationsService } from "../organisations/organisations.service";
@@ -111,7 +116,9 @@ class SimulatePolicyDto {
 
 @ApiTags("Policies")
 @Controller("policies")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, OnboardingGuard, PasskeyGuard)
+@RequireOnboarding()
+@RequirePasskey()
 @ApiBearerAuth()
 export class PoliciesController {
   constructor(

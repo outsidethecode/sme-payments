@@ -8,6 +8,7 @@ import {
 import { PrismaService } from "../prisma/prisma.service";
 import { KybService } from "../kyb/kyb.service";
 import { IdentityService } from "../identity/identity.service";
+import { PasskeysService } from "../passkeys/passkeys.service";
 import { OnboardingStatus, OrgType, SupplierTier } from "@prisma/client";
 
 @Injectable()
@@ -18,6 +19,7 @@ export class OnboardingService {
     private readonly prisma: PrismaService,
     private readonly kybService: KybService,
     private readonly identityService: IdentityService,
+    private readonly passkeysService: PasskeysService,
   ) {}
 
   /**
@@ -64,10 +66,17 @@ export class OnboardingService {
       }
     }
 
+    // Check passkey status for the calling user
+    let passkeyRegistered = false;
+    if (userId) {
+      passkeyRegistered = await this.passkeysService.hasPasskey(userId);
+    }
+
     // Build step checklist based on org type
     const steps = this.buildSteps(org, {
       identityVerified,
       identityVerifiedName,
+      passkeyRegistered,
     });
 
     // Self-heal: if stored status says COMPLETED but steps aren't actually done,
@@ -409,18 +418,25 @@ export class OnboardingService {
 
   private buildSteps(
     org: any,
-    identity: {
+    info: {
       identityVerified: boolean;
       identityVerifiedName: string | null;
+      passkeyRegistered: boolean;
     } = {
       identityVerified: false,
       identityVerifiedName: null,
+      passkeyRegistered: false,
     },
   ) {
     const identityStep = {
       identity: {
-        complete: identity.identityVerified,
-        verifiedName: identity.identityVerifiedName,
+        complete: info.identityVerified,
+        verifiedName: info.identityVerifiedName,
+      },
+    };
+    const passkeyStep = {
+      passkey: {
+        complete: info.passkeyRegistered,
       },
     };
 
@@ -428,6 +444,7 @@ export class OnboardingService {
       case OrgType.BUYER:
         return {
           ...identityStep,
+          ...passkeyStep,
           kyb: {
             complete: !!org.kybVerifiedAt,
             registrationNo: org.registrationNo,
@@ -444,6 +461,7 @@ export class OnboardingService {
       case OrgType.SUPPLIER:
         return {
           ...identityStep,
+          ...passkeyStep,
           tier1: {
             complete: !!org.supplierTier,
             registrationNo: org.registrationNo,
@@ -461,6 +479,7 @@ export class OnboardingService {
       case OrgType.LIQUIDITY_PARTNER:
         return {
           ...identityStep,
+          ...passkeyStep,
           profile: {
             complete: !!org.fundingAccountRef && !!org.fundingLimitTotal,
             fundingAccountRef: org.fundingAccountRef,
@@ -474,7 +493,7 @@ export class OnboardingService {
         };
 
       default:
-        return { ...identityStep };
+        return { ...identityStep, ...passkeyStep };
     }
   }
 }

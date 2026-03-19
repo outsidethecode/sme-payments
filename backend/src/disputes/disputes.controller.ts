@@ -11,11 +11,18 @@ import {
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RolesGuard } from "../auth/roles.guard";
+import {
+  OnboardingGuard,
+  RequireOnboarding,
+} from "../common/guards/onboarding.guard";
+import { PasskeyGuard, RequirePasskey } from "../common/guards/passkey.guard";
 import { Roles } from "../auth/roles.decorator";
 import { DisputesService } from "./disputes.service";
 
 @Controller("disputes")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, OnboardingGuard, PasskeyGuard)
+@RequireOnboarding()
+@RequirePasskey()
 export class DisputesController {
   constructor(private readonly disputes: DisputesService) {}
 

@@ -11,12 +11,19 @@ import {
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RolesGuard } from "../auth/roles.guard";
+import {
+  OnboardingGuard,
+  RequireOnboarding,
+} from "../common/guards/onboarding.guard";
+import { PasskeyGuard, RequirePasskey } from "../common/guards/passkey.guard";
 import { Roles } from "../auth/roles.decorator";
 import { FraudControlsService } from "./fraud-controls.service";
 import { LpRiskService } from "./lp-risk.service";
 
 @Controller("risk")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, OnboardingGuard, PasskeyGuard)
+@RequireOnboarding()
+@RequirePasskey()
 export class RiskController {
   constructor(
     private readonly fraud: FraudControlsService,

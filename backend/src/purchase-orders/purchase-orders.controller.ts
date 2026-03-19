@@ -25,6 +25,11 @@ import {
 import { Type } from "class-transformer";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RolesGuard } from "../auth/roles.guard";
+import {
+  OnboardingGuard,
+  RequireOnboarding,
+} from "../common/guards/onboarding.guard";
+import { PasskeyGuard, RequirePasskey } from "../common/guards/passkey.guard";
 import { Roles } from "../auth/roles.decorator";
 import { Idempotent } from "../idempotency/idempotent.decorator";
 import { PurchaseOrdersService } from "./purchase-orders.service";
@@ -142,7 +147,9 @@ class CounterProposeDto {
 
 @ApiTags("Purchase Orders")
 @Controller("purchase-orders")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, OnboardingGuard, PasskeyGuard)
+@RequireOnboarding()
+@RequirePasskey()
 @ApiBearerAuth()
 export class PurchaseOrdersController {
   constructor(private readonly poService: PurchaseOrdersService) {}

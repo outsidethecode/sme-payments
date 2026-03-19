@@ -73,7 +73,11 @@ export class PasskeysService {
     return options;
   }
 
-  async verifyRegResponse(userId: string, response: RegistrationResponseJSON) {
+  async verifyRegResponse(
+    userId: string,
+    response: RegistrationResponseJSON,
+    deviceName?: string,
+  ) {
     const key = `${userId}:registration`;
     const challenge = await this.challengeStore.getAndDelete(key);
     if (!challenge) {
@@ -110,6 +114,7 @@ export class PasskeysService {
         deviceType: credentialDeviceType,
         backedUp: credentialBackedUp,
         transports: (response.response.transports ?? []) as string[],
+        deviceName: deviceName || null,
       },
     });
 
@@ -239,6 +244,28 @@ export class PasskeysService {
         credentialId: true,
         deviceType: true,
         backedUp: true,
+        deviceName: true,
+        createdAt: true,
+        lastUsedAt: true,
+      },
+    });
+  }
+
+  async renamePasskey(userId: string, passkeyId: string, deviceName: string) {
+    const passkey = await this.prisma.userPasskey.findUnique({
+      where: { id: passkeyId },
+    });
+    if (!passkey || passkey.userId !== userId) {
+      throw new NotFoundException("Passkey not found");
+    }
+    return this.prisma.userPasskey.update({
+      where: { id: passkeyId },
+      data: { deviceName },
+      select: {
+        id: true,
+        credentialId: true,
+        deviceType: true,
+        deviceName: true,
         createdAt: true,
         lastUsedAt: true,
       },
@@ -252,6 +279,15 @@ export class PasskeysService {
     if (!passkey || passkey.userId !== userId) {
       throw new NotFoundException("Passkey not found");
     }
+
+    // Prevent deleting the last passkey — users must always have at least one
+    const count = await this.prisma.userPasskey.count({ where: { userId } });
+    if (count <= 1) {
+      throw new BadRequestException(
+        "Cannot delete your only passkey. Register another device first.",
+      );
+    }
+
     await this.prisma.userPasskey.delete({ where: { id: passkeyId } });
     return { deleted: true };
   }

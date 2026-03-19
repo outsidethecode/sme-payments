@@ -38,42 +38,49 @@ export function usePasskey() {
   /**
    * Register a new passkey. Triggers browser WebAuthn dialog (biometric/PIN).
    */
-  const register = useCallback(async () => {
-    setRegistering(true);
-    try {
-      // 1. Get registration options from server
-      const { data: options } = await passkeysApi.registerOptions();
+  const register = useCallback(
+    async (deviceName?: string) => {
+      setRegistering(true);
+      try {
+        // 1. Get registration options from server
+        const { data: options } = await passkeysApi.registerOptions();
 
-      // 2. Trigger browser passkey creation (biometric prompt)
-      const attestation = await startRegistration(options);
+        // 2. Trigger browser passkey creation (biometric prompt)
+        const attestation = await startRegistration(options);
 
-      // 3. Send attestation to server for verification
-      const { data: result } = await passkeysApi.registerVerify(attestation);
-
-      if (result.verified) {
-        toast.success(
-          "Passkey registered! Your actions are now cryptographically signed.",
+        // 3. Send attestation to server for verification
+        const { data: result } = await passkeysApi.registerVerify(
+          attestation,
+          deviceName,
         );
-        queryClient.invalidateQueries({ queryKey: ["passkey-status"] });
-      }
 
-      return result;
-    } catch (err: any) {
-      // User cancelled the dialog
-      if (err.name === "NotAllowedError") {
-        toast.error("Passkey registration was cancelled");
-      } else {
-        toast.error(
-          err.response?.data?.message ||
-            err.message ||
-            "Passkey registration failed",
-        );
+        if (result.verified) {
+          toast.success(
+            "Passkey registered! Your actions are now cryptographically signed.",
+          );
+          queryClient.invalidateQueries({ queryKey: ["passkey-status"] });
+          queryClient.invalidateQueries({ queryKey: ["passkeys"] });
+        }
+
+        return result;
+      } catch (err: any) {
+        // User cancelled the dialog
+        if (err.name === "NotAllowedError") {
+          toast.error("Passkey registration was cancelled");
+        } else {
+          toast.error(
+            err.response?.data?.message ||
+              err.message ||
+              "Passkey registration failed",
+          );
+        }
+        throw err;
+      } finally {
+        setRegistering(false);
       }
-      throw err;
-    } finally {
-      setRegistering(false);
-    }
-  }, [queryClient]);
+    },
+    [queryClient],
+  );
 
   /**
    * Sign a ledger action with a passkey. Two-step flow:
@@ -90,10 +97,17 @@ export function usePasskey() {
       purpose: string;
       assertion: any;
       intentHash: string;
-    } | null> => {
-      // If no passkey, skip signing (backend will use SYSTEM)
+    }> => {
+      // Passkey is mandatory — if the user somehow doesn't have one, block the action
       if (!hasPasskey) {
-        return null;
+        toast.error(
+          "Passkey required. Please register a passkey in your onboarding settings.",
+        );
+        const err = new Error(
+          "Passkey registration required before performing actions",
+        );
+        err.name = "PasskeyRequired";
+        throw err;
       }
 
       setSigning(true);
@@ -119,10 +133,13 @@ export function usePasskey() {
           cancelled.name = "SigningCancelled";
           throw cancelled;
         }
+        if (err.name === "PasskeyRequired") throw err;
         console.error("Passkey signing error:", err);
-        // Technical failure — fall back to unsigned so the action isn't blocked
-        toast.error("Passkey signing failed — action will proceed unsigned");
-        return null;
+        // Technical failure — signing is mandatory, cannot proceed unsigned
+        toast.error(
+          "Passkey signing failed. Please try again — all actions require cryptographic signatures.",
+        );
+        throw err;
       } finally {
         setSigning(false);
       }

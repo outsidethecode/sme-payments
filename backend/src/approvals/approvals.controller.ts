@@ -13,6 +13,11 @@ import { ApiTags, ApiBearerAuth, ApiOperation } from "@nestjs/swagger";
 import { IsString, IsOptional, IsEnum } from "class-validator";
 import { ApprovalDecision } from "@prisma/client";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import {
+  OnboardingGuard,
+  RequireOnboarding,
+} from "../common/guards/onboarding.guard";
+import { PasskeyGuard, RequirePasskey } from "../common/guards/passkey.guard";
 import { ApprovalsService } from "./approvals.service";
 import { ApprovalCallbackRegistry } from "./approval-callback.registry";
 import { PurchaseOrdersService } from "../purchase-orders/purchase-orders.service";
@@ -32,7 +37,9 @@ class SubmitDecisionDto {
 
 @ApiTags("Approvals")
 @Controller("approvals")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, OnboardingGuard, PasskeyGuard)
+@RequireOnboarding()
+@RequirePasskey()
 @ApiBearerAuth()
 export class ApprovalsController {
   constructor(

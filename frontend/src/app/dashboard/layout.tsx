@@ -2,7 +2,7 @@
 
 import { useAuth } from "@/lib/auth-context";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
@@ -35,6 +35,8 @@ import {
   Receipt,
   Building2,
   ToggleLeft,
+  Fingerprint,
+  ChevronRight,
 } from "lucide-react";
 import { PasskeyBanner } from "@/components/passkey-banner";
 import { HealthIndicator } from "@/components/health-indicator";
@@ -70,6 +72,7 @@ const NAV_ITEMS = [
     icon: Users,
     roles: ["BUYER", "SUPPLIER", "LIQUIDITY_PARTNER", "ADMIN"],
   },
+
   {
     href: "/dashboard/invitations",
     label: "Invitations",
@@ -164,6 +167,18 @@ export default function DashboardLayout({
   const { user, loading, logout } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+  const [settingsOpen, setSettingsOpen] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      window.location.pathname.startsWith("/dashboard/settings"),
+  );
+
+  // Auto-expand when navigating into settings
+  useEffect(() => {
+    if (pathname.startsWith("/dashboard/settings")) {
+      setSettingsOpen(true);
+    }
+  }, [pathname]);
 
   // ── Onboarding gate (must be before any early return to satisfy Rules of Hooks) ──
   const isAdmin = user?.role === "ADMIN";
@@ -199,7 +214,8 @@ export default function DashboardLayout({
   const isAlwaysAllowed = (path: string) =>
     path === "/dashboard" ||
     path === "/dashboard/onboarding" ||
-    path.startsWith("/dashboard/onboarding/");
+    path.startsWith("/dashboard/onboarding/") ||
+    path.startsWith("/dashboard/settings");
 
   const isAllowedPage = isAlwaysAllowed(pathname);
 
@@ -244,6 +260,46 @@ export default function DashboardLayout({
               </Link>
             );
           })}
+
+          {/* ── Settings group ── */}
+          <div>
+            <Button
+              variant={
+                pathname.startsWith("/dashboard/settings")
+                  ? "secondary"
+                  : "ghost"
+              }
+              className="w-full justify-start gap-2"
+              size="sm"
+              onClick={() => setSettingsOpen((o) => !o)}
+            >
+              <Settings className="h-4 w-4" />
+              Settings
+              <ChevronRight
+                className={`ml-auto h-3 w-3 transition-transform ${
+                  settingsOpen ? "rotate-90" : ""
+                }`}
+              />
+            </Button>
+            {settingsOpen && (
+              <div className="ml-4 mt-1 space-y-1">
+                <Link href="/dashboard/settings/security">
+                  <Button
+                    variant={
+                      pathname.startsWith("/dashboard/settings/security")
+                        ? "secondary"
+                        : "ghost"
+                    }
+                    className="w-full justify-start gap-2"
+                    size="sm"
+                  >
+                    <Fingerprint className="h-4 w-4" />
+                    Passkeys
+                  </Button>
+                </Link>
+              </div>
+            )}
+          </div>
         </nav>
 
         <Separator />

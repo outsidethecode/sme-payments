@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "@/lib/auth-context";
+import { usePasskey } from "@/lib/use-passkey";
 import { onboardingApi, type OnboardingStatus } from "@/lib/api";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -26,6 +27,7 @@ import {
   BadgeCheck,
   Fingerprint,
   Loader2,
+  KeyRound,
 } from "lucide-react";
 import { useState, useEffect, useRef, useCallback } from "react";
 
@@ -230,6 +232,75 @@ function IdentityVerificationStep({ status }: { status: OnboardingStatus }) {
   );
 }
 
+// ── Passkey Registration (Step 0.5 — shared by all roles) ──
+
+function PasskeyRegistrationStep({
+  status,
+  identityDone,
+}: {
+  status: OnboardingStatus;
+  identityDone: boolean;
+}) {
+  const { hasPasskey, statusLoading, registering, register } = usePasskey();
+  const passkeyDone = status.steps?.passkey?.complete || hasPasskey;
+
+  if (passkeyDone) {
+    return (
+      <Card className="border-green-200">
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="h-5 w-5 text-green-600" />
+            <CardTitle className="text-base">
+              Step 1: Passkey Registered
+            </CardTitle>
+          </div>
+          <CardDescription>
+            Your passkey is active — all actions will be cryptographically
+            signed with biometrics.
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className={!identityDone ? "opacity-50 pointer-events-none" : ""}>
+      <CardHeader className="pb-3">
+        <div className="flex items-center gap-2">
+          <StepIcon complete={false} />
+          <CardTitle className="text-base">Step 1: Register Passkey</CardTitle>
+        </div>
+        <CardDescription>
+          Register a passkey to cryptographically sign all your platform actions
+          using biometrics (Face ID, Touch ID, or PIN). This provides
+          non-repudiation in the evidence pack.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="rounded-md border bg-muted/50 p-3 text-sm text-muted-foreground space-y-1">
+          <p>
+            <strong>Why is this required?</strong>
+          </p>
+          <p>
+            Every action you take (sending POs, approving transactions, funding
+            escrow) will be signed with your device biometric. This creates a
+            tamper-proof digital signature chain that is included in the
+            evidence pack and independently verifiable by any third party.
+          </p>
+        </div>
+        <Button
+          onClick={() => register()}
+          disabled={registering || statusLoading}
+          size="sm"
+        >
+          {registering ? "Registering…" : "Register Passkey"}
+          <KeyRound className="ml-2 h-4 w-4" />
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ── Buyer Onboarding ──
 
 function BuyerOnboarding({
@@ -271,19 +342,24 @@ function BuyerOnboarding({
   const kybDone = status.steps?.kyb?.complete;
   const paymentDone = status.steps?.paymentMethod?.complete;
   const identityDone = status.steps?.identity?.complete;
+  const passkeyDone = status.steps?.passkey?.complete;
+  const preReqsDone = identityDone && passkeyDone;
 
   return (
     <div className="space-y-4">
       {/* Step 0: Identity */}
       <IdentityVerificationStep status={status} />
 
-      {/* Step 1: KYB-lite */}
-      <Card className={!identityDone ? "opacity-50 pointer-events-none" : ""}>
+      {/* Step 1: Passkey */}
+      <PasskeyRegistrationStep status={status} identityDone={!!identityDone} />
+
+      {/* Step 2: KYB-lite */}
+      <Card className={!preReqsDone ? "opacity-50 pointer-events-none" : ""}>
         <CardHeader className="pb-3">
           <div className="flex items-center gap-2">
             <StepIcon complete={!!kybDone} />
             <CardTitle className="text-base">
-              Step 1: Business Verification (KYB-lite)
+              Step 2: Business Verification (KYB-lite)
             </CardTitle>
           </div>
           <CardDescription>
@@ -327,13 +403,13 @@ function BuyerOnboarding({
         )}
       </Card>
 
-      {/* Step 2: Payment Method */}
+      {/* Step 3: Payment Method */}
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center gap-2">
             <StepIcon complete={!!paymentDone} />
             <CardTitle className="text-base">
-              Step 2: Connect Payment Method
+              Step 3: Connect Payment Method
             </CardTitle>
           </div>
           <CardDescription>Link your bank IBAN for settlements</CardDescription>
@@ -405,14 +481,19 @@ function SupplierOnboarding({ status }: { status: OnboardingStatus }) {
   const tier1Done = status.steps?.tier1?.complete;
   const tier2Done = status.steps?.tier2?.complete;
   const identityDone = status.steps?.identity?.complete;
+  const passkeyDone = status.steps?.passkey?.complete;
+  const preReqsDone = identityDone && passkeyDone;
 
   return (
     <div className="space-y-4">
       {/* Step 0: Identity */}
       <IdentityVerificationStep status={status} />
 
+      {/* Step 1: Passkey */}
+      <PasskeyRegistrationStep status={status} identityDone={!!identityDone} />
+
       {/* Tier 1 */}
-      <Card className={!identityDone ? "opacity-50 pointer-events-none" : ""}>
+      <Card className={!preReqsDone ? "opacity-50 pointer-events-none" : ""}>
         <CardHeader className="pb-3">
           <div className="flex items-center gap-2">
             <StepIcon complete={!!tier1Done} />
@@ -549,13 +630,18 @@ function LPOnboarding({ status }: { status: OnboardingStatus }) {
 
   const profileDone = status.steps?.profile?.complete;
   const identityDone = status.steps?.identity?.complete;
+  const passkeyDone = status.steps?.passkey?.complete;
+  const preReqsDone = identityDone && passkeyDone;
 
   return (
     <div className="space-y-4">
       {/* Step 0: Identity */}
       <IdentityVerificationStep status={status} />
 
-      <Card className={!identityDone ? "opacity-50 pointer-events-none" : ""}>
+      {/* Step 1: Passkey */}
+      <PasskeyRegistrationStep status={status} identityDone={!!identityDone} />
+
+      <Card className={!preReqsDone ? "opacity-50 pointer-events-none" : ""}>
         <CardHeader className="pb-3">
           <div className="flex items-center gap-2">
             <StepIcon complete={!!profileDone} />

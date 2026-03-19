@@ -506,16 +506,17 @@ export const passkeysApi = {
         id: string;
         credentialId: string;
         deviceType: string | null;
+        deviceName: string | null;
         backedUp: boolean;
         createdAt: string;
         lastUsedAt: string | null;
       }[]
     >("/passkeys"),
   registerOptions: () => api.post<any>("/passkeys/register/options"),
-  registerVerify: (response: any) =>
+  registerVerify: (response: any, deviceName?: string) =>
     api.post<{ verified: boolean; credentialId: string }>(
       "/passkeys/register/verify",
-      response,
+      { ...response, deviceName },
     ),
   authOptions: (purpose: string) =>
     api.post<any>("/passkeys/authenticate/options", { purpose }),
@@ -528,6 +529,8 @@ export const passkeysApi = {
       clientDataJSON: string;
       publicKey: string;
     }>("/passkeys/authenticate/verify", { purpose, response }),
+  rename: (id: string, deviceName: string) =>
+    api.patch(`/passkeys/${id}`, { deviceName }),
   delete: (id: string) => api.delete(`/passkeys/${id}`),
 };
 

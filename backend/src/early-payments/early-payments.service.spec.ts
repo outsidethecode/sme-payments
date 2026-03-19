@@ -18,6 +18,12 @@ import {
   FeatureFlag,
 } from "../config/feature-flags.service";
 
+// Mock requireSignature to no-op in unit tests (it has its own spec)
+jest.mock("../ledger/ledger.service", () => ({
+  ...jest.requireActual("../ledger/ledger.service"),
+  requireSignature: jest.fn(),
+}));
+
 // ── Helpers ───────────────────────────────────────────────────
 
 const SUPPLIER_ID = "supplier-1";

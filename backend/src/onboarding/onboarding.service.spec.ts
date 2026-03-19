@@ -3,6 +3,7 @@ import { OnboardingService } from "./onboarding.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { KybService } from "../kyb/kyb.service";
 import { IdentityService } from "../identity/identity.service";
+import { PasskeysService } from "../passkeys/passkeys.service";
 import {
   NotFoundException,
   BadRequestException,
@@ -14,6 +15,7 @@ describe("OnboardingService", () => {
   let prisma: Record<string, any>;
   let kybService: Record<string, jest.Mock>;
   let identityService: Record<string, jest.Mock>;
+  let passkeysService: Record<string, jest.Mock>;
 
   const mockBuyerOrg = {
     id: "org-buyer-1",
@@ -73,12 +75,17 @@ describe("OnboardingService", () => {
       getVerificationStatus: jest.fn(),
     };
 
+    passkeysService = {
+      hasPasskey: jest.fn().mockResolvedValue(false),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         OnboardingService,
         { provide: PrismaService, useValue: prisma },
         { provide: KybService, useValue: kybService },
         { provide: IdentityService, useValue: identityService },
+        { provide: PasskeysService, useValue: passkeysService },
       ],
     }).compile();
 

@@ -6,7 +6,11 @@ import {
   Logger,
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
-import { LedgerService, SignatureData } from "../ledger/ledger.service";
+import {
+  LedgerService,
+  SignatureData,
+  requireSignature,
+} from "../ledger/ledger.service";
 import { SettlementService } from "../settlements/settlement.service";
 import { SettlementRouterService } from "../settlements/settlement-router.service";
 
@@ -52,6 +56,7 @@ export class DisputesService {
    * Only the buyer can raise a dispute, and the PO must be in DELIVERED status.
    */
   async raise(input: RaiseDisputeInput, sig?: SignatureData) {
+    requireSignature(sig, "DISPUTE_RAISE");
     const po = await this.prisma.purchaseOrder.findUnique({
       where: { id: input.purchaseOrderId },
       include: { paymentLock: true },
@@ -135,6 +140,7 @@ export class DisputesService {
    * Both buyer and supplier can submit evidence.
    */
   async submitEvidence(input: SubmitEvidenceInput, sig?: SignatureData) {
+    requireSignature(sig, "DISPUTE_SUBMIT_EVIDENCE");
     const dispute = await this.prisma.dispute.findUnique({
       where: { id: input.disputeId },
       include: { purchaseOrder: true },
@@ -213,6 +219,7 @@ export class DisputesService {
     adminId: string,
     sig?: SignatureData,
   ) {
+    requireSignature(sig, "DISPUTE_MARK_UNDER_REVIEW");
     const dispute = await this.prisma.dispute.findUnique({
       where: { id: disputeId },
     });
@@ -243,6 +250,7 @@ export class DisputesService {
    * Triggers settlement actions based on the outcome.
    */
   async resolve(input: ResolveDisputeInput, sig?: SignatureData) {
+    requireSignature(sig, "DISPUTE_RESOLVE");
     const dispute = await this.prisma.dispute.findUnique({
       where: { id: input.disputeId },
       include: {

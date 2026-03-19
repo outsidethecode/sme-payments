@@ -16,6 +16,11 @@ import {
   ApiQuery,
 } from "@nestjs/swagger";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import {
+  OnboardingGuard,
+  RequireOnboarding,
+} from "../common/guards/onboarding.guard";
+import { PasskeyGuard, RequirePasskey } from "../common/guards/passkey.guard";
 import { LedgerService } from "./ledger.service";
 import { AnchorService } from "./anchor.service";
 import { PasskeysService } from "../passkeys/passkeys.service";
@@ -23,7 +28,9 @@ import { PrismaService } from "../prisma/prisma.service";
 
 @ApiTags("Ledger")
 @Controller("ledger")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, OnboardingGuard, PasskeyGuard)
+@RequireOnboarding()
+@RequirePasskey()
 @ApiBearerAuth()
 export class LedgerController {
   constructor(

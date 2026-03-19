@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import {
   CRYPTO_SERVICE,
@@ -59,6 +59,25 @@ export interface SignatureData {
   credentialId: string;
   intentHash?: string;
   clientDataJSON?: string;
+}
+
+/**
+ * Validates that a cryptographic signature is present for state-changing actions.
+ * Throws BadRequestException if the signature is missing.
+ *
+ * Call this at the top of any service method that mutates state
+ * to enforce the passkey-signing requirement.
+ */
+export function requireSignature(
+  sig: SignatureData | undefined,
+  action: string,
+): asserts sig is SignatureData {
+  if (!sig || !sig.signature) {
+    throw new BadRequestException(
+      `Cryptographic signature required for action "${action}". ` +
+        `Please sign this action with your registered passkey.`,
+    );
+  }
 }
 
 export interface LogEventInput {

@@ -3,6 +3,7 @@ import {
   Post,
   Get,
   Delete,
+  Patch,
   Body,
   Param,
   UseGuards,
@@ -29,8 +30,16 @@ export class PasskeysController {
 
   @Post("register/verify")
   @ApiOperation({ summary: "Verify passkey registration response" })
-  async registerVerify(@Request() req: any, @Body() body: any) {
-    return this.passkeysService.verifyRegResponse(req.user.id, body);
+  async registerVerify(
+    @Request() req: any,
+    @Body() body: { deviceName?: string; [key: string]: any },
+  ) {
+    const { deviceName, ...attestation } = body;
+    return this.passkeysService.verifyRegResponse(
+      req.user.id,
+      attestation as any,
+      deviceName,
+    );
   }
 
   // ── Authentication / Signing ──────────────────────────────
@@ -72,8 +81,18 @@ export class PasskeysController {
     return { hasPasskey };
   }
 
+  @Patch(":id")
+  @ApiOperation({ summary: "Rename a passkey (update device name)" })
+  async rename(
+    @Param("id") id: string,
+    @Request() req: any,
+    @Body() body: { deviceName: string },
+  ) {
+    return this.passkeysService.renamePasskey(req.user.id, id, body.deviceName);
+  }
+
   @Delete(":id")
-  @ApiOperation({ summary: "Delete a passkey" })
+  @ApiOperation({ summary: "Delete a passkey (cannot delete last one)" })
   async remove(@Param("id") id: string, @Request() req: any) {
     return this.passkeysService.deletePasskey(req.user.id, id);
   }

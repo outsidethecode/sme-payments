@@ -6,7 +6,11 @@ import {
   ForbiddenException,
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
-import { LedgerService, SignatureData } from "../ledger/ledger.service";
+import {
+  LedgerService,
+  SignatureData,
+  requireSignature,
+} from "../ledger/ledger.service";
 import { PoliciesService } from "../policies/policies.service";
 import { PolicyEvaluationService } from "../policies/policy-evaluation.service";
 import { OrganisationsService } from "../organisations/organisations.service";
@@ -57,6 +61,7 @@ export class EarlyPaymentsService {
     supplierId: string,
     sig?: SignatureData,
   ) {
+    requireSignature(sig, "EARLY_PAYMENT_REQUEST");
     // ── Feature flag gate ──
     const supplierOrg = await this.orgs.getOrgByUserId(supplierId);
     const earlyPaymentsEnabled = await this.featureFlags.isEnabled(
@@ -361,6 +366,7 @@ export class EarlyPaymentsService {
    * If step 3 fails, step 2 is compensated via revertFinancing().
    */
   async fund(id: string, lpId: string, sig?: SignatureData) {
+    requireSignature(sig, "EARLY_PAYMENT_FUND");
     const request = await this.prisma.earlyPaymentRequest.findUnique({
       where: { id },
       include: { purchaseOrder: true },

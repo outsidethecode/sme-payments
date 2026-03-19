@@ -297,6 +297,7 @@ model UserPasskey {
   deviceType   String?  @map("device_type") // singleDevice | multiDevice
   backedUp     Boolean  @default(false) @map("backed_up")
   transports   String[] @default([])
+  deviceName   String?  @map("device_name") // User-assigned label ("MacBook Pro", "iPhone 16")
   createdAt    DateTime @default(now()) @map("created_at")
   lastUsedAt   DateTime? @map("last_used_at")
 

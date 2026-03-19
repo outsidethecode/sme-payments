@@ -7,7 +7,11 @@ import {
   OnModuleInit,
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
-import { LedgerService, SignatureData } from "../ledger/ledger.service";
+import {
+  LedgerService,
+  SignatureData,
+  requireSignature,
+} from "../ledger/ledger.service";
 import { UsersService } from "../users/users.service";
 import { PoliciesService } from "../policies/policies.service";
 import {
@@ -340,6 +344,7 @@ export class PurchaseOrdersService implements OnModuleInit {
   }
 
   async send(id: string, actorId: string, sig?: SignatureData) {
+    requireSignature(sig, "PO_SEND");
     const po = await this.requireStatus(id, "DRAFT");
     if (!(await this.isSameOrg(actorId, po.buyerId)))
       throw new ForbiddenException(
@@ -569,6 +574,7 @@ export class PurchaseOrdersService implements OnModuleInit {
   }
 
   async accept(id: string, actorId: string, sig?: SignatureData) {
+    requireSignature(sig, "PO_ACCEPT");
     const po = await this.requireStatus(id, "SENT");
     if (!(await this.isSameOrg(actorId, po.supplierId)))
       throw new ForbiddenException("Only the supplier organisation can accept");
@@ -653,6 +659,7 @@ export class PurchaseOrdersService implements OnModuleInit {
    * callback auto-confirms after a few seconds.
    */
   async fundEscrow(id: string, actorId: string, sig?: SignatureData) {
+    requireSignature(sig, "PO_FUND_ESCROW");
     // ── Idempotency guard: if PO already past ACCEPTED, return current state ──
     const poCheck = await this.prisma.purchaseOrder.findUnique({
       where: { id },
@@ -1029,6 +1036,7 @@ export class PurchaseOrdersService implements OnModuleInit {
   }
 
   async reject(id: string, actorId: string, sig?: SignatureData) {
+    requireSignature(sig, "PO_REJECT");
     const po = await this.requireStatus(id, "SENT");
     if (!(await this.isSameOrg(actorId, po.supplierId)))
       throw new ForbiddenException("Only the supplier organisation can reject");
@@ -1108,6 +1116,7 @@ export class PurchaseOrdersService implements OnModuleInit {
     },
     sig?: SignatureData,
   ) {
+    requireSignature(sig, "PO_COUNTER_PROPOSE");
     const po = await this.prisma.purchaseOrder.findUnique({
       where: { id },
       include: { revisions: true },
@@ -1252,6 +1261,7 @@ export class PurchaseOrdersService implements OnModuleInit {
   }
 
   async acceptCounter(id: string, actorId: string, sig?: SignatureData) {
+    requireSignature(sig, "PO_ACCEPT_COUNTER");
     const po = await this.prisma.purchaseOrder.findUnique({
       where: { id },
       include: {
@@ -1349,6 +1359,7 @@ export class PurchaseOrdersService implements OnModuleInit {
   }
 
   async rejectCounter(id: string, actorId: string, sig?: SignatureData) {
+    requireSignature(sig, "PO_REJECT_COUNTER");
     const po = await this.prisma.purchaseOrder.findUnique({
       where: { id },
       include: {
@@ -1428,6 +1439,7 @@ export class PurchaseOrdersService implements OnModuleInit {
   }
 
   async markShipped(id: string, actorId: string, sig?: SignatureData) {
+    requireSignature(sig, "PO_MARK_SHIPPED");
     const po = await this.prisma.purchaseOrder.findUnique({
       where: { id },
       include: { paymentLock: true },
@@ -1496,6 +1508,7 @@ export class PurchaseOrdersService implements OnModuleInit {
   }
 
   async markDelivered(id: string, actorId: string, sig?: SignatureData) {
+    requireSignature(sig, "PO_MARK_DELIVERED");
     const po = await this.prisma.purchaseOrder.findUnique({ where: { id } });
     if (!po) throw new NotFoundException("PO not found");
     if (po.status !== "SHIPPED") {
@@ -1549,6 +1562,7 @@ export class PurchaseOrdersService implements OnModuleInit {
   }
 
   async verifyDelivery(id: string, actorId: string, sig?: SignatureData) {
+    requireSignature(sig, "PO_VERIFY_DELIVERY");
     const po = await this.requireStatus(id, "DELIVERED");
     if (!(await this.isSameOrg(actorId, po.buyerId)))
       throw new ForbiddenException(
@@ -1864,6 +1878,7 @@ export class PurchaseOrdersService implements OnModuleInit {
   // SettlementRouterService.resolveRecipient() — see Phase 2 hardening.
 
   async dispute(id: string, actorId: string, sig?: SignatureData) {
+    requireSignature(sig, "PO_DISPUTE");
     const po = await this.requireStatus(id, "DELIVERED");
     if (!(await this.isSameOrg(actorId, po.buyerId)))
       throw new ForbiddenException("Only the buyer organisation can dispute");

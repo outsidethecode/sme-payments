@@ -26,6 +26,11 @@ import {
 } from "class-validator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RolesGuard } from "../auth/roles.guard";
+import {
+  OnboardingGuard,
+  RequireOnboarding,
+} from "../common/guards/onboarding.guard";
+import { PasskeyGuard, RequirePasskey } from "../common/guards/passkey.guard";
 import { Roles } from "../auth/roles.decorator";
 import { OrganisationsService } from "./organisations.service";
 import { DelegationService } from "./delegation.service";
@@ -96,7 +101,9 @@ class CreateDelegationDto {
 
 @ApiTags("Organisations")
 @Controller("organisations")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, OnboardingGuard, PasskeyGuard)
+@RequireOnboarding()
+@RequirePasskey()
 @ApiBearerAuth()
 export class OrganisationsController {
   constructor(
