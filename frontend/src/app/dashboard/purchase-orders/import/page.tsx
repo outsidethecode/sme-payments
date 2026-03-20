@@ -24,10 +24,12 @@ import {
   AlertCircle,
 } from "lucide-react";
 import Link from "next/link";
+import { useTranslation } from "@/i18n";
 
 export default function ImportPOPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { t } = useTranslation();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [result, setResult] = useState<{
@@ -41,24 +43,29 @@ export default function ImportPOPage() {
       setResult(res.data);
       queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
       if (res.data.imported > 0 && res.data.errors.length === 0) {
-        toast.success(`Successfully imported ${res.data.imported} PO(s)`);
+        toast.success(
+          t("importPO.importSuccess", { count: res.data.imported }),
+        );
       } else if (res.data.imported > 0) {
         toast.success(
-          `Imported ${res.data.imported} PO(s), ${res.data.errors.length} error(s)`,
+          t("importPO.importPartial", {
+            imported: res.data.imported,
+            errors: res.data.errors.length,
+          }),
         );
       } else {
-        toast.error("Import failed — check errors below");
+        toast.error(t("importPO.importCheckErrors"));
       }
     },
     onError: (err: any) => {
-      toast.error(err.response?.data?.message || "Import failed");
+      toast.error(err.response?.data?.message || t("importPO.importFailed"));
     },
   });
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedFile) {
-      toast.error("Select a CSV file first");
+      toast.error(t("importPO.selectCSVFirst"));
       return;
     }
     setResult(null);
@@ -75,10 +82,10 @@ export default function ImportPOPage() {
         </Link>
         <div>
           <h1 className="text-2xl font-bold tracking-tight">
-            Import POs from CSV
+            {t("importPO.title")}
           </h1>
           <p className="text-sm text-muted-foreground">
-            Bulk-create purchase orders from a spreadsheet
+            {t("importPO.subtitle")}
           </p>
         </div>
       </div>
@@ -87,7 +94,7 @@ export default function ImportPOPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <FileSpreadsheet className="h-4 w-4" />
-            CSV Format
+            {t("importPO.csvFormat")}
           </CardTitle>
           <CardDescription>
             Your CSV file should have these columns. Rows with the same
@@ -99,61 +106,67 @@ export default function ImportPOPage() {
             <table className="text-xs w-full">
               <thead>
                 <tr className="border-b">
-                  <th className="text-left p-1 font-semibold">Column</th>
-                  <th className="text-left p-1 font-semibold">Required</th>
-                  <th className="text-left p-1 font-semibold">Description</th>
+                  <th className="text-left p-1 font-semibold">
+                    {t("importPO.colColumn")}
+                  </th>
+                  <th className="text-left p-1 font-semibold">
+                    {t("importPO.colRequired")}
+                  </th>
+                  <th className="text-left p-1 font-semibold">
+                    {t("importPO.colDescription")}
+                  </th>
                 </tr>
               </thead>
               <tbody className="text-muted-foreground">
                 <tr>
                   <td className="p-1 font-mono">supplierId</td>
                   <td className="p-1">✓</td>
-                  <td className="p-1">Supplier user ID</td>
+                  <td className="p-1">{t("importPO.colSupplierId")}</td>
                 </tr>
                 <tr>
                   <td className="p-1 font-mono">lineDescription</td>
                   <td className="p-1">✓</td>
-                  <td className="p-1">Line item description</td>
+                  <td className="p-1">{t("importPO.colItemDescription")}</td>
                 </tr>
                 <tr>
                   <td className="p-1 font-mono">quantity</td>
                   <td className="p-1">✓</td>
-                  <td className="p-1">Quantity</td>
+                  <td className="p-1">{t("importPO.colQuantity")}</td>
                 </tr>
                 <tr>
                   <td className="p-1 font-mono">unitPricePennies</td>
                   <td className="p-1">✓</td>
-                  <td className="p-1">Price in smallest currency unit</td>
+                  <td className="p-1">{t("importPO.colPrice")}</td>
                 </tr>
                 <tr>
                   <td className="p-1 font-mono">description</td>
                   <td className="p-1"></td>
-                  <td className="p-1">PO description</td>
+                  <td className="p-1">{t("importPO.colPODescription")}</td>
                 </tr>
                 <tr>
                   <td className="p-1 font-mono">externalPoNumber</td>
                   <td className="p-1"></td>
-                  <td className="p-1">External reference (groups rows)</td>
+                  <td className="p-1">{t("importPO.colExternalRef")}</td>
                 </tr>
                 <tr>
                   <td className="p-1 font-mono">paymentTerms</td>
                   <td className="p-1"></td>
-                  <td className="p-1">IMMEDIATE, NET_15, NET_30, etc.</td>
+                  <td className="p-1">{t("importPO.colPaymentTerms")}</td>
                 </tr>
                 <tr>
                   <td className="p-1 font-mono">deliveryTerms</td>
                   <td className="p-1"></td>
-                  <td className="p-1">EX_WORKS, FOB, CIF, DDP, CUSTOM</td>
+                  <td className="p-1">{t("importPO.colDeliveryTerms")}</td>
                 </tr>
                 <tr>
                   <td className="p-1 font-mono">deliveryAddress</td>
                   <td className="p-1"></td>
-                  <td className="p-1">Delivery location</td>
+                  <td className="p-1">{t("importPO.colDeliveryAddress")}</td>
                 </tr>
                 <tr>
                   <td className="p-1 font-mono">taxRate</td>
                   <td className="p-1"></td>
-                  <td className="p-1">Tax in basis points (1500 = 15%)</td>
+                  <td className="p-1">{t("importPO.colTaxRate")}</td>
                 </tr>
               </tbody>
             </table>
@@ -163,12 +176,12 @@ export default function ImportPOPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Upload CSV</CardTitle>
+          <CardTitle className="text-base">{t("importPO.uploadCSV")}</CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label>CSV File</Label>
+              <Label>{t("importPO.csvFile")}</Label>
               <Input
                 ref={fileInputRef}
                 type="file"
@@ -184,7 +197,9 @@ export default function ImportPOPage() {
               disabled={!selectedFile || importMutation.isPending}
             >
               <Upload className="mr-2 h-4 w-4" />
-              {importMutation.isPending ? "Importing…" : "Import POs"}
+              {importMutation.isPending
+                ? t("importPO.importing")
+                : t("importPO.importPOs")}
             </Button>
           </form>
         </CardContent>
@@ -194,13 +209,19 @@ export default function ImportPOPage() {
       {result && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Import Results</CardTitle>
+            <CardTitle className="text-base">
+              {t("importPO.importResults")}
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex items-center gap-2">
               <CheckCircle2 className="h-4 w-4 text-green-600" />
               <span className="text-sm">
-                <strong>{result.imported}</strong> purchase order(s) imported
+                <strong>{result.imported}</strong>{" "}
+                {t("importPO.posImported", { count: result.imported }).replace(
+                  `${result.imported} `,
+                  "",
+                )}
               </span>
             </div>
             {result.errors.length > 0 && (
@@ -208,7 +229,7 @@ export default function ImportPOPage() {
                 <div className="flex items-center gap-2 text-destructive">
                   <AlertCircle className="h-4 w-4" />
                   <span className="text-sm font-medium">
-                    {result.errors.length} error(s)
+                    {t("importPO.errorsCount", { count: result.errors.length })}
                   </span>
                 </div>
                 <div className="max-h-48 overflow-y-auto rounded-md border p-2 text-xs space-y-1">
@@ -226,7 +247,7 @@ export default function ImportPOPage() {
                 size="sm"
                 onClick={() => router.push("/dashboard/purchase-orders")}
               >
-                View Purchase Orders
+                {t("importPO.viewPurchaseOrders")}
               </Button>
             )}
           </CardContent>

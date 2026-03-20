@@ -27,9 +27,11 @@ import {
 } from "@/components/ui/table";
 import { Lock, LockOpen, ShieldCheck } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+import { useTranslation } from "@/i18n";
 
 export default function PaymentLocksPage() {
   const { user } = useAuth();
+  const { t } = useTranslation();
   const { data: locks, isLoading } = useQuery({
     queryKey: ["payment-locks"],
     queryFn: () => paymentLocksApi.list().then((r) => r.data),
@@ -45,9 +47,11 @@ export default function PaymentLocksPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Payment Locks</h1>
+        <h1 className="text-2xl font-bold tracking-tight">
+          {t("paymentLocks.title")}
+        </h1>
         <p className="text-sm text-muted-foreground">
-          Conditional escrow locks for purchase orders
+          {t("paymentLocks.subtitle")}
         </p>
       </div>
 
@@ -64,7 +68,7 @@ export default function PaymentLocksPage() {
               <CardHeader className="pb-2">
                 <CardDescription className="flex items-center gap-1.5">
                   <Lock className="h-3.5 w-3.5" />
-                  Active Locks
+                  {t("paymentLocks.activeLocks")}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -75,7 +79,7 @@ export default function PaymentLocksPage() {
               <CardHeader className="pb-2">
                 <CardDescription className="flex items-center gap-1.5">
                   <ShieldCheck className="h-3.5 w-3.5" />
-                  Total Locked
+                  {t("paymentLocks.totalLocked")}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -91,7 +95,7 @@ export default function PaymentLocksPage() {
               <CardHeader className="pb-2">
                 <CardDescription className="flex items-center gap-1.5">
                   <LockOpen className="h-3.5 w-3.5" />
-                  Released
+                  {t("paymentLocks.released")}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -105,36 +109,37 @@ export default function PaymentLocksPage() {
               <CardTitle className="flex items-center gap-2 text-base">
                 <Lock className="h-4 w-4" />
                 {user?.role === "BUYER"
-                  ? "Your Payment Locks"
-                  : "Payment Locks on Your POs"}
+                  ? t("paymentLocks.buyerTitle")
+                  : t("paymentLocks.supplierTitle")}
               </CardTitle>
               <CardDescription>
                 {user?.role === "BUYER"
-                  ? "Funds locked when suppliers accept your purchase orders"
-                  : "Buyer funds locked against your accepted purchase orders"}
+                  ? t("paymentLocks.buyerDescription")
+                  : t("paymentLocks.supplierDescription")}
               </CardDescription>
             </CardHeader>
             <CardContent>
               {!locks?.length ? (
                 <div className="py-8 text-center text-muted-foreground">
-                  <p>No payment locks found.</p>
+                  <p>{t("paymentLocks.noPaymentLocks")}</p>
                   <p className="text-xs mt-1">
-                    Payment locks are created automatically when a supplier
-                    accepts a purchase order.
+                    {t("paymentLocks.noPaymentLocksDescription")}
                   </p>
                 </div>
               ) : (
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>PO Reference</TableHead>
+                      <TableHead>{t("paymentLocks.colPOReference")}</TableHead>
                       <TableHead>
-                        {user?.role === "BUYER" ? "Supplier" : "Buyer"}
+                        {user?.role === "BUYER"
+                          ? t("paymentLocks.colSupplier")
+                          : t("paymentLocks.colBuyer")}
                       </TableHead>
-                      <TableHead>Locked Amount</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Locked At</TableHead>
-                      <TableHead>Released At</TableHead>
+                      <TableHead>{t("paymentLocks.colLockedAmount")}</TableHead>
+                      <TableHead>{t("paymentLocks.colStatus")}</TableHead>
+                      <TableHead>{t("paymentLocks.colLockedAt")}</TableHead>
+                      <TableHead>{t("paymentLocks.colReleasedAt")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>

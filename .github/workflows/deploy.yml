@@ -1,0 +1,176 @@
+# ─── Deploy Pipeline ───────────────────────────────────────────
+# Builds Docker images, pushes to ECR, deploys to ECS
+# Triggered on push to main branch
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: me-south-1
+  ECS_CLUSTER: sme-payments-pilot
+
+permissions:
+  id-token: write   # Required for OIDC
+  contents: read
+
+jobs:
+  # ── Detect what changed ──────────────────────────────────────
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+              - 'packages/**'
+            frontend:
+              - 'frontend/**'
+              - 'packages/**'
+
+  # ── Deploy Backend ────────────────────────────────────────────
+  deploy-backend:
+    name: Deploy Backend
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push backend image
+        env:
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/sme-payments-backend:$IMAGE_TAG ./backend
+          docker tag $ECR_REGISTRY/sme-payments-backend:$IMAGE_TAG $ECR_REGISTRY/sme-payments-backend:latest
+          docker push $ECR_REGISTRY/sme-payments-backend:$IMAGE_TAG
+          docker push $ECR_REGISTRY/sme-payments-backend:latest
+
+      - name: Run Prisma migrations
+        env:
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Run migrations as a one-off ECS task
+          TASK_DEF=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services sme-payments-pilot-backend \
+            --query 'services[0].taskDefinition' \
+            --output text)
+
+          NETWORK_CONFIG=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services sme-payments-pilot-backend \
+            --query 'services[0].networkConfiguration' \
+            --output json)
+
+          aws ecs run-task \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --task-definition $TASK_DEF \
+            --launch-type FARGATE \
+            --network-configuration "$NETWORK_CONFIG" \
+            --overrides '{
+              "containerOverrides": [{
+                "name": "backend",
+                "command": ["npx", "prisma", "migrate", "deploy"]
+              }]
+            }' \
+            --started-by "github-actions-migrate"
+
+          # Wait for migration task to complete
+          echo "Waiting for migration to complete..."
+          sleep 30
+
+      - name: Deploy to ECS
+        run: |
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service sme-payments-pilot-backend \
+            --force-new-deployment
+
+          echo "Waiting for deployment to stabilize..."
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services sme-payments-pilot-backend
+
+          echo "✅ Backend deployed successfully"
+
+  # ── Deploy Frontend ───────────────────────────────────────────
+  deploy-frontend:
+    name: Deploy Frontend
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Get ALB URL
+        id: alb
+        run: |
+          ALB_DNS=$(aws elbv2 describe-load-balancers \
+            --names sme-payments-pilot-alb \
+            --query 'LoadBalancers[0].DNSName' \
+            --output text 2>/dev/null || echo "localhost")
+          echo "api_url=http://$ALB_DNS/api" >> $GITHUB_OUTPUT
+
+      - name: Build and push frontend image
+        env:
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build \
+            --build-arg NEXT_PUBLIC_API_URL=${{ steps.alb.outputs.api_url }} \
+            -t $ECR_REGISTRY/sme-payments-frontend:$IMAGE_TAG \
+            ./frontend
+          docker tag $ECR_REGISTRY/sme-payments-frontend:$IMAGE_TAG $ECR_REGISTRY/sme-payments-frontend:latest
+          docker push $ECR_REGISTRY/sme-payments-frontend:$IMAGE_TAG
+          docker push $ECR_REGISTRY/sme-payments-frontend:latest
+
+      - name: Deploy to ECS
+        run: |
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service sme-payments-pilot-frontend \
+            --force-new-deployment
+
+          echo "Waiting for deployment to stabilize..."
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services sme-payments-pilot-frontend
+
+          echo "✅ Frontend deployed successfully"

@@ -261,8 +261,14 @@ export class DisputesService {
     });
 
     if (!dispute) throw new NotFoundException("Dispute not found");
-    if (dispute.status === "RESOLVED")
-      throw new BadRequestException("Dispute is already resolved");
+
+    // ── Idempotency guard: already resolved → return existing state ──
+    if (dispute.status === "RESOLVED") {
+      this.logger.log(
+        `resolve(${input.disputeId}): Dispute already RESOLVED — returning idempotent response`,
+      );
+      return this.formatDispute(dispute);
+    }
 
     const po = dispute.purchaseOrder;
 

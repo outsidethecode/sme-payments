@@ -26,6 +26,7 @@ import {
   Activity,
   RefreshCw,
 } from "lucide-react";
+import { useTranslation } from "@/i18n";
 
 const CURRENCIES: Array<"GBP" | "SAR"> = ["GBP", "SAR"];
 
@@ -60,6 +61,8 @@ export default function AdminPage() {
     refetchOnWindowFocus: false,
   });
 
+  const { t } = useTranslation();
+
   // Build per-currency volume/fee entries
   const volumeEntries = stats?.volumeByCurrency
     ? CURRENCIES.filter((c) => (stats.volumeByCurrency?.[c] ?? 0) > 0).map(
@@ -76,10 +79,10 @@ export default function AdminPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Platform Admin</h1>
-        <p className="text-sm text-muted-foreground">
-          Platform-wide statistics and metrics
-        </p>
+        <h1 className="text-2xl font-bold tracking-tight">
+          {t("admin.title")}
+        </h1>
+        <p className="text-sm text-muted-foreground">{t("admin.subtitle")}</p>
       </div>
 
       {isLoading ? (
@@ -93,30 +96,30 @@ export default function AdminPage() {
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             <StatCard
               icon={FileText}
-              label="Total POs"
+              label={t("admin.totalPOs")}
               value={stats.totalPOs.toString()}
-              description={`${stats.settledPOs} settled`}
+              description={t("admin.settledCount", { count: stats.settledPOs })}
             />
             {volumeEntries.map(({ currency, amount }) => (
               <StatCard
                 key={`vol-${currency}`}
                 icon={Coins}
-                label={`Volume (${currency})`}
+                label={t("admin.volumeLabel", { currency })}
                 value={formatCurrency(amount, currency)}
-                description="PO value"
+                description={t("admin.poValue")}
               />
             ))}
             <StatCard
               icon={Lock}
-              label="Active Locks"
+              label={t("admin.activeLocks")}
               value={stats.activeLocks.toString()}
-              description="Funds in escrow"
+              description={t("admin.fundsInEscrow")}
             />
             <StatCard
               icon={Zap}
-              label="Early Payments"
+              label={t("admin.earlyPayments")}
               value={stats.earlyPayments.toString()}
-              description="Funded/settled"
+              description={t("admin.fundedSettled")}
             />
           </div>
 
@@ -125,26 +128,26 @@ export default function AdminPage() {
               <StatCard
                 key={`fee-${currency}`}
                 icon={Banknote}
-                label={`Fees (${currency})`}
+                label={t("admin.feesLabel", { currency })}
                 value={formatCurrency(amount, currency)}
-                description="Revenue collected"
+                description={t("admin.revenueCollected")}
               />
             ))}
             <StatCard
               icon={Users}
-              label="Total Users"
+              label={t("admin.totalUsers")}
               value={stats.totalUsers.toString()}
-              description="All registered users"
+              description={t("admin.allRegisteredUsers")}
             />
             <StatCard
               icon={TrendingUp}
-              label="Settlement Rate"
+              label={t("admin.settlementRate")}
               value={
                 stats.totalPOs > 0
                   ? `${Math.round((stats.settledPOs / stats.totalPOs) * 100)}%`
                   : "0%"
               }
-              description="POs settled / total"
+              description={t("admin.posSettledTotal")}
             />
           </div>
 
@@ -152,42 +155,42 @@ export default function AdminPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <ShieldCheck className="h-4 w-4" />
-                Platform Overview
+                {t("admin.platformOverview")}
               </CardTitle>
-              <CardDescription>
-                Key platform metrics at a glance
-              </CardDescription>
+              <CardDescription>{t("admin.keyMetrics")}</CardDescription>
             </CardHeader>
             <CardContent className="text-sm text-muted-foreground space-y-3">
               <div className="flex items-center justify-between border-b pb-2">
-                <span>Transaction Fee Rate</span>
+                <span>{t("admin.transactionFeeRate")}</span>
                 <span className="font-medium text-foreground">
-                  0.5% (50 BPS)
+                  {t("admin.transactionFeeValue")}
                 </span>
               </div>
               <div className="flex items-center justify-between border-b pb-2">
-                <span>Early Payment Facilitation Fee</span>
+                <span>{t("admin.earlyPayFacilitationFee")}</span>
                 <span className="font-medium text-foreground">
-                  2.5% (250 BPS)
+                  {t("admin.earlyPayFacilitationFeeValue")}
                 </span>
               </div>
               <div className="flex items-center justify-between border-b pb-2">
-                <span>PO Limits (GBP)</span>
+                <span>{t("admin.poLimitsGBP")}</span>
                 <span className="font-medium text-foreground">
                   {formatCurrency(500_00, "GBP")} –{" "}
                   {formatCurrency(250_000_00, "GBP")}
                 </span>
               </div>
               <div className="flex items-center justify-between border-b pb-2">
-                <span>PO Limits (SAR)</span>
+                <span>{t("admin.poLimitsSAR")}</span>
                 <span className="font-medium text-foreground">
                   {formatCurrency(1_875_00, "SAR")} –{" "}
                   {formatCurrency(937_500_00, "SAR")}
                 </span>
               </div>
               <div className="flex items-center justify-between border-b pb-2">
-                <span>Acceptance Window</span>
-                <span className="font-medium text-foreground">48 hours</span>
+                <span>{t("admin.acceptanceWindow")}</span>
+                <span className="font-medium text-foreground">
+                  {t("admin.acceptanceWindowValue")}
+                </span>
               </div>
               {stats.volumeByCurrency && (
                 <>
@@ -196,7 +199,7 @@ export default function AdminPage() {
                       key={ccy}
                       className="flex items-center justify-between border-b pb-2"
                     >
-                      <span>Volume ({ccy})</span>
+                      <span>{t("admin.volumeLabel", { currency: ccy })}</span>
                       <span className="font-medium text-foreground">
                         {formatCurrency(vol, ccy as "GBP" | "SAR")}
                       </span>
@@ -211,7 +214,7 @@ export default function AdminPage() {
                       key={`fee-${ccy}`}
                       className="flex items-center justify-between border-b pb-2"
                     >
-                      <span>Fees ({ccy})</span>
+                      <span>{t("admin.feesLabel", { currency: ccy })}</span>
                       <span className="font-medium text-foreground">
                         {formatCurrency(fee, ccy as "GBP" | "SAR")}
                       </span>
@@ -228,7 +231,7 @@ export default function AdminPage() {
               <div className="flex items-center justify-between">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Activity className="h-4 w-4" />
-                  Financial Integrity Check
+                  {t("admin.financialIntegrityCheck")}
                 </CardTitle>
                 <Button
                   variant="outline"
@@ -239,11 +242,13 @@ export default function AdminPage() {
                   <RefreshCw
                     className={`h-3.5 w-3.5 mr-1.5 ${integrityFetching ? "animate-spin" : ""}`}
                   />
-                  {integrityFetching ? "Checking…" : "Run Check"}
+                  {integrityFetching
+                    ? t("admin.checking")
+                    : t("admin.runCheck")}
                 </Button>
               </div>
               <CardDescription>
-                Cross-state-machine invariant verification (INV-001 – INV-012)
+                {t("admin.integrityDescription")}
               </CardDescription>
             </CardHeader>
             <CardContent className="text-sm space-y-3">
@@ -260,12 +265,17 @@ export default function AdminPage() {
                       }
                     >
                       {integrity.violations.length === 0
-                        ? "ALL CLEAR"
-                        : `${integrity.violations.length} VIOLATION${integrity.violations.length > 1 ? "S" : ""}`}
+                        ? t("admin.allClear")
+                        : t("admin.violationsCount", {
+                            count: integrity.violations.length,
+                          })}
                     </Badge>
                     <span className="text-muted-foreground">
-                      {integrity.totalChecked} POs checked · {integrity.valid}{" "}
-                      valid · {new Date(integrity.checkedAt).toLocaleString()}
+                      {t("admin.posChecked", {
+                        checked: integrity.totalChecked,
+                        valid: integrity.valid,
+                      })}{" "}
+                      · {new Date(integrity.checkedAt).toLocaleString()}
                     </span>
                   </div>
                   {integrity.violations.length > 0 && (
@@ -293,9 +303,9 @@ export default function AdminPage() {
                               PO {v.purchaseOrderId.slice(0, 8)}…
                             </span>
                             <div className="text-muted-foreground mt-0.5">
-                              Expected: {v.expected}
+                              {t("admin.expected")} {v.expected}
                               <br />
-                              Actual: {v.actual}
+                              {t("admin.actual")} {v.actual}
                             </div>
                           </div>
                         </div>
@@ -305,8 +315,7 @@ export default function AdminPage() {
                 </>
               ) : (
                 <p className="text-muted-foreground">
-                  Click &quot;Run Check&quot; to verify financial state
-                  consistency.
+                  {t("admin.clickRunCheck")}
                 </p>
               )}
             </CardContent>
@@ -314,7 +323,7 @@ export default function AdminPage() {
         </>
       ) : (
         <div className="py-8 text-center text-muted-foreground">
-          Failed to load admin statistics.
+          {t("admin.failedToLoadStats")}
         </div>
       )}
     </div>

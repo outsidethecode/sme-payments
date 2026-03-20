@@ -242,6 +242,7 @@ export class PurchaseOrdersController {
 
   @Patch(":id/confirm-escrow")
   @Roles("ADMIN")
+  @Idempotent()
   @ApiOperation({
     summary: "Manually confirm escrow funding (Admin / bank callback)",
   })
@@ -309,6 +310,7 @@ export class PurchaseOrdersController {
 
   @Patch(":id/ship")
   @Roles("SUPPLIER")
+  @Idempotent()
   @ApiOperation({ summary: "Mark PO as shipped (Supplier only)" })
   async ship(
     @Param("id") id: string,
@@ -320,6 +322,7 @@ export class PurchaseOrdersController {
 
   @Patch(":id/deliver")
   @Roles("SUPPLIER")
+  @Idempotent()
   @ApiOperation({ summary: "Mark PO as delivered (Supplier only)" })
   async deliver(
     @Param("id") id: string,
@@ -331,6 +334,7 @@ export class PurchaseOrdersController {
 
   @Patch(":id/verify")
   @Roles("BUYER")
+  @Idempotent()
   @ApiOperation({ summary: "Verify delivery (Buyer only)" })
   async verify(
     @Param("id") id: string,
@@ -360,6 +364,7 @@ export class PurchaseOrdersController {
 
   @Patch(":id/dispute")
   @Roles("BUYER")
+  @Idempotent()
   @ApiOperation({ summary: "Dispute delivery (Buyer only)" })
   async dispute(
     @Param("id") id: string,

@@ -28,6 +28,7 @@ import {
   ArrowRightLeft,
 } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
+import { useTranslation } from "@/i18n";
 
 /* ── Helpers ───────────────────────────────────────────────── */
 
@@ -96,6 +97,7 @@ function EventDetailDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const { t } = useTranslation();
   if (!event) return null;
 
   const payload = event.payload || {};
@@ -114,11 +116,11 @@ function EventDetailDialog({
             {isSigned ? (
               <Badge variant="outline" className="text-[10px] gap-1">
                 <Fingerprint className="h-3 w-3" />
-                Passkey Signed
+                {t("ledger.passkeySignedBadge")}
               </Badge>
             ) : (
               <Badge variant="secondary" className="text-[10px]">
-                System
+                {t("ledger.systemBadge")}
               </Badge>
             )}
           </DialogTitle>
@@ -128,19 +130,27 @@ function EventDetailDialog({
           {/* ── Summary Row ─────────────────────────────── */}
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div>
-              <span className="text-muted-foreground">Entity Type</span>
+              <span className="text-muted-foreground">
+                {t("ledger.entityType")}
+              </span>
               <p className="font-medium">{statusLabel(event.entityType)}</p>
             </div>
             <div>
-              <span className="text-muted-foreground">Timestamp</span>
+              <span className="text-muted-foreground">
+                {t("ledger.timestamp")}
+              </span>
               <p className="font-medium">{formatDateTime(event.createdAt)}</p>
             </div>
             <div>
-              <span className="text-muted-foreground">Actor Role</span>
+              <span className="text-muted-foreground">
+                {t("ledger.actorRole")}
+              </span>
               <p className="font-medium">{statusLabel(event.actorRole)}</p>
             </div>
             <div>
-              <span className="text-muted-foreground">Sequence</span>
+              <span className="text-muted-foreground">
+                {t("ledger.sequence")}
+              </span>
               <p className="font-medium">
                 #{event.sequence} (entity #{event.entitySequence})
               </p>
@@ -154,7 +164,7 @@ function EventDetailDialog({
               <div>
                 <h4 className="mb-2 flex items-center gap-1.5 font-semibold text-xs uppercase tracking-wide text-muted-foreground">
                   <Banknote className="h-3.5 w-3.5" />
-                  Financial Details
+                  {t("ledger.financialDetails")}
                 </h4>
                 <div className="rounded-md border bg-muted/30 p-3 space-y-1.5">
                   {payloadEntries
@@ -189,7 +199,7 @@ function EventDetailDialog({
               <div>
                 <h4 className="mb-2 flex items-center gap-1.5 font-semibold text-xs uppercase tracking-wide text-muted-foreground">
                   <ArrowRightLeft className="h-3.5 w-3.5" />
-                  Event Data
+                  {t("ledger.eventData")}
                 </h4>
                 <div className="rounded-md border bg-muted/30 p-3 space-y-1.5">
                   {payloadEntries
@@ -222,12 +232,12 @@ function EventDetailDialog({
           <div>
             <h4 className="mb-2 flex items-center gap-1.5 font-semibold text-xs uppercase tracking-wide text-muted-foreground">
               <ShieldCheck className="h-3.5 w-3.5" />
-              Hash Chain
+              {t("ledger.hashChain")}
             </h4>
             <div className="rounded-md border bg-muted/30 p-3 space-y-1.5">
               <div>
                 <span className="text-muted-foreground text-xs">
-                  Event Hash
+                  {t("ledger.eventHash")}
                 </span>
                 <p className="font-mono text-[11px] break-all">
                   {event.eventHash}
@@ -235,10 +245,10 @@ function EventDetailDialog({
               </div>
               <div>
                 <span className="text-muted-foreground text-xs">
-                  Previous Hash
+                  {t("ledger.previousHash")}
                 </span>
                 <p className="font-mono text-[11px] break-all">
-                  {event.previousHash || "GENESIS"}
+                  {event.previousHash || t("ledger.genesis")}
                 </p>
               </div>
             </div>
@@ -251,12 +261,12 @@ function EventDetailDialog({
               <div>
                 <h4 className="mb-2 flex items-center gap-1.5 font-semibold text-xs uppercase tracking-wide text-muted-foreground">
                   <Fingerprint className="h-3.5 w-3.5" />
-                  Passkey Signature
+                  {t("ledger.passkeySignature")}
                 </h4>
                 <div className="rounded-md border bg-muted/30 p-3 space-y-1.5 text-[11px]">
                   <div>
                     <span className="text-muted-foreground text-xs">
-                      Signature
+                      {t("ledger.signature")}
                     </span>
                     <p className="font-mono break-all">
                       {event.actorSignature.slice(0, 64)}…
@@ -264,7 +274,7 @@ function EventDetailDialog({
                   </div>
                   <div>
                     <span className="text-muted-foreground text-xs">
-                      Public Key
+                      {t("ledger.publicKey")}
                     </span>
                     <p className="font-mono break-all">
                       {event.actorPublicKey.slice(0, 64)}…
@@ -273,7 +283,7 @@ function EventDetailDialog({
                   {event.credentialId && (
                     <div>
                       <span className="text-muted-foreground text-xs">
-                        Credential ID
+                        {t("ledger.credentialId")}
                       </span>
                       <p className="font-mono break-all">
                         {event.credentialId}
@@ -294,6 +304,7 @@ function EventDetailDialog({
 
 export default function LedgerPage() {
   const [selected, setSelected] = useState<EventLogEntry | null>(null);
+  const { t } = useTranslation();
 
   const { data: events, isLoading } = useQuery({
     queryKey: ["ledger"],
@@ -303,23 +314,19 @@ export default function LedgerPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Event Ledger</h1>
-        <p className="text-sm text-muted-foreground">
-          Immutable, cryptographically linked audit trail of all platform events
-        </p>
+        <h1 className="text-2xl font-bold tracking-tight">
+          {t("ledger.title")}
+        </h1>
+        <p className="text-sm text-muted-foreground">{t("ledger.subtitle")}</p>
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <ShieldCheck className="h-5 w-5" />
-            Hash-Chained Events
+            {t("ledger.hashChainedEvents")}
           </CardTitle>
-          <CardDescription>
-            Every event is hashed with SHA-256 and linked to the previous event,
-            creating a tamper-evident chain. Any modification breaks the chain
-            and is immediately detectable. Click any event to see full details.
-          </CardDescription>
+          <CardDescription>{t("ledger.hashChainDescription")}</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -331,10 +338,8 @@ export default function LedgerPage() {
           ) : !events?.length ? (
             <div className="py-8 text-center text-muted-foreground">
               <BookOpen className="mx-auto mb-2 h-8 w-8" />
-              <p>No events recorded yet</p>
-              <p className="text-xs">
-                Events will appear as purchase orders are created and processed
-              </p>
+              <p>{t("ledger.noEvents")}</p>
+              <p className="text-xs">{t("ledger.noEventsDescription")}</p>
             </div>
           ) : (
             <div className="space-y-2">
@@ -364,11 +369,11 @@ export default function LedgerPage() {
                               className="text-[10px] gap-1"
                             >
                               <Fingerprint className="h-3 w-3" />
-                              Passkey Signed
+                              {t("ledger.passkeySignedBadge")}
                             </Badge>
                           ) : (
                             <Badge variant="secondary" className="text-[10px]">
-                              System
+                              {t("ledger.systemBadge")}
                             </Badge>
                           )}
                           {hasMoney && (
@@ -377,7 +382,7 @@ export default function LedgerPage() {
                               className="text-[10px] gap-1 text-emerald-600 border-emerald-200"
                             >
                               <Banknote className="h-3 w-3" />
-                              Financial
+                              {t("ledger.financialBadge")}
                             </Badge>
                           )}
                         </div>
@@ -398,7 +403,9 @@ export default function LedgerPage() {
                             </p>
                           )}
                           {!event.previousHash && i === events.length - 1 && (
-                            <p className="text-[10px] text-primary">Genesis</p>
+                            <p className="text-[10px] text-primary">
+                              {t("ledger.genesisLabel")}
+                            </p>
                           )}
                         </div>
                         <ChevronRight className="h-4 w-4 text-muted-foreground" />

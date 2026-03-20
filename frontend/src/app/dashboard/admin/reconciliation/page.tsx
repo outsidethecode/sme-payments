@@ -36,58 +36,70 @@ import {
   Shield,
   Activity,
 } from "lucide-react";
-
+import { useTranslation } from "@/i18n";
 // ── Helpers ──────────────────────────────────────────────────
 
-function statusBanner(report: ReconciliationReport | null) {
+function statusBanner(
+  report: ReconciliationReport | null,
+  t: (key: string, params?: Record<string, string | number>) => string,
+) {
   if (!report)
     return {
       color: "bg-muted",
       icon: Clock,
-      label: "No data",
-      description: "No reconciliation reports yet",
+      label: t("reconciliation.noData"),
+      description: t("reconciliation.noDataDescription"),
     };
   if (report.mismatches === 0 && report.totalChecked > 0)
     return {
       color: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
       icon: CheckCircle2,
-      label: "All Clear",
-      description: "Bank ↔ Platform fully consistent",
+      label: t("reconciliation.allClear"),
+      description: t("reconciliation.allClearDescription"),
     };
   if (report.mismatches === 0 && report.totalChecked === 0)
     return {
       color: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
       icon: Clock,
-      label: "Idle",
-      description: "No pending instruments or settlements to check",
+      label: t("reconciliation.idle"),
+      description: t("reconciliation.idleDescription"),
     };
   if (report.mismatches > 0)
     return {
       color: "bg-destructive/15 text-destructive",
       icon: XCircle,
-      label: `${report.mismatches} Mismatch${report.mismatches > 1 ? "es" : ""}`,
-      description: "Action required — review alerts below",
+      label: t("reconciliation.mismatchCount", { count: report.mismatches }),
+      description: t("reconciliation.mismatchDescription"),
     };
   return {
     color: "bg-amber-500/15 text-amber-700",
     icon: AlertTriangle,
-    label: "Pending",
-    description: "Reconciliation in progress",
+    label: t("reconciliation.pendingStatus"),
+    description: t("reconciliation.pendingDescription"),
   };
 }
 
-function alertSeverityBadge(alert: ReconciliationAlert) {
+function alertSeverityBadge(
+  alert: ReconciliationAlert,
+  t: (key: string) => string,
+) {
   if (alert.actual === "STALE")
     return (
       <Badge variant="outline" className="border-amber-500 text-amber-700">
-        Stale
+        {t("reconciliation.severityStale")}
       </Badge>
     );
   if (alert.actual === "ERROR")
-    return <Badge variant="destructive">Error</Badge>;
+    return (
+      <Badge variant="destructive">{t("reconciliation.severityError")}</Badge>
+    );
   if (alert.actual === "FAILED")
-    return <Badge variant="destructive">Failed</Badge>;
-  return <Badge variant="secondary">Mismatch</Badge>;
+    return (
+      <Badge variant="destructive">{t("reconciliation.severityFailed")}</Badge>
+    );
+  return (
+    <Badge variant="secondary">{t("reconciliation.severityMismatch")}</Badge>
+  );
 }
 
 // ── Page ─────────────────────────────────────────────────────
@@ -95,6 +107,7 @@ function alertSeverityBadge(alert: ReconciliationAlert) {
 export default function ReconciliationPage() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("latest");
+  const { t } = useTranslation();
 
   // Fetch latest report
   const { data: latest, isLoading: latestLoading } = useQuery({
@@ -117,7 +130,7 @@ export default function ReconciliationPage() {
     },
   });
 
-  const banner = statusBanner(latest ?? null);
+  const banner = statusBanner(latest ?? null, t);
   const BannerIcon = banner.icon;
 
   return (
@@ -126,10 +139,10 @@ export default function ReconciliationPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">
-            Bank Reconciliation
+            {t("reconciliation.title")}
           </h1>
           <p className="text-sm text-muted-foreground">
-            Bank ↔ Platform consistency monitoring
+            {t("reconciliation.subtitle")}
           </p>
         </div>
         <Button
@@ -140,7 +153,9 @@ export default function ReconciliationPage() {
           <RefreshCw
             className={`h-4 w-4 ${runMutation.isPending ? "animate-spin" : ""}`}
           />
-          {runMutation.isPending ? "Running…" : "Run Reconciliation"}
+          {runMutation.isPending
+            ? t("reconciliation.running")
+            : t("reconciliation.runReconciliation")}
         </Button>
       </div>
 
@@ -158,7 +173,9 @@ export default function ReconciliationPage() {
           </div>
           {latest && (
             <p className="ml-auto text-xs opacity-60">
-              Last run: {formatDateTime(latest.runAt)}
+              {t("reconciliation.lastRun", {
+                date: formatDateTime(latest.runAt),
+              })}
             </p>
           )}
         </div>
@@ -175,24 +192,24 @@ export default function ReconciliationPage() {
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <SummaryCard
             icon={Activity}
-            label="Total Checked"
+            label={t("reconciliation.totalChecked")}
             value={latest.totalChecked}
           />
           <SummaryCard
             icon={CheckCircle2}
-            label="Matched"
+            label={t("reconciliation.matched")}
             value={latest.matched}
             className="text-emerald-600"
           />
           <SummaryCard
             icon={AlertTriangle}
-            label="Mismatches"
+            label={t("reconciliation.mismatches")}
             value={latest.mismatches}
             className={latest.mismatches > 0 ? "text-destructive" : ""}
           />
           <SummaryCard
             icon={Shield}
-            label="Ledger Balance"
+            label={t("reconciliation.ledgerBalance")}
             value={
               latest.ledgerBalanceByCurrency &&
               Object.keys(latest.ledgerBalanceByCurrency).length > 0
@@ -210,8 +227,13 @@ export default function ReconciliationPage() {
             }
             subtitle={
               latest.variance !== null
-                ? `Variance: ${formatCurrency(latest.variance, latest.currency ?? "GBP")}`
-                : "Bank balance not available"
+                ? t("reconciliation.variance", {
+                    amount: formatCurrency(
+                      latest.variance,
+                      latest.currency ?? "GBP",
+                    ),
+                  })
+                : t("reconciliation.bankBalanceUnavailable")
             }
           />
         </div>
@@ -221,14 +243,16 @@ export default function ReconciliationPage() {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="latest">
-            Alerts
+            {t("reconciliation.tabAlerts")}
             {latest && latest.mismatches > 0 && (
               <Badge variant="destructive" className="ml-2">
                 {latest.mismatches}
               </Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="history">Report History</TabsTrigger>
+          <TabsTrigger value="history">
+            {t("reconciliation.tabReportHistory")}
+          </TabsTrigger>
         </TabsList>
 
         {/* ── Alerts Tab ─────────────────────────────────── */}
@@ -239,36 +263,45 @@ export default function ReconciliationPage() {
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
                 <CheckCircle2 className="mb-2 h-10 w-10 text-emerald-500" />
-                <p>No alerts — all operations reconciled cleanly.</p>
+                <p>{t("reconciliation.noAlerts")}</p>
               </CardContent>
             </Card>
           ) : (
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Mismatch Details</CardTitle>
+                <CardTitle className="text-base">
+                  {t("reconciliation.mismatchDetails")}
+                </CardTitle>
                 <CardDescription>
-                  {latest.alerts.length} alert
-                  {latest.alerts.length > 1 ? "s" : ""} from the last run
+                  {t("reconciliation.alertsCount", {
+                    count: latest.alerts.length,
+                  })}
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Type</TableHead>
-                      <TableHead>ID</TableHead>
-                      <TableHead>Expected</TableHead>
-                      <TableHead>Actual</TableHead>
-                      <TableHead>External Ref</TableHead>
-                      <TableHead>Severity</TableHead>
-                      <TableHead className="max-w-[300px]">Reason</TableHead>
+                      <TableHead>{t("reconciliation.colType")}</TableHead>
+                      <TableHead>{t("reconciliation.colId")}</TableHead>
+                      <TableHead>{t("reconciliation.colExpected")}</TableHead>
+                      <TableHead>{t("reconciliation.colActual")}</TableHead>
+                      <TableHead>
+                        {t("reconciliation.colExternalRef")}
+                      </TableHead>
+                      <TableHead>{t("reconciliation.colSeverity")}</TableHead>
+                      <TableHead className="max-w-[300px]">
+                        {t("reconciliation.colReason")}
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {latest.alerts.map((alert, i) => (
                       <TableRow key={i}>
                         <TableCell className="font-medium">
-                          {alert.instrumentId ? "Instrument" : "Settlement"}
+                          {alert.instrumentId
+                            ? t("reconciliation.typeInstrument")
+                            : t("reconciliation.typeSettlement")}
                         </TableCell>
                         <TableCell className="font-mono text-xs">
                           {(
@@ -292,7 +325,7 @@ export default function ReconciliationPage() {
                           {alert.externalRef.slice(0, 16)}
                           {alert.externalRef.length > 16 ? "…" : ""}
                         </TableCell>
-                        <TableCell>{alertSeverityBadge(alert)}</TableCell>
+                        <TableCell>{alertSeverityBadge(alert, t)}</TableCell>
                         <TableCell className="max-w-[300px] truncate text-xs text-muted-foreground">
                           {alert.reason}
                         </TableCell>
@@ -313,29 +346,37 @@ export default function ReconciliationPage() {
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
                 <Clock className="mb-2 h-10 w-10" />
-                <p>No reconciliation reports yet.</p>
+                <p>{t("reconciliation.noReports")}</p>
               </CardContent>
             </Card>
           ) : (
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Historical Reports</CardTitle>
+                <CardTitle className="text-base">
+                  {t("reconciliation.historicalReports")}
+                </CardTitle>
                 <CardDescription>
-                  {reports.length} report{reports.length > 1 ? "s" : ""}
+                  {t("reconciliation.reportsCount", { count: reports.length })}
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Run At</TableHead>
-                      <TableHead className="text-right">Checked</TableHead>
-                      <TableHead className="text-right">Matched</TableHead>
-                      <TableHead className="text-right">Mismatches</TableHead>
+                      <TableHead>{t("reconciliation.colRunAt")}</TableHead>
                       <TableHead className="text-right">
-                        Ledger Balance
+                        {t("reconciliation.colChecked")}
                       </TableHead>
-                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">
+                        {t("reconciliation.colMatched")}
+                      </TableHead>
+                      <TableHead className="text-right">
+                        {t("reconciliation.colMismatches")}
+                      </TableHead>
+                      <TableHead className="text-right">
+                        {t("reconciliation.colLedgerBalance")}
+                      </TableHead>
+                      <TableHead>{t("reconciliation.colStatus")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -375,11 +416,11 @@ export default function ReconciliationPage() {
                         <TableCell>
                           {r.mismatches === 0 ? (
                             <Badge className="bg-emerald-500/15 text-emerald-700 border-emerald-500/30">
-                              Clean
+                              {t("reconciliation.cleanStatus")}
                             </Badge>
                           ) : (
                             <Badge variant="destructive">
-                              {r.mismatches} alert{r.mismatches > 1 ? "s" : ""}
+                              {r.mismatches} {t("reconciliation.alertsStatus")}
                             </Badge>
                           )}
                         </TableCell>

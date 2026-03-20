@@ -994,4 +994,89 @@ describe("PO State Machine E2E", () => {
       expect(res.body.message).toMatch(/payment has not been locked/i);
     });
   });
+
+  // ── Idempotency guards: every lifecycle transition is safe to retry ──
+
+  describe("Idempotency: ship is safe to retry", () => {
+    it("should return idempotent response for ship on already-SHIPPED PO", async () => {
+      const id = await createShipped();
+      const res = await request(app.getHttpServer())
+        .patch(`/purchase-orders/${id}/ship`)
+        .set("Authorization", `Bearer ${supplierToken}`);
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("SHIPPED");
+    });
+
+    it("should return idempotent response for ship on DELIVERED PO", async () => {
+      const id = await createDelivered();
+      const res = await request(app.getHttpServer())
+        .patch(`/purchase-orders/${id}/ship`)
+        .set("Authorization", `Bearer ${supplierToken}`);
+      expect(res.status).toBe(200);
+      expect(["DELIVERED", "SHIPPED"]).toContain(res.body.status);
+    });
+  });
+
+  describe("Idempotency: deliver is safe to retry", () => {
+    it("should return idempotent response for deliver on already-DELIVERED PO", async () => {
+      const id = await createDelivered();
+      const res = await request(app.getHttpServer())
+        .patch(`/purchase-orders/${id}/deliver`)
+        .set("Authorization", `Bearer ${supplierToken}`);
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("DELIVERED");
+    });
+
+    it("should return idempotent response for deliver on VERIFIED PO", async () => {
+      const id = await createVerified();
+      const res = await request(app.getHttpServer())
+        .patch(`/purchase-orders/${id}/deliver`)
+        .set("Authorization", `Bearer ${supplierToken}`);
+      expect(res.status).toBe(200);
+      expect(["VERIFIED", "DELIVERED"]).toContain(res.body.status);
+    });
+  });
+
+  describe("Idempotency: verify is safe to retry", () => {
+    it("should return idempotent response for verify on already-VERIFIED PO", async () => {
+      const id = await createVerified();
+      const res = await request(app.getHttpServer())
+        .patch(`/purchase-orders/${id}/verify`)
+        .set("Authorization", `Bearer ${buyerToken}`);
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("VERIFIED");
+    });
+
+    it("should return idempotent response for verify on SETTLED PO", async () => {
+      const id = await createSettled();
+      const res = await request(app.getHttpServer())
+        .patch(`/purchase-orders/${id}/verify`)
+        .set("Authorization", `Bearer ${buyerToken}`);
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("SETTLED");
+    });
+  });
+
+  describe("Idempotency: dispute is safe to retry", () => {
+    it("should return idempotent response for dispute on already-DISPUTED PO", async () => {
+      const id = await createDisputed();
+      const res = await request(app.getHttpServer())
+        .patch(`/purchase-orders/${id}/dispute`)
+        .set("Authorization", `Bearer ${buyerToken}`);
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("DISPUTED");
+    });
+  });
+
+  describe("Idempotency: confirm-escrow is safe to retry", () => {
+    it("should return ok for confirm-escrow on already-FULFILLMENT PO", async () => {
+      const id = await createFunded();
+      // PO is already FULFILLMENT after createFunded — retry confirm
+      const res = await request(app.getHttpServer())
+        .patch(`/purchase-orders/${id}/confirm-escrow`)
+        .set("Authorization", `Bearer ${adminToken}`);
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+    });
+  });
 });

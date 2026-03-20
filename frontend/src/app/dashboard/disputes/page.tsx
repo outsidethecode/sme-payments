@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
 import { disputesApi, type Dispute } from "@/lib/api";
 import { formatCurrency, formatDateTime, statusLabel } from "@/lib/format";
+import { useTranslation } from "@/i18n";
 import {
   Card,
   CardContent,
@@ -41,6 +42,7 @@ const OUTCOME_LABELS: Record<string, string> = {
 export default function DisputesPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const { t } = useTranslation();
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [resolveDialogId, setResolveDialogId] = useState<string | null>(null);
   const [resolveOutcome, setResolveOutcome] = useState<string>("FULL_REFUND");
@@ -86,17 +88,17 @@ export default function DisputesPage() {
   });
 
   if (isLoading) {
-    return <div className="p-6 text-muted-foreground">Loading disputes…</div>;
+    return (
+      <div className="p-6 text-muted-foreground">{t("disputes.loading")}</div>
+    );
   }
 
   return (
     <div className="space-y-6 p-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Disputes</h1>
-          <p className="text-muted-foreground">
-            Manage purchase order disputes and resolutions
-          </p>
+          <h1 className="text-2xl font-bold">{t("disputes.title")}</h1>
+          <p className="text-muted-foreground">{t("disputes.subtitle")}</p>
         </div>
       </div>
 
@@ -110,7 +112,7 @@ export default function DisputesPage() {
               size="sm"
               onClick={() => setStatusFilter(s)}
             >
-              {s ? statusLabel(s) : "All"}
+              {s ? statusLabel(s) : t("disputes.filterAll")}
             </Button>
           ),
         )}
@@ -119,7 +121,7 @@ export default function DisputesPage() {
       {disputes.length === 0 ? (
         <Card>
           <CardContent className="py-8 text-center text-muted-foreground">
-            No disputes found.
+            {t("disputes.noDisputes")}
           </CardContent>
         </Card>
       ) : (
@@ -159,12 +161,17 @@ export default function DisputesPage() {
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="text-sm">
-                  <span className="font-medium">Reason:</span> {d.reason}
+                  <span className="font-medium">
+                    {t("disputes.reasonLabel")}
+                  </span>{" "}
+                  {d.reason}
                 </div>
 
                 <div className="grid grid-cols-2 gap-4 text-sm md:grid-cols-4">
                   <div>
-                    <span className="text-muted-foreground">PO Amount:</span>{" "}
+                    <span className="text-muted-foreground">
+                      {t("disputes.poAmount")}
+                    </span>{" "}
                     {d.purchaseOrder
                       ? formatCurrency(
                           d.purchaseOrder.amount,
@@ -175,7 +182,7 @@ export default function DisputesPage() {
                   {d.refundAmount !== null && (
                     <div>
                       <span className="text-muted-foreground">
-                        Refund Amount:
+                        {t("disputes.refundAmount")}
                       </span>{" "}
                       {formatCurrency(
                         d.refundAmount,
@@ -185,13 +192,13 @@ export default function DisputesPage() {
                   )}
                   <div>
                     <span className="text-muted-foreground">
-                      Buyer Evidence:
+                      {t("disputes.buyerEvidence")}
                     </span>{" "}
                     {(d.buyerEvidence ?? []).length} items
                   </div>
                   <div>
                     <span className="text-muted-foreground">
-                      Supplier Evidence:
+                      {t("disputes.supplierEvidence")}
                     </span>{" "}
                     {(d.supplierEvidence ?? []).length} items
                   </div>
@@ -199,7 +206,9 @@ export default function DisputesPage() {
 
                 {d.resolutionNotes && (
                   <div className="rounded bg-muted p-3 text-sm">
-                    <span className="font-medium">Resolution Notes:</span>{" "}
+                    <span className="font-medium">
+                      {t("disputes.resolutionNotes")}
+                    </span>{" "}
                     {d.resolutionNotes}
                   </div>
                 )}
@@ -214,7 +223,7 @@ export default function DisputesPage() {
                         onClick={() => reviewMutation.mutate(d.id)}
                         disabled={reviewMutation.isPending}
                       >
-                        Mark Under Review
+                        {t("disputes.markUnderReview")}
                       </Button>
                     )}
 
@@ -225,11 +234,15 @@ export default function DisputesPage() {
                       }
                     >
                       <DialogTrigger asChild>
-                        <Button size="sm">Resolve Dispute</Button>
+                        <Button size="sm">
+                          {t("disputes.resolveDispute")}
+                        </Button>
                       </DialogTrigger>
                       <DialogContent>
                         <DialogHeader>
-                          <DialogTitle>Resolve Dispute</DialogTitle>
+                          <DialogTitle>
+                            {t("disputes.resolveDispute")}
+                          </DialogTitle>
                           <DialogDescription>
                             Choose an outcome for this dispute. PO:{" "}
                             {d.purchaseOrder?.referenceNumber}
@@ -238,7 +251,7 @@ export default function DisputesPage() {
                         <div className="space-y-4">
                           <div>
                             <label className="block text-sm font-medium mb-1">
-                              Outcome
+                              {t("disputes.outcome")}
                             </label>
                             <select
                               className="w-full rounded border px-3 py-2 text-sm"
@@ -248,22 +261,24 @@ export default function DisputesPage() {
                               }
                             >
                               <option value="FULL_REFUND">
-                                Full Refund to Buyer
+                                {t("disputes.outcomeFullRefund")}
                               </option>
                               <option value="PARTIAL_REFUND">
-                                Partial Refund
+                                {t("disputes.outcomePartialRefund")}
                               </option>
                               <option value="RELEASE_TO_SUPPLIER">
-                                Release to Supplier
+                                {t("disputes.outcomeReleaseToSupplier")}
                               </option>
-                              <option value="REWORK">Rework Required</option>
+                              <option value="REWORK">
+                                {t("disputes.outcomeRework")}
+                              </option>
                             </select>
                           </div>
 
                           {resolveOutcome === "PARTIAL_REFUND" && (
                             <div>
                               <label className="block text-sm font-medium mb-1">
-                                Refund Amount (smallest unit)
+                                {t("disputes.refundAmountMinorUnit")}
                               </label>
                               <input
                                 type="number"
@@ -279,7 +294,7 @@ export default function DisputesPage() {
 
                           <div>
                             <label className="block text-sm font-medium mb-1">
-                              Resolution Notes
+                              {t("disputes.resolutionNotesLabel")}
                             </label>
                             <textarea
                               className="w-full rounded border px-3 py-2 text-sm"
@@ -288,7 +303,9 @@ export default function DisputesPage() {
                               onChange={(e) =>
                                 setResolutionNotes(e.target.value)
                               }
-                              placeholder="Explain the resolution decision…"
+                              placeholder={t(
+                                "disputes.resolutionNotesPlaceholder",
+                              )}
                             />
                           </div>
 
@@ -307,8 +324,8 @@ export default function DisputesPage() {
                             disabled={resolveMutation.isPending}
                           >
                             {resolveMutation.isPending
-                              ? "Resolving…"
-                              : "Confirm Resolution"}
+                              ? t("disputes.resolving")
+                              : t("disputes.confirmResolution")}
                           </Button>
                         </div>
                       </DialogContent>

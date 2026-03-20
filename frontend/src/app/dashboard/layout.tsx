@@ -37,123 +37,124 @@ import {
   ToggleLeft,
   Fingerprint,
   ChevronRight,
+  Globe,
 } from "lucide-react";
 import { PasskeyBanner } from "@/components/passkey-banner";
 import { HealthIndicator } from "@/components/health-indicator";
+import { useTranslation } from "@/i18n";
 
 const NAV_ITEMS = [
   {
     href: "/dashboard",
-    label: "Dashboard",
+    labelKey: "nav.dashboard",
     icon: LayoutDashboard,
     roles: ["BUYER", "SUPPLIER", "LIQUIDITY_PARTNER", "ADMIN"],
   },
   {
     href: "/dashboard/onboarding",
-    label: "Onboarding",
+    labelKey: "nav.onboarding",
     icon: ClipboardCheck,
     roles: ["BUYER", "SUPPLIER", "LIQUIDITY_PARTNER"],
   },
   {
     href: "/dashboard/purchase-orders",
-    label: "Purchase Orders",
+    labelKey: "nav.purchaseOrders",
     icon: FileText,
     roles: ["BUYER", "SUPPLIER", "ADMIN"],
   },
   {
     href: "/dashboard/approvals",
-    label: "Approvals",
+    labelKey: "nav.approvals",
     icon: ShieldCheck,
     roles: ["BUYER", "ADMIN"],
   },
   {
     href: "/dashboard/team",
-    label: "Team",
+    labelKey: "nav.team",
     icon: Users,
     roles: ["BUYER", "SUPPLIER", "LIQUIDITY_PARTNER", "ADMIN"],
   },
-
   {
     href: "/dashboard/invitations",
-    label: "Invitations",
+    labelKey: "nav.invitations",
     icon: UserPlus,
     roles: ["BUYER", "ADMIN"],
   },
   {
     href: "/dashboard/payment-locks",
-    label: "Payment Locks",
+    labelKey: "nav.paymentLocks",
     icon: Lock,
     roles: ["BUYER", "SUPPLIER", "ADMIN"],
   },
   {
     href: "/dashboard/early-payments",
-    label: "Early Payments",
+    labelKey: "nav.earlyPayments",
     icon: Zap,
     roles: ["SUPPLIER", "LIQUIDITY_PARTNER", "ADMIN"],
   },
   {
     href: "/dashboard/settlements",
-    label: "Settlements",
+    labelKey: "nav.settlements",
     icon: ArrowRightLeft,
     roles: ["BUYER", "SUPPLIER", "LIQUIDITY_PARTNER", "ADMIN"],
   },
   {
     href: "/dashboard/disputes",
-    label: "Disputes",
+    labelKey: "nav.disputes",
     icon: Scale,
     roles: ["BUYER", "SUPPLIER", "ADMIN"],
   },
   {
     href: "/dashboard/risk",
-    label: "Risk Controls",
+    labelKey: "nav.riskControls",
     icon: AlertTriangle,
     roles: ["ADMIN", "LIQUIDITY_PARTNER"],
   },
   {
     href: "/dashboard/ledger",
-    label: "Ledger",
+    labelKey: "nav.ledger",
     icon: BookOpen,
     roles: ["BUYER", "SUPPLIER", "LIQUIDITY_PARTNER", "ADMIN"],
   },
   {
     href: "/dashboard/receipts",
-    label: "My Receipts",
+    labelKey: "nav.myReceipts",
     icon: Receipt,
     roles: ["BUYER", "SUPPLIER", "LIQUIDITY_PARTNER", "ADMIN"],
   },
   {
     href: "/dashboard/admin/reconciliation",
-    label: "Reconciliation",
+    labelKey: "nav.reconciliation",
     icon: ArrowRightLeft,
     roles: ["ADMIN"],
   },
   {
     href: "/dashboard/admin/escrow-accounts",
-    label: "Escrow Accounts",
+    labelKey: "nav.escrowAccounts",
     icon: Building2,
     roles: ["ADMIN"],
   },
   {
     href: "/dashboard/admin/feature-flags",
-    label: "Feature Flags",
+    labelKey: "nav.featureFlags",
     icon: ToggleLeft,
     roles: ["ADMIN"],
   },
   {
     href: "/dashboard/policies",
-    label: "Policies",
+    labelKey: "nav.policies",
     icon: ShieldCheck,
     roles: ["BUYER", "SUPPLIER", "LIQUIDITY_PARTNER", "ADMIN"],
   },
   {
     href: "/dashboard/admin",
-    label: "Admin",
+    labelKey: "nav.admin",
     icon: Settings,
     roles: ["ADMIN"],
   },
   {
     href: "/verify",
-    label: "Verify Evidence",
+    labelKey: "nav.verifyEvidence",
     icon: ShieldCheck,
     roles: ["LIQUIDITY_PARTNER", "ADMIN"],
   },
@@ -167,6 +168,7 @@ export default function DashboardLayout({
   const { user, loading, logout } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+  const { t, locale, setLocale } = useTranslation();
   const [settingsOpen, setSettingsOpen] = useState(
     () =>
       typeof window !== "undefined" &&
@@ -198,7 +200,7 @@ export default function DashboardLayout({
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <div className="text-muted-foreground">Loading…</div>
+        <div className="text-muted-foreground">{t("common.loading")}</div>
       </div>
     );
   }
@@ -231,7 +233,7 @@ export default function DashboardLayout({
       <aside className="hidden w-64 flex-col border-r bg-muted/30 md:flex">
         <div className="flex h-14 items-center border-b px-4">
           <Link href="/dashboard" className="text-lg font-bold tracking-tight">
-            Programmable SME Settlement
+            {t("common.appName")}
           </Link>
           <div className="ml-auto">
             <HealthIndicator />
@@ -255,7 +257,7 @@ export default function DashboardLayout({
                   disabled={gated}
                 >
                   <item.icon className="h-4 w-4" />
-                  {item.label}
+                  {t(item.labelKey)}
                 </Button>
               </Link>
             );
@@ -274,7 +276,7 @@ export default function DashboardLayout({
               onClick={() => setSettingsOpen((o) => !o)}
             >
               <Settings className="h-4 w-4" />
-              Settings
+              {t("nav.settings")}
               <ChevronRight
                 className={`ml-auto h-3 w-3 transition-transform ${
                   settingsOpen ? "rotate-90" : ""
@@ -294,7 +296,7 @@ export default function DashboardLayout({
                     size="sm"
                   >
                     <Fingerprint className="h-4 w-4" />
-                    Passkeys
+                    {t("nav.passkeys")}
                   </Button>
                 </Link>
               </div>
@@ -330,10 +332,21 @@ export default function DashboardLayout({
             <DropdownMenuContent align="end" className="w-48">
               <DropdownMenuItem onClick={logout}>
                 <LogOut className="mr-2 h-4 w-4" />
-                Sign out
+                {t("common.signOut")}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {/* Language switcher */}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full justify-start gap-2 mt-1"
+            onClick={() => setLocale(locale === "en" ? "ar" : "en")}
+          >
+            <Globe className="h-4 w-4" />
+            {locale === "en" ? "العربية" : "English"}
+          </Button>
         </div>
       </aside>
 
@@ -341,7 +354,7 @@ export default function DashboardLayout({
       <main className="flex-1 overflow-y-auto">
         {/* Mobile header */}
         <header className="flex h-14 items-center justify-between border-b px-4 md:hidden">
-          <span className="text-lg font-bold">Programmable SME Settlement</span>
+          <span className="text-lg font-bold">{t("common.appName")}</span>
           <Button variant="ghost" size="sm" onClick={logout}>
             <LogOut className="h-4 w-4" />
           </Button>
@@ -353,15 +366,14 @@ export default function DashboardLayout({
             <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/20 p-6 text-center space-y-3">
               <ClipboardCheck className="mx-auto h-10 w-10 text-amber-600" />
               <h2 className="text-lg font-semibold text-amber-800 dark:text-amber-200">
-                Complete Onboarding First
+                {t("layout.completeOnboardingFirst")}
               </h2>
               <p className="text-sm text-amber-700 dark:text-amber-300">
-                Your organisation must complete onboarding before accessing
-                platform features.
+                {t("layout.completeOnboardingDescription")}
               </p>
               <Link href="/dashboard/onboarding">
                 <Button size="sm" className="mt-2">
-                  Go to Onboarding
+                  {t("layout.goToOnboarding")}
                 </Button>
               </Link>
             </div>

@@ -135,3 +135,31 @@
     cursor: pointer;
   }
 }
+
+/* ── RTL / Arabic support ── */
+html[dir="rtl"],
+html[dir="rtl"] * {
+  font-family: var(--font-noto-kufi-arabic), Helvetica Neue, Helvetica, Arial, sans-serif !important;
+}
+
+/* Flip margins/paddings that use Tailwind directional utilities */
+html[dir="rtl"] .ml-auto {
+  margin-left: unset;
+  margin-right: auto;
+}
+html[dir="rtl"] .mr-auto {
+  margin-right: unset;
+  margin-left: auto;
+}
+html[dir="rtl"] .mr-2 {
+  margin-right: unset;
+  margin-left: 0.5rem;
+}
+html[dir="rtl"] .ml-2 {
+  margin-left: unset;
+  margin-right: 0.5rem;
+}
+html[dir="rtl"] .ml-4 {
+  margin-left: unset;
+  margin-right: 1rem;
+}

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Fingerprint, X } from "lucide-react";
 import { useState } from "react";
 import Link from "next/link";
+import { useTranslation } from "@/i18n";
 
 /**
  * Banner prompting the user to register a passkey.
@@ -17,6 +18,7 @@ import Link from "next/link";
 export function PasskeyBanner() {
   const { hasPasskey, statusLoading } = usePasskey();
   const [dismissed, setDismissed] = useState(false);
+  const { t } = useTranslation();
 
   // Don't show while loading, if user already has a passkey, or if dismissed
   if (statusLoading || hasPasskey || dismissed) return null;
@@ -24,19 +26,20 @@ export function PasskeyBanner() {
   return (
     <Alert className="relative mb-4 border-destructive/30 bg-destructive/5">
       <Fingerprint className="h-4 w-4" />
-      <AlertTitle className="font-semibold">Passkey required</AlertTitle>
+      <AlertTitle className="font-semibold">
+        {t("passkeyBanner.title")}
+      </AlertTitle>
       <AlertDescription className="mt-1 text-sm">
-        You must register a passkey to use this platform. All actions require a
-        cryptographic signature from your device biometrics.
+        {t("passkeyBanner.description")}
         <div className="mt-3 flex items-center gap-2">
           <Button size="sm" asChild>
             <Link href="/dashboard/onboarding">
               <Fingerprint className="mr-2 h-3 w-3" />
-              Go to Onboarding
+              {t("passkeyBanner.goToOnboarding")}
             </Link>
           </Button>
           <Button size="sm" variant="ghost" onClick={() => setDismissed(true)}>
-            <X className="mr-1 h-3 w-3" /> Dismiss
+            <X className="mr-1 h-3 w-3" /> {t("passkeyBanner.dismiss")}
           </Button>
         </div>
       </AlertDescription>

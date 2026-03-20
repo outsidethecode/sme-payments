@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import { useTranslation } from "@/i18n";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,7 +16,7 @@ import {
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { Building2, Package, Landmark, Settings } from "lucide-react";
+import { Building2, Package, Landmark, Settings, Globe } from "lucide-react";
 
 const DEMO_ACCOUNTS = [
   // ── KSA Buyer Team – Al-Rajhi Trading Co ────────────────
@@ -122,17 +123,18 @@ const DEMO_ACCOUNTS = [
 
 const GROUP_CONFIG: Record<
   string,
-  { label: string; Icon: React.FC<React.SVGProps<SVGSVGElement>> }
+  { labelKey: string; Icon: React.FC<React.SVGProps<SVGSVGElement>> }
 > = {
-  buyer: { label: "Buyer Team – Al-Rajhi Trading Co", Icon: Building2 },
-  supplier: { label: "Supplier Team – Noor Supply Chain", Icon: Package },
-  lp: { label: "LP Team – Tamweel Capital", Icon: Landmark },
-  admin: { label: "Platform", Icon: Settings },
+  buyer: { labelKey: "login.buyerTeam", Icon: Building2 },
+  supplier: { labelKey: "login.supplierTeam", Icon: Package },
+  lp: { labelKey: "login.lpTeam", Icon: Landmark },
+  admin: { labelKey: "login.platform", Icon: Settings },
 };
 
 export default function LoginPage() {
   const router = useRouter();
   const { login } = useAuth();
+  const { t, locale, setLocale } = useTranslation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -142,10 +144,10 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await login(email, password);
-      toast.success("Logged in successfully");
+      toast.success(t("login.loginSuccess"));
       router.push("/dashboard");
     } catch {
-      toast.error("Invalid email or password");
+      toast.error(t("login.loginInvalidCredentials"));
     } finally {
       setLoading(false);
     }
@@ -155,10 +157,10 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await login(demoEmail, "password123");
-      toast.success("Logged in successfully");
+      toast.success(t("login.loginSuccess"));
       router.push("/dashboard");
     } catch {
-      toast.error("Login failed");
+      toast.error(t("login.loginFailed"));
     } finally {
       setLoading(false);
     }
@@ -168,50 +170,58 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
       <div className="w-full max-w-md space-y-6">
         {/* Header */}
+        <div className="flex items-center justify-between">
+          <div />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setLocale(locale === "en" ? "ar" : "en")}
+          >
+            <Globe className="h-4 w-4 mr-1" />
+            {locale === "en" ? "العربية" : "English"}
+          </Button>
+        </div>
         <div className="text-center">
           <h1 className="text-3xl font-bold tracking-tight">
-            Programmable SME Settlement
+            {t("common.appName")}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Event-Driven B2B Payments with Embedded Liquidity and Verifiable
-            Digital Trust
+            {t("login.tagline")}
           </p>
         </div>
 
         {/* Login Form */}
         <Card>
           <CardHeader>
-            <CardTitle>Sign in</CardTitle>
-            <CardDescription>
-              Enter your credentials or choose a demo account below
-            </CardDescription>
+            <CardTitle>{t("login.signIn")}</CardTitle>
+            <CardDescription>{t("login.signInDescription")}</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email">{t("login.email")}</Label>
                 <Input
                   id="email"
                   type="email"
-                  placeholder="you@company.co.uk"
+                  placeholder={t("login.emailPlaceholder")}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
+                <Label htmlFor="password">{t("login.password")}</Label>
                 <Input
                   id="password"
                   type="password"
-                  placeholder="••••••••"
+                  placeholder={t("login.passwordPlaceholder")}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
                 />
               </div>
               <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? "Signing in…" : "Sign in"}
+                {loading ? t("login.signingIn") : t("login.signIn")}
               </Button>
             </form>
           </CardContent>
@@ -220,11 +230,10 @@ export default function LoginPage() {
         {/* Demo Accounts */}
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">KSA Demo Accounts</CardTitle>
-            <CardDescription>
-              Click to sign in as any team member role – test PO approvals,
-              escrow, settlement & more
-            </CardDescription>
+            <CardTitle className="text-base">
+              {t("login.ksaDemoAccounts")}
+            </CardTitle>
+            <CardDescription>{t("login.ksaDemoDescription")}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {(["buyer", "supplier", "lp", "admin"] as const).map((group) => {
@@ -238,7 +247,7 @@ export default function LoginPage() {
                       return cfg ? (
                         <>
                           <cfg.Icon className="h-3.5 w-3.5" />
-                          {cfg.label}
+                          {t(cfg.labelKey)}
                         </>
                       ) : null;
                     })()}

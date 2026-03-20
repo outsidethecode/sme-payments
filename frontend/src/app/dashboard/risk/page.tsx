@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { useState } from "react";
+import { useTranslation } from "@/i18n";
 
 const SEVERITY_COLORS: Record<string, string> = {
   LOW: "bg-slate-100 text-slate-800",
@@ -27,6 +28,7 @@ export default function RiskPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [lpIdInput, setLpIdInput] = useState("");
+  const { t } = useTranslation();
 
   const isAdmin = user?.role === "ADMIN";
   const isLP = user?.role === "LIQUIDITY_PARTNER";
@@ -71,21 +73,17 @@ export default function RiskPage() {
   return (
     <div className="space-y-6 p-6">
       <div>
-        <h1 className="text-2xl font-bold">Risk Controls</h1>
-        <p className="text-muted-foreground">
-          Fraud detection, velocity controls, and LP exposure monitoring
-        </p>
+        <h1 className="text-2xl font-bold">{t("risk.title")}</h1>
+        <p className="text-muted-foreground">{t("risk.subtitle")}</p>
       </div>
 
       {/* ── Fraud Configuration (Admin only) ────────────── */}
       {isAdmin && fraudConfig && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">
-              Fraud Control Configuration
-            </CardTitle>
+            <CardTitle className="text-lg">{t("risk.fraudConfig")}</CardTitle>
             <CardDescription>
-              Per-currency velocity limits and thresholds
+              {t("risk.fraudConfigDescription")}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -101,7 +99,7 @@ export default function RiskPage() {
                   <div className="grid grid-cols-1 gap-4 text-sm md:grid-cols-2 lg:grid-cols-3">
                     <div className="rounded border p-3">
                       <div className="text-muted-foreground">
-                        Max POs / Buyer / Day
+                        {t("risk.maxPOsPerBuyerPerDay")}
                       </div>
                       <div className="text-lg font-semibold">
                         {cfg.maxPOsPerBuyerPerDay}
@@ -109,7 +107,7 @@ export default function RiskPage() {
                     </div>
                     <div className="rounded border p-3">
                       <div className="text-muted-foreground">
-                        Max Daily Value / Buyer
+                        {t("risk.maxDailyValuePerBuyer")}
                       </div>
                       <div className="text-lg font-semibold">
                         {formatCurrency(
@@ -120,7 +118,7 @@ export default function RiskPage() {
                     </div>
                     <div className="rounded border p-3">
                       <div className="text-muted-foreground">
-                        Mandatory Evidence Threshold
+                        {t("risk.mandatoryEvidenceThreshold")}
                       </div>
                       <div className="text-lg font-semibold">
                         {formatCurrency(
@@ -131,7 +129,7 @@ export default function RiskPage() {
                     </div>
                     <div className="rounded border p-3">
                       <div className="text-muted-foreground">
-                        Max POs / Supplier / Day
+                        {t("risk.maxPOsPerSupplierPerDay")}
                       </div>
                       <div className="text-lg font-semibold">
                         {cfg.maxPOsPerSupplierPerDay}
@@ -139,12 +137,14 @@ export default function RiskPage() {
                     </div>
                     <div className="rounded border p-3">
                       <div className="text-muted-foreground">
-                        Supplier Whitelist
+                        {t("risk.supplierWhitelist")}
                       </div>
                       <div className="text-lg font-semibold">
                         {(cfg.supplierWhitelist ?? []).length > 0
-                          ? `${cfg.supplierWhitelist.length} entries`
-                          : "Not enforced"}
+                          ? t("risk.whitelistEntries", {
+                              count: cfg.supplierWhitelist.length,
+                            })
+                          : t("risk.whitelistNotEnforced")}
                       </div>
                     </div>
                   </div>
@@ -154,7 +154,7 @@ export default function RiskPage() {
               <div className="grid grid-cols-1 gap-4 text-sm md:grid-cols-2 lg:grid-cols-3">
                 <div className="rounded border p-3">
                   <div className="text-muted-foreground">
-                    Max POs / Buyer / Day
+                    {t("risk.maxPOsPerBuyerPerDay")}
                   </div>
                   <div className="text-lg font-semibold">
                     {fraudConfig.maxPOsPerBuyerPerDay}
@@ -162,7 +162,7 @@ export default function RiskPage() {
                 </div>
                 <div className="rounded border p-3">
                   <div className="text-muted-foreground">
-                    Max Daily Value / Buyer
+                    {t("risk.maxDailyValuePerBuyer")}
                   </div>
                   <div className="text-lg font-semibold">
                     {formatCurrency(fraudConfig.maxDailyValuePerBuyer, "GBP")}
@@ -170,7 +170,7 @@ export default function RiskPage() {
                 </div>
                 <div className="rounded border p-3">
                   <div className="text-muted-foreground">
-                    Mandatory Evidence Threshold
+                    {t("risk.mandatoryEvidenceThreshold")}
                   </div>
                   <div className="text-lg font-semibold">
                     {formatCurrency(
@@ -181,7 +181,7 @@ export default function RiskPage() {
                 </div>
                 <div className="rounded border p-3">
                   <div className="text-muted-foreground">
-                    Max POs / Supplier / Day
+                    {t("risk.maxPOsPerSupplierPerDay")}
                   </div>
                   <div className="text-lg font-semibold">
                     {fraudConfig.maxPOsPerSupplierPerDay}
@@ -189,12 +189,14 @@ export default function RiskPage() {
                 </div>
                 <div className="rounded border p-3">
                   <div className="text-muted-foreground">
-                    Supplier Whitelist
+                    {t("risk.supplierWhitelist")}
                   </div>
                   <div className="text-lg font-semibold">
                     {fraudConfig.supplierWhitelist.length > 0
-                      ? `${fraudConfig.supplierWhitelist.length} entries`
-                      : "Not enforced"}
+                      ? t("risk.whitelistEntries", {
+                          count: fraudConfig.supplierWhitelist.length,
+                        })
+                      : t("risk.whitelistNotEnforced")}
                   </div>
                 </div>
               </div>
@@ -208,16 +210,16 @@ export default function RiskPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">
-              Unacknowledged Fraud Flags
+              {t("risk.unacknowledgedFlags")}
             </CardTitle>
             <CardDescription>
-              {fraudFlags.length} active flag{fraudFlags.length !== 1 && "s"}
+              {t("risk.activeFlagsCount", { count: fraudFlags.length })}
             </CardDescription>
           </CardHeader>
           <CardContent>
             {fraudFlags.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                No unacknowledged fraud flags.
+                {t("risk.noFlags")}
               </p>
             ) : (
               <div className="space-y-3">
@@ -250,7 +252,7 @@ export default function RiskPage() {
                       onClick={() => acknowledgeMutation.mutate(flag.id)}
                       disabled={acknowledgeMutation.isPending}
                     >
-                      Acknowledge
+                      {t("risk.acknowledge")}
                     </Button>
                   </div>
                 ))}
@@ -265,10 +267,10 @@ export default function RiskPage() {
       {/* ── LP Exposure ─────────────────────────────────── */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">LP Exposure Monitor</CardTitle>
-          <CardDescription>
-            Real-time liquidity partner exposure and concentration tracking
-          </CardDescription>
+          <CardTitle className="text-lg">
+            {t("risk.lpExposureMonitor")}
+          </CardTitle>
+          <CardDescription>{t("risk.lpExposureDescription")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {isAdmin && (
@@ -276,7 +278,7 @@ export default function RiskPage() {
               <input
                 type="text"
                 className="w-64 rounded border px-3 py-2 text-sm"
-                placeholder="Enter LP User ID"
+                placeholder={t("risk.enterLPUserId")}
                 value={lpIdInput}
                 onChange={(e) => setLpIdInput(e.target.value)}
               />
@@ -285,7 +287,7 @@ export default function RiskPage() {
                 onClick={() => refetchExposure()}
                 disabled={!lpIdInput || exposureLoading}
               >
-                {exposureLoading ? "Loading…" : "Check Exposure"}
+                {exposureLoading ? "Loading…" : t("risk.checkExposure")}
               </Button>
             </div>
           )}
@@ -297,14 +299,14 @@ export default function RiskPage() {
               Object.keys(exposure.exposureByCurrency).length > 0 ? (
                 <div className="space-y-2">
                   <h3 className="text-sm font-semibold">
-                    Exposure by Currency
+                    {t("risk.exposureByCurrency")}
                   </h3>
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     {Object.entries(exposure.exposureByCurrency).map(
                       ([ccy, amt]) => (
                         <div key={ccy} className="rounded border p-3">
                           <div className="text-muted-foreground text-sm">
-                            Total Exposure ({ccy})
+                            {t("risk.totalExposure")} ({ccy})
                           </div>
                           <div className="text-xl font-bold">
                             {formatCurrency(amt, ccy as "GBP" | "SAR")}
@@ -317,7 +319,7 @@ export default function RiskPage() {
               ) : (
                 <div className="rounded border p-3">
                   <div className="text-muted-foreground text-sm">
-                    Total Exposure
+                    {t("risk.totalExposure")}
                   </div>
                   <div className="text-xl font-bold">
                     {formatCurrency(
@@ -331,7 +333,7 @@ export default function RiskPage() {
               <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div className="rounded border p-3">
                   <div className="text-muted-foreground text-sm">
-                    Funding Limit
+                    {t("risk.fundingLimit")}
                   </div>
                   <div className="text-xl font-bold">
                     {exposure.fundingLimit
@@ -339,28 +341,32 @@ export default function RiskPage() {
                           exposure.fundingLimit,
                           (exposure.currency ?? "GBP") as "GBP" | "SAR",
                         )
-                      : "No limit set"}
+                      : t("risk.noLimitSet")}
                   </div>
                 </div>
                 <div className="rounded border p-3">
                   <div className="text-muted-foreground text-sm">
-                    Utilisation
+                    {t("risk.utilisation")}
                   </div>
                   <div className="text-xl font-bold">
                     {exposure.utilisationPct !== null
                       ? `${exposure.utilisationPct}%`
-                      : "N/A"}
+                      : t("risk.na")}
                   </div>
                 </div>
                 <div className="rounded border p-3">
                   <div className="text-muted-foreground text-sm">
-                    Funding Status
+                    {t("risk.fundingStatus")}
                   </div>
                   <div className="text-xl font-bold">
                     {exposure.fundingSuspended ? (
-                      <span className="text-red-600">SUSPENDED</span>
+                      <span className="text-red-600">
+                        {t("risk.statusSuspended")}
+                      </span>
                     ) : (
-                      <span className="text-green-600">ACTIVE</span>
+                      <span className="text-green-600">
+                        {t("risk.statusActive")}
+                      </span>
                     )}
                   </div>
                 </div>
@@ -369,7 +375,7 @@ export default function RiskPage() {
               {/* Alerts */}
               {exposure.alerts.length > 0 && (
                 <div className="space-y-2">
-                  <h3 className="text-sm font-semibold">Alerts</h3>
+                  <h3 className="text-sm font-semibold">{t("risk.alerts")}</h3>
                   {exposure.alerts.map((alert: string, i: number) => (
                     <div
                       key={i}
@@ -385,11 +391,11 @@ export default function RiskPage() {
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
                   <h3 className="mb-2 text-sm font-semibold">
-                    Buyer Concentration
+                    {t("risk.buyerConcentration")}
                   </h3>
                   {Object.keys(exposure.buyerConcentration).length === 0 ? (
                     <p className="text-sm text-muted-foreground">
-                      No buyer exposure
+                      {t("risk.noBuyerExposure")}
                     </p>
                   ) : (
                     <div className="space-y-1">
@@ -416,11 +422,11 @@ export default function RiskPage() {
                 </div>
                 <div>
                   <h3 className="mb-2 text-sm font-semibold">
-                    Supplier Concentration
+                    {t("risk.supplierConcentration")}
                   </h3>
                   {Object.keys(exposure.supplierConcentration).length === 0 ? (
                     <p className="text-sm text-muted-foreground">
-                      No supplier exposure
+                      {t("risk.noSupplierExposure")}
                     </p>
                   ) : (
                     <div className="space-y-1">
@@ -456,7 +462,7 @@ export default function RiskPage() {
                   }
                   disabled={snapshotMutation.isPending}
                 >
-                  Take Exposure Snapshot
+                  {t("risk.takeExposureSnapshot")}
                 </Button>
               )}
             </div>

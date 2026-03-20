@@ -1442,9 +1442,38 @@ export class PurchaseOrdersService implements OnModuleInit {
     requireSignature(sig, "PO_MARK_SHIPPED");
     const po = await this.prisma.purchaseOrder.findUnique({
       where: { id },
-      include: { paymentLock: true },
+      include: {
+        paymentLock: true,
+        buyer: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            companyName: true,
+          },
+        },
+        supplier: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            companyName: true,
+          },
+        },
+      },
     });
     if (!po) throw new NotFoundException("PO not found");
+
+    // ── Idempotency guard: already shipped or further → return current state ──
+    if (["SHIPPED", "DELIVERED", "VERIFIED", "SETTLED"].includes(po.status)) {
+      this.logger.log(
+        `markShipped(${id}): PO already in ${po.status} — returning idempotent response`,
+      );
+      return this.formatPO(po);
+    }
+
     if (po.status !== "FULFILLMENT") {
       throw new BadRequestException(
         `Cannot mark as shipped from status ${po.status} (escrow must be funded first)`,
@@ -1509,8 +1538,40 @@ export class PurchaseOrdersService implements OnModuleInit {
 
   async markDelivered(id: string, actorId: string, sig?: SignatureData) {
     requireSignature(sig, "PO_MARK_DELIVERED");
-    const po = await this.prisma.purchaseOrder.findUnique({ where: { id } });
+    const po = await this.prisma.purchaseOrder.findUnique({
+      where: { id },
+      include: {
+        buyer: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            companyName: true,
+          },
+        },
+        supplier: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            companyName: true,
+          },
+        },
+        paymentLock: true,
+      },
+    });
     if (!po) throw new NotFoundException("PO not found");
+
+    // ── Idempotency guard: already delivered or further → return current state ──
+    if (["DELIVERED", "VERIFIED", "SETTLED"].includes(po.status)) {
+      this.logger.log(
+        `markDelivered(${id}): PO already in ${po.status} — returning idempotent response`,
+      );
+      return this.formatPO(po);
+    }
+
     if (po.status !== "SHIPPED") {
       throw new BadRequestException(
         `Cannot mark as delivered from status ${po.status} (must be shipped first)`,
@@ -1563,6 +1624,40 @@ export class PurchaseOrdersService implements OnModuleInit {
 
   async verifyDelivery(id: string, actorId: string, sig?: SignatureData) {
     requireSignature(sig, "PO_VERIFY_DELIVERY");
+
+    // ── Idempotency guard: already verified or further → return current state ──
+    const poCheck = await this.prisma.purchaseOrder.findUnique({
+      where: { id },
+      include: {
+        buyer: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            companyName: true,
+          },
+        },
+        supplier: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            companyName: true,
+          },
+        },
+        paymentLock: true,
+      },
+    });
+    if (!poCheck) throw new NotFoundException("Purchase order not found");
+    if (["VERIFIED", "SETTLED"].includes(poCheck.status)) {
+      this.logger.log(
+        `verifyDelivery(${id}): PO already in ${poCheck.status} — returning idempotent response`,
+      );
+      return this.formatPO(poCheck);
+    }
+
     const po = await this.requireStatus(id, "DELIVERED");
     if (!(await this.isSameOrg(actorId, po.buyerId)))
       throw new ForbiddenException(
@@ -1879,6 +1974,40 @@ export class PurchaseOrdersService implements OnModuleInit {
 
   async dispute(id: string, actorId: string, sig?: SignatureData) {
     requireSignature(sig, "PO_DISPUTE");
+
+    // ── Idempotency guard: already disputed → return current state ──
+    const poCheck = await this.prisma.purchaseOrder.findUnique({
+      where: { id },
+      include: {
+        buyer: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            companyName: true,
+          },
+        },
+        supplier: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            companyName: true,
+          },
+        },
+        paymentLock: true,
+      },
+    });
+    if (!poCheck) throw new NotFoundException("Purchase order not found");
+    if (poCheck.status === "DISPUTED") {
+      this.logger.log(
+        `dispute(${id}): PO already DISPUTED — returning idempotent response`,
+      );
+      return this.formatPO(poCheck);
+    }
+
     const po = await this.requireStatus(id, "DELIVERED");
     if (!(await this.isSameOrg(actorId, po.buyerId)))
       throw new ForbiddenException("Only the buyer organisation can dispute");

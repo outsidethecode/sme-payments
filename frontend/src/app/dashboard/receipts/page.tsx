@@ -39,6 +39,7 @@ import {
   AlertTriangle,
   Fingerprint,
 } from "lucide-react";
+import { useTranslation } from "@/i18n";
 
 type VerificationStatus =
   | "PENDING"
@@ -53,6 +54,7 @@ interface ReceiptWithStatus extends StoredReceipt {
 
 export default function ReceiptsPage() {
   const { user } = useAuth();
+  const { t } = useTranslation();
   const [receipts, setReceipts] = useState<ReceiptWithStatus[]>([]);
   const [count, setCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -75,7 +77,7 @@ export default function ReceiptsPage() {
       setReceipts(allReceipts);
       setCount(totalCount);
     } catch {
-      toast.error("Failed to load local receipts");
+      toast.error(t("receipts.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -87,7 +89,7 @@ export default function ReceiptsPage() {
 
   async function verifyAll() {
     if (receipts.length === 0) {
-      toast.info("No receipts to verify");
+      toast.info(t("receipts.noReceiptsToVerify"));
       return;
     }
 
@@ -123,14 +125,18 @@ export default function ReceiptsPage() {
       });
 
       if (data.allVerified) {
-        toast.success(`All ${data.verified} receipts verified ✓`);
+        toast.success(t("receipts.allVerifiedToast", { count: data.verified }));
       } else {
         toast.warning(
-          `${data.verified}/${data.total} verified — ${data.missing + data.mismatched} issues found`,
+          t("receipts.partialVerifiedToast", {
+            verified: data.verified,
+            total: data.total,
+            issues: data.missing + data.mismatched,
+          }),
         );
       }
     } catch {
-      toast.error("Failed to verify receipts against ledger");
+      toast.error(t("receipts.verifyFailed"));
     } finally {
       setVerifying(false);
     }
@@ -146,9 +152,9 @@ export default function ReceiptsPage() {
       a.download = `receipts-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
-      toast.success("Receipts exported");
+      toast.success(t("receipts.receiptsExported"));
     } catch {
-      toast.error("Failed to export receipts");
+      toast.error(t("receipts.exportFailed"));
     }
   }
 
@@ -171,17 +177,27 @@ export default function ReceiptsPage() {
       case "VERIFIED":
         return (
           <Badge variant="default" className="bg-green-600">
-            Verified
+            {t("receipts.statusVerified")}
           </Badge>
         );
       case "MISSING":
-        return <Badge variant="destructive">Missing</Badge>;
+        return (
+          <Badge variant="destructive">{t("receipts.statusMissing")}</Badge>
+        );
       case "HASH_MISMATCH":
-        return <Badge variant="destructive">Hash Mismatch</Badge>;
+        return (
+          <Badge variant="destructive">
+            {t("receipts.statusHashMismatch")}
+          </Badge>
+        );
       case "SEQUENCE_MISMATCH":
-        return <Badge variant="destructive">Seq Mismatch</Badge>;
+        return (
+          <Badge variant="destructive">{t("receipts.statusSeqMismatch")}</Badge>
+        );
       default:
-        return <Badge variant="secondary">Not Checked</Badge>;
+        return (
+          <Badge variant="secondary">{t("receipts.statusNotChecked")}</Badge>
+        );
     }
   }
 
@@ -208,11 +224,10 @@ export default function ReceiptsPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
             <Receipt className="h-6 w-6" />
-            My Receipts
+            {t("receipts.title")}
           </h1>
           <p className="text-sm text-muted-foreground">
-            Locally stored, platform-signed event receipts — Layer 4
-            non-repudiation proof
+            {t("receipts.subtitle")}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -227,7 +242,7 @@ export default function ReceiptsPage() {
             disabled={receipts.length === 0}
           >
             <Download className="h-4 w-4 mr-1" />
-            Export JSON
+            {t("receipts.exportJSON")}
           </Button>
           <Button
             size="sm"
@@ -235,7 +250,7 @@ export default function ReceiptsPage() {
             disabled={verifying || receipts.length === 0}
           >
             <ShieldCheck className="h-4 w-4 mr-1" />
-            {verifying ? "Verifying…" : "Verify All"}
+            {verifying ? t("receipts.verifying") : t("receipts.verifyAll")}
           </Button>
         </div>
       </div>
@@ -244,12 +259,12 @@ export default function ReceiptsPage() {
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Total Receipts</CardDescription>
+            <CardDescription>{t("receipts.totalReceipts")}</CardDescription>
             <CardTitle className="text-3xl">{count}</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-xs text-muted-foreground">
-              Stored in browser IndexedDB
+              {t("receipts.storedInIndexedDB")}
             </p>
           </CardContent>
         </Card>
@@ -258,42 +273,42 @@ export default function ReceiptsPage() {
           <>
             <Card>
               <CardHeader className="pb-2">
-                <CardDescription>Verified</CardDescription>
+                <CardDescription>{t("receipts.verified")}</CardDescription>
                 <CardTitle className="text-3xl text-green-600">
                   {verificationSummary.verified}
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <p className="text-xs text-muted-foreground">
-                  Match platform ledger
+                  {t("receipts.matchPlatformLedger")}
                 </p>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader className="pb-2">
-                <CardDescription>Missing</CardDescription>
+                <CardDescription>{t("receipts.missing")}</CardDescription>
                 <CardTitle className="text-3xl text-red-600">
                   {verificationSummary.missing}
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <p className="text-xs text-muted-foreground">
-                  Not found in ledger
+                  {t("receipts.notFoundInLedger")}
                 </p>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader className="pb-2">
-                <CardDescription>Mismatched</CardDescription>
+                <CardDescription>{t("receipts.mismatched")}</CardDescription>
                 <CardTitle className="text-3xl text-amber-600">
                   {verificationSummary.mismatched}
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <p className="text-xs text-muted-foreground">
-                  Hash or sequence differs
+                  {t("receipts.hashOrSequenceDiffers")}
                 </p>
               </CardContent>
             </Card>
@@ -315,17 +330,20 @@ export default function ReceiptsPage() {
               <>
                 <CheckCircle className="h-5 w-5 text-green-600" />
                 <p className="text-sm font-medium text-green-800 dark:text-green-200">
-                  All {verificationSummary.verified} local receipts match the
-                  platform ledger. No events have been omitted or altered.
+                  {t("receipts.allVerified", {
+                    count: verificationSummary.verified,
+                  })}
                 </p>
               </>
             ) : (
               <>
                 <AlertTriangle className="h-5 w-5 text-red-600" />
                 <p className="text-sm font-medium text-red-800 dark:text-red-200">
-                  {verificationSummary.missing + verificationSummary.mismatched}{" "}
-                  receipt(s) do not match the platform ledger. This may indicate
-                  tampering or data loss.
+                  {t("receipts.verificationIssues", {
+                    count:
+                      verificationSummary.missing +
+                      verificationSummary.mismatched,
+                  })}
                 </p>
               </>
             )}
@@ -338,34 +356,36 @@ export default function ReceiptsPage() {
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
             <Receipt className="mx-auto h-12 w-12 mb-4 opacity-30" />
-            <p className="text-lg font-medium">No receipts stored yet</p>
+            <p className="text-lg font-medium">{t("receipts.noReceipts")}</p>
             <p className="text-sm mt-1">
-              Receipts are automatically captured when you perform signed
-              actions (send POs, accept deliveries, fund early payments, etc.)
+              {t("receipts.noReceiptsDescription")}
             </p>
           </CardContent>
         </Card>
       ) : (
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Receipt Log</CardTitle>
+            <CardTitle className="text-lg">
+              {t("receipts.receiptLogTitle")}
+            </CardTitle>
             <CardDescription>
-              Each row is a platform-signed receipt stored in your browser at
-              the moment you performed the action.
+              {t("receipts.receiptLogDescription")}
             </CardDescription>
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-10">#</TableHead>
-                  <TableHead>Event</TableHead>
-                  <TableHead>Entity</TableHead>
-                  <TableHead>Seq</TableHead>
-                  <TableHead>Signed</TableHead>
-                  <TableHead>Timestamp</TableHead>
-                  <TableHead>Event Hash</TableHead>
-                  <TableHead className="text-center">Status</TableHead>
+                  <TableHead className="w-10">{t("receipts.colNum")}</TableHead>
+                  <TableHead>{t("receipts.colEvent")}</TableHead>
+                  <TableHead>{t("receipts.colEntity")}</TableHead>
+                  <TableHead>{t("receipts.colSeq")}</TableHead>
+                  <TableHead>{t("receipts.colSigned")}</TableHead>
+                  <TableHead>{t("receipts.colTimestamp")}</TableHead>
+                  <TableHead>{t("receipts.colEventHash")}</TableHead>
+                  <TableHead className="text-center">
+                    {t("receipts.colStatus")}
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -419,32 +439,13 @@ export default function ReceiptsPage() {
       {/* Technical Details */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">About Local Receipts</CardTitle>
+          <CardTitle className="text-lg">{t("receipts.aboutTitle")}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2 text-sm text-muted-foreground">
-          <p>
-            <strong>Layer 4 — "Can't Omit":</strong> Every time you perform a
-            signed action, the platform returns a receipt containing the event
-            hash, sequence number, and an ECDSA P-256 platform signature. This
-            receipt is stored in your browser's IndexedDB.
-          </p>
-          <p>
-            <strong>Why it matters:</strong> If the platform were to ever remove
-            or alter an event, your locally held receipt provides cryptographic
-            proof of what was committed. The platform cannot deny issuing the
-            receipt because it is signed with its private key.
-          </p>
-          <p>
-            <strong>Verification:</strong> Click "Verify All" to check each
-            receipt against the live platform ledger. Green = the event hash and
-            sequence match. Red = a discrepancy was found.
-          </p>
-          <p>
-            <strong>Export:</strong> Download receipts as JSON for external
-            backup or independent verification. The exported file includes
-            platform signatures that can be verified with the platform's public
-            key.
-          </p>
+          <p>{t("receipts.aboutLayer4")}</p>
+          <p>{t("receipts.aboutWhyMatters")}</p>
+          <p>{t("receipts.aboutVerification")}</p>
+          <p>{t("receipts.aboutExport")}</p>
         </CardContent>
       </Card>
     </div>

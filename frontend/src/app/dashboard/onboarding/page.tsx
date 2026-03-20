@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "@/lib/auth-context";
+import { useTranslation } from "@/i18n";
 import { usePasskey } from "@/lib/use-passkey";
 import { onboardingApi, type OnboardingStatus } from "@/lib/api";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -31,13 +32,13 @@ import {
 } from "lucide-react";
 import { useState, useEffect, useRef, useCallback } from "react";
 
-const STATUS_LABEL: Record<string, string> = {
-  NOT_STARTED: "Not Started",
-  IN_PROGRESS: "In Progress",
-  KYB_PENDING: "KYB Pending",
-  KYB_VERIFIED: "KYB Verified",
-  KYB_FAILED: "KYB Failed",
-  COMPLETED: "Completed",
+const STATUS_I18N_KEY: Record<string, string> = {
+  NOT_STARTED: "onboarding.statusNotStarted",
+  IN_PROGRESS: "onboarding.statusInProgress",
+  KYB_PENDING: "onboarding.statusKybPending",
+  KYB_VERIFIED: "onboarding.statusKybVerified",
+  KYB_FAILED: "onboarding.statusKybFailed",
+  COMPLETED: "onboarding.statusCompleted",
 };
 
 const STATUS_VARIANT: Record<
@@ -63,6 +64,7 @@ function StepIcon({ complete }: { complete: boolean }) {
 // ── Identity Verification (Step 0 — shared by all roles) ──
 
 function IdentityVerificationStep({ status }: { status: OnboardingStatus }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [nationalId, setNationalId] = useState("");
   const [transactionId, setTransactionId] = useState<string | null>(null);
@@ -144,7 +146,7 @@ function IdentityVerificationStep({ status }: { status: OnboardingStatus }) {
           <div className="flex items-center gap-2">
             <CheckCircle2 className="h-5 w-5 text-green-600" />
             <CardTitle className="text-base">
-              Step 0: Identity Verified
+              {t("onboarding.step0TitleComplete")}
             </CardTitle>
           </div>
           <CardDescription>
@@ -163,19 +165,16 @@ function IdentityVerificationStep({ status }: { status: OnboardingStatus }) {
         <div className="flex items-center gap-2">
           <StepIcon complete={false} />
           <CardTitle className="text-base">
-            Step 0: Identity Verification
+            {t("onboarding.step0Title")}
           </CardTitle>
         </div>
-        <CardDescription>
-          Verify your identity using your National ID. In KSA this uses the
-          Nafath app.
-        </CardDescription>
+        <CardDescription>{t("onboarding.identityDescription")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         {!polling ? (
           <>
             <div className="space-y-1">
-              <Label htmlFor="nationalId">National ID</Label>
+              <Label htmlFor="nationalId">{t("onboarding.nationalId")}</Label>
               <Input
                 id="nationalId"
                 value={nationalId}
@@ -197,8 +196,8 @@ function IdentityVerificationStep({ status }: { status: OnboardingStatus }) {
                 size="sm"
               >
                 {initiateMutation.isPending
-                  ? "Starting…"
-                  : "Start Verification"}
+                  ? t("onboarding.startingVerification")
+                  : t("onboarding.startVerification")}
                 <Fingerprint className="ml-2 h-4 w-4" />
               </Button>
               {nationalId.length > 0 && nationalId.length < 10 && (
@@ -213,7 +212,7 @@ function IdentityVerificationStep({ status }: { status: OnboardingStatus }) {
             {randomCode && (
               <div className="rounded-md border bg-muted p-4 text-center">
                 <p className="text-sm text-muted-foreground">
-                  Open the Nafath app and select this number:
+                  {t("onboarding.nafathPrompt")}
                 </p>
                 <p className="mt-1 text-3xl font-bold tracking-wide">
                   {randomCode}
@@ -222,7 +221,7 @@ function IdentityVerificationStep({ status }: { status: OnboardingStatus }) {
             )}
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Waiting for verification…
+              {t("onboarding.waitingForVerification")}
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
           </div>
@@ -241,6 +240,7 @@ function PasskeyRegistrationStep({
   status: OnboardingStatus;
   identityDone: boolean;
 }) {
+  const { t } = useTranslation();
   const { hasPasskey, statusLoading, registering, register } = usePasskey();
   const passkeyDone = status.steps?.passkey?.complete || hasPasskey;
 
@@ -251,13 +251,10 @@ function PasskeyRegistrationStep({
           <div className="flex items-center gap-2">
             <CheckCircle2 className="h-5 w-5 text-green-600" />
             <CardTitle className="text-base">
-              Step 1: Passkey Registered
+              {t("onboarding.step1TitleComplete")}
             </CardTitle>
           </div>
-          <CardDescription>
-            Your passkey is active — all actions will be cryptographically
-            signed with biometrics.
-          </CardDescription>
+          <CardDescription>{t("onboarding.passkeyActive")}</CardDescription>
         </CardHeader>
       </Card>
     );
@@ -268,7 +265,9 @@ function PasskeyRegistrationStep({
       <CardHeader className="pb-3">
         <div className="flex items-center gap-2">
           <StepIcon complete={false} />
-          <CardTitle className="text-base">Step 1: Register Passkey</CardTitle>
+          <CardTitle className="text-base">
+            {t("onboarding.step1Title")}
+          </CardTitle>
         </div>
         <CardDescription>
           Register a passkey to cryptographically sign all your platform actions
@@ -279,21 +278,18 @@ function PasskeyRegistrationStep({
       <CardContent className="space-y-3">
         <div className="rounded-md border bg-muted/50 p-3 text-sm text-muted-foreground space-y-1">
           <p>
-            <strong>Why is this required?</strong>
+            <strong>{t("onboarding.whyRequired")}</strong>
           </p>
-          <p>
-            Every action you take (sending POs, approving transactions, funding
-            escrow) will be signed with your device biometric. This creates a
-            tamper-proof digital signature chain that is included in the
-            evidence pack and independently verifiable by any third party.
-          </p>
+          <p>{t("onboarding.whyRequiredExplanation")}</p>
         </div>
         <Button
           onClick={() => register()}
           disabled={registering || statusLoading}
           size="sm"
         >
-          {registering ? "Registering…" : "Register Passkey"}
+          {registering
+            ? t("onboarding.registeringPasskey")
+            : t("onboarding.registerPasskey")}
           <KeyRound className="ml-2 h-4 w-4" />
         </Button>
       </CardContent>
@@ -310,6 +306,7 @@ function BuyerOnboarding({
   status: OnboardingStatus;
   onComplete: () => void;
 }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [regNo, setRegNo] = useState(status.registrationNo || "");
   const [signatory, setSignatory] = useState(status.authorizedSignatory || "");
@@ -359,7 +356,7 @@ function BuyerOnboarding({
           <div className="flex items-center gap-2">
             <StepIcon complete={!!kybDone} />
             <CardTitle className="text-base">
-              Step 2: Business Verification (KYB-lite)
+              {t("onboarding.step2Title")}
             </CardTitle>
           </div>
           <CardDescription>
@@ -396,7 +393,9 @@ function BuyerOnboarding({
               disabled={!regNo || !signatory || kybMutation.isPending}
               size="sm"
             >
-              {kybMutation.isPending ? "Verifying…" : "Verify Business"}
+              {kybMutation.isPending
+                ? t("onboarding.verifyingBusiness")
+                : t("onboarding.verifyBusiness")}
               <Shield className="ml-2 h-4 w-4" />
             </Button>
           </CardContent>
@@ -409,7 +408,7 @@ function BuyerOnboarding({
           <div className="flex items-center gap-2">
             <StepIcon complete={!!paymentDone} />
             <CardTitle className="text-base">
-              Step 3: Connect Payment Method
+              {t("onboarding.step3Title")}
             </CardTitle>
           </div>
           <CardDescription>Link your bank IBAN for settlements</CardDescription>
@@ -430,7 +429,9 @@ function BuyerOnboarding({
               disabled={!iban || paymentMutation.isPending}
               size="sm"
             >
-              {paymentMutation.isPending ? "Connecting…" : "Connect Bank"}
+              {paymentMutation.isPending
+                ? t("onboarding.connectingBank")
+                : t("onboarding.connectBank")}
               <CreditCard className="ml-2 h-4 w-4" />
             </Button>
           </CardContent>
@@ -444,7 +445,9 @@ function BuyerOnboarding({
           disabled={completeMutation.isPending}
           className="w-full"
         >
-          {completeMutation.isPending ? "Completing…" : "Complete Onboarding"}
+          {completeMutation.isPending
+            ? t("onboarding.completingOnboarding")
+            : t("onboarding.completeOnboarding")}
           <ArrowRight className="ml-2 h-4 w-4" />
         </Button>
       )}
@@ -455,6 +458,7 @@ function BuyerOnboarding({
 // ── Supplier Onboarding ──
 
 function SupplierOnboarding({ status }: { status: OnboardingStatus }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [regNo, setRegNo] = useState(status.registrationNo || "");
   const [iban, setIban] = useState(status.bankIban || "");
@@ -498,11 +502,11 @@ function SupplierOnboarding({ status }: { status: OnboardingStatus }) {
           <div className="flex items-center gap-2">
             <StepIcon complete={!!tier1Done} />
             <CardTitle className="text-base">
-              Tier 1: Basic Onboarding
+              {t("onboarding.tier1Title")}
             </CardTitle>
             {tier1Done && (
               <Badge variant="default" className="ml-auto">
-                BASIC
+                {t("onboarding.tier1Badge")}
               </Badge>
             )}
           </div>
@@ -539,7 +543,7 @@ function SupplierOnboarding({ status }: { status: OnboardingStatus }) {
                 }
               />
               <Label htmlFor="terms" className="text-sm">
-                I accept the platform terms of service
+                {t("onboarding.acceptTerms")}
               </Label>
             </div>
             {tier1Mutation.isError && (
@@ -554,7 +558,9 @@ function SupplierOnboarding({ status }: { status: OnboardingStatus }) {
               }
               size="sm"
             >
-              {tier1Mutation.isPending ? "Submitting…" : "Complete Tier 1"}
+              {tier1Mutation.isPending
+                ? t("onboarding.submittingTier1")
+                : t("onboarding.completeTier1")}
               <Building2 className="ml-2 h-4 w-4" />
             </Button>
           </CardContent>
@@ -567,11 +573,11 @@ function SupplierOnboarding({ status }: { status: OnboardingStatus }) {
           <div className="flex items-center gap-2">
             <StepIcon complete={!!tier2Done} />
             <CardTitle className="text-base">
-              Tier 2: Liquidity Eligible
+              {t("onboarding.tier2Title")}
             </CardTitle>
             {tier2Done && (
               <Badge variant="default" className="ml-auto">
-                LIQUIDITY_ELIGIBLE
+                {t("onboarding.tier2Badge")}
               </Badge>
             )}
           </div>
@@ -595,7 +601,9 @@ function SupplierOnboarding({ status }: { status: OnboardingStatus }) {
               disabled={tier2Mutation.isPending}
               size="sm"
             >
-              {tier2Mutation.isPending ? "Verifying…" : "Upgrade to Tier 2"}
+              {tier2Mutation.isPending
+                ? t("onboarding.verifyingBusiness")
+                : t("onboarding.upgradeToTier2")}
               <BadgeCheck className="ml-2 h-4 w-4" />
             </Button>
           </CardContent>
@@ -608,6 +616,7 @@ function SupplierOnboarding({ status }: { status: OnboardingStatus }) {
 // ── LP Onboarding ──
 
 function LPOnboarding({ status }: { status: OnboardingStatus }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [fundingAccount, setFundingAccount] = useState(
     status.fundingAccountRef || "",
@@ -645,7 +654,9 @@ function LPOnboarding({ status }: { status: OnboardingStatus }) {
         <CardHeader className="pb-3">
           <div className="flex items-center gap-2">
             <StepIcon complete={!!profileDone} />
-            <CardTitle className="text-base">Funding Profile Setup</CardTitle>
+            <CardTitle className="text-base">
+              {t("onboarding.fundingProfileSetup")}
+            </CardTitle>
           </div>
           <CardDescription>
             Configure funding account, limits, and accept participation
@@ -685,7 +696,7 @@ function LPOnboarding({ status }: { status: OnboardingStatus }) {
                 }
               />
               <Label htmlFor="agreement" className="text-sm">
-                I accept the participation agreement
+                {t("onboarding.acceptParticipation")}
               </Label>
             </div>
             {profileMutation.isError && (
@@ -703,7 +714,9 @@ function LPOnboarding({ status }: { status: OnboardingStatus }) {
               }
               size="sm"
             >
-              {profileMutation.isPending ? "Setting up…" : "Complete Setup"}
+              {profileMutation.isPending
+                ? t("onboarding.settingUp")
+                : t("onboarding.completeSetup")}
               <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
           </CardContent>
@@ -716,6 +729,7 @@ function LPOnboarding({ status }: { status: OnboardingStatus }) {
 // ── Main Onboarding Page ──
 
 export default function OnboardingPage() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
@@ -749,13 +763,15 @@ export default function OnboardingPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Onboarding</h2>
-          <p className="text-muted-foreground">
-            Complete the steps below to activate your organisation
-          </p>
+          <h2 className="text-2xl font-bold tracking-tight">
+            {t("onboarding.title")}
+          </h2>
+          <p className="text-muted-foreground">{t("onboarding.subtitle")}</p>
         </div>
         <Badge variant={STATUS_VARIANT[status.onboardingStatus] || "outline"}>
-          {STATUS_LABEL[status.onboardingStatus] || status.onboardingStatus}
+          {t(
+            STATUS_I18N_KEY[status.onboardingStatus] ?? status.onboardingStatus,
+          )}
         </Badge>
       </div>
 
@@ -765,10 +781,10 @@ export default function OnboardingPage() {
             <CheckCircle2 className="h-6 w-6 text-green-600" />
             <div>
               <p className="font-medium text-green-800 dark:text-green-200">
-                Onboarding Complete
+                {t("onboarding.complete")}
               </p>
               <p className="text-sm text-green-700 dark:text-green-300">
-                Your organisation is fully activated and ready to transact.
+                {t("onboarding.completeDescription")}
               </p>
             </div>
           </CardContent>

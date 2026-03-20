@@ -28,11 +28,13 @@ import { toast } from "sonner";
 import { Plus, Trash2, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
+import { useTranslation } from "@/i18n";
 
 export default function NewPurchaseOrderPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const { t } = useTranslation();
   const currency: "GBP" | "SAR" = user?.currency === "SAR" ? "SAR" : "GBP";
   const currencySymbol = currency === "SAR" ? "SAR " : "£";
 
@@ -77,7 +79,7 @@ export default function NewPurchaseOrderPage() {
       poApi.create(data),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
-      toast.success("Purchase order created");
+      toast.success(t("newPO.poCreated"));
       router.push(`/dashboard/purchase-orders/${res.data.id}`);
     },
     onError: (
@@ -92,7 +94,7 @@ export default function NewPurchaseOrderPage() {
       );
       const msg = err.response?.data?.message;
       const detail = Array.isArray(msg) ? msg.join(", ") : msg;
-      toast.error(detail || "Failed to create purchase order");
+      toast.error(detail || t("newPO.poCreateFailed"));
     },
   });
 
@@ -143,7 +145,7 @@ export default function NewPurchaseOrderPage() {
     e.preventDefault();
 
     if (!supplierId) {
-      toast.error("Please select a supplier");
+      toast.error(t("newPO.selectSupplierError"));
       return;
     }
 
@@ -151,7 +153,7 @@ export default function NewPurchaseOrderPage() {
       (item) => item.description.trim() && item.unitPricePennies > 0,
     );
     if (validItems.length === 0) {
-      toast.error("Add at least one line item with a price");
+      toast.error(t("newPO.addLineItemError"));
       return;
     }
 
@@ -161,13 +163,17 @@ export default function NewPurchaseOrderPage() {
     );
     if (itemTotal < minAmount) {
       toast.error(
-        `Minimum order amount is ${formatCurrency(minAmount, currency)}`,
+        t("newPO.minAmountError", {
+          amount: formatCurrency(minAmount, currency),
+        }),
       );
       return;
     }
     if (itemTotal > maxAmount) {
       toast.error(
-        `Maximum order amount is ${formatCurrency(maxAmount, currency)}`,
+        t("newPO.maxAmountError", {
+          amount: formatCurrency(maxAmount, currency),
+        }),
       );
       return;
     }
@@ -199,11 +205,9 @@ export default function NewPurchaseOrderPage() {
         </Link>
         <div>
           <h1 className="text-2xl font-bold tracking-tight">
-            New Purchase Order
+            {t("newPO.title")}
           </h1>
-          <p className="text-sm text-muted-foreground">
-            Create a PO to send to a supplier
-          </p>
+          <p className="text-sm text-muted-foreground">{t("newPO.subtitle")}</p>
         </div>
       </div>
 
@@ -211,14 +215,16 @@ export default function NewPurchaseOrderPage() {
         {/* Supplier Selection */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Order Details</CardTitle>
+            <CardTitle className="text-base">
+              {t("newPO.orderDetails")}
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label>Supplier</Label>
+              <Label>{t("newPO.supplier")}</Label>
               <Select value={supplierId} onValueChange={setSupplierId}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select a supplier" />
+                  <SelectValue placeholder={t("newPO.selectSupplier")} />
                 </SelectTrigger>
                 <SelectContent>
                   {suppliers?.map((s) => (
@@ -230,65 +236,69 @@ export default function NewPurchaseOrderPage() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Description (optional)</Label>
+              <Label>{t("newPO.description")}</Label>
               <Textarea
-                placeholder="General notes about this order…"
+                placeholder={t("newPO.descriptionPlaceholder")}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
               />
             </div>
             <div className="space-y-2">
-              <Label>External PO Number (optional)</Label>
+              <Label>{t("newPO.externalPONumber")}</Label>
               <Input
-                placeholder="e.g. EXT-PO-2025-001"
+                placeholder={t("newPO.externalPOPlaceholder")}
                 value={externalPoNumber}
                 onChange={(e) => setExternalPoNumber(e.target.value)}
               />
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label>Payment Terms</Label>
+                <Label>{t("newPO.paymentTerms")}</Label>
                 <Select value={paymentTerms} onValueChange={setPaymentTerms}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="IMMEDIATE">Immediate</SelectItem>
-                    <SelectItem value="NET_15">Net 15</SelectItem>
-                    <SelectItem value="NET_30">Net 30</SelectItem>
-                    <SelectItem value="NET_45">Net 45</SelectItem>
-                    <SelectItem value="NET_60">Net 60</SelectItem>
-                    <SelectItem value="NET_90">Net 90</SelectItem>
+                    <SelectItem value="IMMEDIATE">
+                      {t("newPO.immediate")}
+                    </SelectItem>
+                    <SelectItem value="NET_15">{t("newPO.net15")}</SelectItem>
+                    <SelectItem value="NET_30">{t("newPO.net30")}</SelectItem>
+                    <SelectItem value="NET_45">{t("newPO.net45")}</SelectItem>
+                    <SelectItem value="NET_60">{t("newPO.net60")}</SelectItem>
+                    <SelectItem value="NET_90">{t("newPO.net90")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Delivery Terms</Label>
+                <Label>{t("newPO.deliveryTerms")}</Label>
                 <Select value={deliveryTerms} onValueChange={setDeliveryTerms}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="EX_WORKS">Ex Works</SelectItem>
-                    <SelectItem value="FOB">FOB</SelectItem>
-                    <SelectItem value="CIF">CIF</SelectItem>
-                    <SelectItem value="DDP">DDP</SelectItem>
-                    <SelectItem value="CUSTOM">Custom</SelectItem>
+                    <SelectItem value="EX_WORKS">
+                      {t("newPO.exWorks")}
+                    </SelectItem>
+                    <SelectItem value="FOB">{t("newPO.fob")}</SelectItem>
+                    <SelectItem value="CIF">{t("newPO.cif")}</SelectItem>
+                    <SelectItem value="DDP">{t("newPO.ddp")}</SelectItem>
+                    <SelectItem value="CUSTOM">{t("newPO.custom")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <div className="space-y-2">
-              <Label>Delivery Address (optional)</Label>
+              <Label>{t("newPO.deliveryAddress")}</Label>
               <Input
-                placeholder="Warehouse or delivery location"
+                placeholder={t("newPO.deliveryAddressPlaceholder")}
                 value={deliveryAddress}
                 onChange={(e) => setDeliveryAddress(e.target.value)}
               />
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label>Tax Rate (%)</Label>
+                <Label>{t("newPO.taxRate")}</Label>
                 <Input
                   type="number"
                   min={0}
@@ -296,11 +306,11 @@ export default function NewPurchaseOrderPage() {
                   step={0.1}
                   value={taxRate || ""}
                   onChange={(e) => setTaxRate(Number(e.target.value))}
-                  placeholder="e.g. 15 for 15% VAT"
+                  placeholder={t("newPO.taxRatePlaceholder")}
                 />
               </div>
               <div className="space-y-2">
-                <Label>Dispute Window (hours)</Label>
+                <Label>{t("newPO.disputeWindow")}</Label>
                 <Input
                   type="number"
                   min={1}
@@ -312,7 +322,7 @@ export default function NewPurchaseOrderPage() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label>Expected Delivery Date (optional)</Label>
+              <Label>{t("newPO.expectedDeliveryDate")}</Label>
               <Input
                 type="date"
                 value={expectedDeliveryDate}
@@ -320,31 +330,31 @@ export default function NewPurchaseOrderPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label>Special Instructions / Notes (optional)</Label>
+              <Label>{t("newPO.specialInstructions")}</Label>
               <Textarea
-                placeholder="Packaging requirements, handling instructions, etc."
+                placeholder={t("newPO.notesPlaceholder")}
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
               />
             </div>
             <Separator />
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              Buyer Contact
+              {t("newPO.buyerContact")}
             </p>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label>Contact Name (optional)</Label>
+                <Label>{t("newPO.contactName")}</Label>
                 <Input
-                  placeholder="e.g. John Smith"
+                  placeholder={t("newPO.contactNamePlaceholder")}
                   value={buyerContactName}
                   onChange={(e) => setBuyerContactName(e.target.value)}
                 />
               </div>
               <div className="space-y-2">
-                <Label>Contact Email (optional)</Label>
+                <Label>{t("newPO.contactEmail")}</Label>
                 <Input
                   type="email"
-                  placeholder="e.g. john@company.com"
+                  placeholder={t("newPO.contactEmailPlaceholder")}
                   value={buyerContactEmail}
                   onChange={(e) => setBuyerContactEmail(e.target.value)}
                 />
@@ -357,9 +367,11 @@ export default function NewPurchaseOrderPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
-              <CardTitle className="text-base">Line Items</CardTitle>
+              <CardTitle className="text-base">
+                {t("newPO.lineItems")}
+              </CardTitle>
               <CardDescription>
-                Add the goods or services being ordered
+                {t("newPO.lineItemsDescription")}
               </CardDescription>
             </div>
             <Button
@@ -369,7 +381,7 @@ export default function NewPurchaseOrderPage() {
               onClick={addLineItem}
             >
               <Plus className="mr-1 h-3 w-3" />
-              Add Item
+              {t("newPO.addItem")}
             </Button>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -378,9 +390,9 @@ export default function NewPurchaseOrderPage() {
                 {index > 0 && <Separator className="mb-4" />}
                 <div className="grid gap-3 sm:grid-cols-[100px_1fr_80px_100px_120px_40px]">
                   <div className="space-y-1">
-                    <Label className="text-xs">SKU</Label>
+                    <Label className="text-xs">{t("newPO.sku")}</Label>
                     <Input
-                      placeholder="SKU / Part #"
+                      placeholder={t("newPO.skuPlaceholder")}
                       value={item.sku || ""}
                       onChange={(e) =>
                         updateLineItem(index, "sku", e.target.value)
@@ -388,9 +400,11 @@ export default function NewPurchaseOrderPage() {
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Description</Label>
+                    <Label className="text-xs">
+                      {t("newPO.lineDescription")}
+                    </Label>
                     <Input
-                      placeholder="Item description"
+                      placeholder={t("newPO.itemDescriptionPlaceholder")}
                       value={item.description}
                       onChange={(e) =>
                         updateLineItem(index, "description", e.target.value)
@@ -398,7 +412,7 @@ export default function NewPurchaseOrderPage() {
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Qty</Label>
+                    <Label className="text-xs">{t("newPO.qty")}</Label>
                     <Input
                       type="number"
                       min={1}
@@ -409,7 +423,7 @@ export default function NewPurchaseOrderPage() {
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">UOM</Label>
+                    <Label className="text-xs">{t("newPO.uom")}</Label>
                     <Select
                       value={item.unitOfMeasure || "EACH"}
                       onValueChange={(v) =>
@@ -420,22 +434,28 @@ export default function NewPurchaseOrderPage() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="EACH">Each</SelectItem>
-                        <SelectItem value="KG">Kg</SelectItem>
-                        <SelectItem value="LITRE">Litre</SelectItem>
-                        <SelectItem value="METRE">Metre</SelectItem>
-                        <SelectItem value="BOX">Box</SelectItem>
-                        <SelectItem value="PALLET">Pallet</SelectItem>
-                        <SelectItem value="HOUR">Hour</SelectItem>
-                        <SelectItem value="DAY">Day</SelectItem>
-                        <SelectItem value="SET">Set</SelectItem>
-                        <SelectItem value="LOT">Lot</SelectItem>
+                        <SelectItem value="EACH">{t("newPO.each")}</SelectItem>
+                        <SelectItem value="KG">{t("newPO.kg")}</SelectItem>
+                        <SelectItem value="LITRE">
+                          {t("newPO.litre")}
+                        </SelectItem>
+                        <SelectItem value="METRE">
+                          {t("newPO.metre")}
+                        </SelectItem>
+                        <SelectItem value="BOX">{t("newPO.box")}</SelectItem>
+                        <SelectItem value="PALLET">
+                          {t("newPO.pallet")}
+                        </SelectItem>
+                        <SelectItem value="HOUR">{t("newPO.hour")}</SelectItem>
+                        <SelectItem value="DAY">{t("newPO.day")}</SelectItem>
+                        <SelectItem value="SET">{t("newPO.set")}</SelectItem>
+                        <SelectItem value="LOT">{t("newPO.lot")}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">
-                      Unit Price ({currencySymbol.trim()})
+                      {t("newPO.unitPrice")} ({currencySymbol.trim()})
                     </Label>
                     <Input
                       type="number"
@@ -464,7 +484,7 @@ export default function NewPurchaseOrderPage() {
                   </div>
                 </div>
                 <p className="mt-1 text-right text-xs text-muted-foreground">
-                  Subtotal:{" "}
+                  {t("newPO.subtotal")}{" "}
                   {formatCurrency(
                     item.quantity * item.unitPricePennies,
                     currency,
@@ -475,7 +495,7 @@ export default function NewPurchaseOrderPage() {
 
             <Separator />
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Total</span>
+              <span className="text-sm font-medium">{t("newPO.total")}</span>
               <span className="text-lg font-bold">
                 {formatCurrency(totalPennies, currency)}
               </span>
@@ -489,7 +509,9 @@ export default function NewPurchaseOrderPage() {
             className="flex-1"
             disabled={createMutation.isPending}
           >
-            {createMutation.isPending ? "Creating…" : "Create Purchase Order"}
+            {createMutation.isPending
+              ? t("newPO.creating")
+              : t("newPO.createPurchaseOrder")}
           </Button>
           <Link href="/dashboard/purchase-orders">
             <Button type="button" variant="outline">

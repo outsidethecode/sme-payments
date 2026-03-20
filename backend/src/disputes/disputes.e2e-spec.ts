@@ -785,4 +785,32 @@ describe("Disputes, Fraud Controls & LP Risk E2E", () => {
       expect(eventTypes).toContain("DISPUTE_RESOLVED");
     });
   });
+
+  // ═══════════════════════════════════════════════════════════
+  //  Idempotency: resolve is safe to retry
+  // ═══════════════════════════════════════════════════════════
+
+  describe("Idempotency: resolve is safe to retry", () => {
+    it("should return idempotent response when resolving an already-RESOLVED dispute", async () => {
+      // Get a resolved dispute from previous tests
+      const listRes = await request(app.getHttpServer())
+        .get("/disputes?status=RESOLVED")
+        .set("Authorization", `Bearer ${adminToken}`);
+      expect(listRes.body.length).toBeGreaterThan(0);
+      const resolvedDispute = listRes.body[0];
+
+      // Retry the resolve call — should return 200 with existing state, not 400
+      const res = await request(app.getHttpServer())
+        .patch(`/disputes/${resolvedDispute.id}/resolve`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({
+          outcome: "RELEASE_TO_SUPPLIER",
+          resolutionNotes: "Retry test",
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("RESOLVED");
+      expect(res.body.id).toBe(resolvedDispute.id);
+    });
+  });
 });

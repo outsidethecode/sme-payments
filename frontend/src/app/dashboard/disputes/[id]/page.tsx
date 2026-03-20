@@ -49,6 +49,7 @@ import {
   Clock,
   ExternalLink,
 } from "lucide-react";
+import { useTranslation } from "@/i18n";
 
 /* ── constants ──────────────────────────────────────────────── */
 
@@ -57,13 +58,6 @@ const STATUS_COLORS: Record<string, string> = {
   EVIDENCE_SUBMITTED: "bg-blue-100 text-blue-800",
   UNDER_REVIEW: "bg-purple-100 text-purple-800",
   RESOLVED: "bg-green-100 text-green-800",
-};
-
-const OUTCOME_LABELS: Record<string, string> = {
-  FULL_REFUND: "Full Refund",
-  PARTIAL_REFUND: "Partial Refund",
-  RELEASE_TO_SUPPLIER: "Released to Supplier",
-  REWORK: "Rework Required",
 };
 
 const EVIDENCE_TYPES = [
@@ -101,6 +95,7 @@ export default function DisputeDetailPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { t } = useTranslation();
 
   // evidence upload state
   const [selectedType, setSelectedType] = useState("DELIVERY_NOTE");
@@ -146,7 +141,7 @@ export default function DisputeDetailPage() {
     onError: (err: unknown) => {
       const msg = (err as { response?: { data?: { message?: string } } })
         ?.response?.data?.message;
-      toast.error(msg || "Upload failed");
+      toast.error(msg || t("disputeDetail.uploadFailed"));
     },
   });
 
@@ -157,7 +152,7 @@ export default function DisputeDetailPage() {
       queryClient.invalidateQueries({ queryKey: ["dispute", id] });
       queryClient.invalidateQueries({ queryKey: ["evidence", poId] });
       queryClient.invalidateQueries({ queryKey: ["disputes"] });
-      toast.success("Evidence submitted to the dispute");
+      toast.success(t("disputeDetail.evidenceSubmitted"));
       setSelectedFile(null);
       setDescription("");
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -165,7 +160,7 @@ export default function DisputeDetailPage() {
     onError: (err: unknown) => {
       const msg = (err as { response?: { data?: { message?: string } } })
         ?.response?.data?.message;
-      toast.error(msg || "Failed to submit evidence");
+      toast.error(msg || t("disputeDetail.submitEvidenceFailed"));
     },
   });
 
@@ -174,7 +169,7 @@ export default function DisputeDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dispute", id] });
       queryClient.invalidateQueries({ queryKey: ["disputes"] });
-      toast.success("Dispute marked as Under Review");
+      toast.success(t("disputeDetail.markedUnderReview"));
     },
   });
 
@@ -196,7 +191,7 @@ export default function DisputeDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dispute", id] });
       queryClient.invalidateQueries({ queryKey: ["disputes"] });
-      toast.success("Dispute resolved");
+      toast.success(t("disputeDetail.disputeResolved"));
       setResolveOpen(false);
     },
   });
@@ -206,7 +201,7 @@ export default function DisputeDetailPage() {
   function handleUpload(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedFile) {
-      toast.error("Select a file first");
+      toast.error(t("disputeDetail.selectFileFirst"));
       return;
     }
     uploadMutation.mutate(selectedFile);
@@ -222,7 +217,7 @@ export default function DisputeDetailPage() {
       link.click();
       window.URL.revokeObjectURL(url);
     } catch {
-      toast.error("Download failed");
+      toast.error(t("disputeDetail.downloadFailed"));
     }
   }
 
@@ -246,7 +241,11 @@ export default function DisputeDetailPage() {
   /* ── loading / error ── */
 
   if (isLoading) {
-    return <div className="p-6 text-muted-foreground">Loading dispute…</div>;
+    return (
+      <div className="p-6 text-muted-foreground">
+        {t("disputeDetail.loadingDispute")}
+      </div>
+    );
   }
 
   if (!dispute) {
@@ -256,7 +255,9 @@ export default function DisputeDetailPage() {
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back
         </Button>
-        <p className="text-muted-foreground">Dispute not found.</p>
+        <p className="text-muted-foreground">
+          {t("disputeDetail.disputeNotFound")}
+        </p>
       </div>
     );
   }
@@ -280,8 +281,14 @@ export default function DisputeDetailPage() {
             </Badge>
             {dispute.outcome && (
               <Badge variant="outline">
-                {OUTCOME_LABELS[dispute.outcome] ??
-                  statusLabel(dispute.outcome)}
+                {(
+                  {
+                    FULL_REFUND: t("disputes.outcomeFullRefund"),
+                    PARTIAL_REFUND: t("disputes.outcomePartialRefund"),
+                    RELEASE_TO_SUPPLIER: t("disputes.outcomeReleaseToSupplier"),
+                    REWORK: t("disputes.outcomeRework"),
+                  } as Record<string, string>
+                )[dispute.outcome] ?? statusLabel(dispute.outcome)}
               </Badge>
             )}
           </div>
@@ -293,7 +300,7 @@ export default function DisputeDetailPage() {
         <Link href={`/dashboard/purchase-orders/${dispute.purchaseOrderId}`}>
           <Button variant="outline" size="sm">
             <ExternalLink className="mr-2 h-4 w-4" />
-            View PO
+            {t("disputeDetail.viewPO")}
           </Button>
         </Link>
       </div>
@@ -303,20 +310,22 @@ export default function DisputeDetailPage() {
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <Scale className="h-4 w-4 text-red-600" />
-            Dispute Details
+            {t("disputeDetail.title")}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
             <span className="text-sm font-medium text-muted-foreground">
-              Reason
+              {t("disputeDetail.reason")}
             </span>
             <p className="mt-1">{dispute.reason}</p>
           </div>
 
           <div className="grid grid-cols-2 gap-4 text-sm md:grid-cols-4">
             <div>
-              <span className="text-muted-foreground">PO Amount</span>
+              <span className="text-muted-foreground">
+                {t("disputeDetail.poAmount")}
+              </span>
               <p className="font-medium">
                 {dispute.purchaseOrder
                   ? formatCurrency(dispute.purchaseOrder.amount, currency)
@@ -324,17 +333,23 @@ export default function DisputeDetailPage() {
               </p>
             </div>
             <div>
-              <span className="text-muted-foreground">Status</span>
+              <span className="text-muted-foreground">
+                {t("disputeDetail.status")}
+              </span>
               <p className="font-medium">{statusLabel(dispute.status)}</p>
             </div>
             <div>
-              <span className="text-muted-foreground">Buyer Evidence</span>
+              <span className="text-muted-foreground">
+                {t("disputeDetail.buyerEvidence")}
+              </span>
               <p className="font-medium">
                 {(dispute.buyerEvidence ?? []).length} file(s)
               </p>
             </div>
             <div>
-              <span className="text-muted-foreground">Supplier Evidence</span>
+              <span className="text-muted-foreground">
+                {t("disputeDetail.supplierEvidence")}
+              </span>
               <p className="font-medium">
                 {(dispute.supplierEvidence ?? []).length} file(s)
               </p>
@@ -366,35 +381,61 @@ export default function DisputeDetailPage() {
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
               <Upload className="h-4 w-4 text-blue-600" />
-              Submit Evidence
+              {t("disputeDetail.submitEvidence")}
             </CardTitle>
             <CardDescription>
-              Upload a file to support your side of the dispute. Files are
-              SHA-256 hashed and recorded on the immutable ledger.
+              {t("disputeDetail.submitEvidenceDescription")}
             </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleUpload} className="space-y-3">
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1">
-                  <Label className="text-xs">Evidence Type</Label>
+                  <Label className="text-xs">
+                    {t("disputeDetail.evidenceType")}
+                  </Label>
                   <Select value={selectedType} onValueChange={setSelectedType}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {EVIDENCE_TYPES.map((t) => (
-                        <SelectItem key={t.value} value={t.value}>
-                          {t.label}
+                      {EVIDENCE_TYPES.map((et) => (
+                        <SelectItem key={et.value} value={et.value}>
+                          {(
+                            {
+                              DELIVERY_NOTE: t(
+                                "disputeDetail.evidenceDeliveryNote",
+                              ),
+                              SIGNED_RECEIPT: t(
+                                "disputeDetail.evidenceSignedReceipt",
+                              ),
+                              PHOTO_PROOF: t(
+                                "disputeDetail.evidencePhotoProof",
+                              ),
+                              INVOICE: t("disputeDetail.evidenceInvoice"),
+                              INSPECTION_REPORT: t(
+                                "disputeDetail.evidenceInspectionReport",
+                              ),
+                              SHIPPING_DOCUMENT: t(
+                                "disputeDetail.evidenceShippingDocument",
+                              ),
+                              PO_DOCUMENT: t(
+                                "disputeDetail.evidencePODocument",
+                              ),
+                              OTHER: t("disputeDetail.evidenceOther"),
+                            } as Record<string, string>
+                          )[et.value] ?? et.label}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">Description (optional)</Label>
+                  <Label className="text-xs">
+                    {t("disputeDetail.descriptionOptional")}
+                  </Label>
                   <Input
-                    placeholder="Brief note about this file"
+                    placeholder={t("disputeDetail.descriptionPlaceholder")}
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                   />
@@ -402,7 +443,7 @@ export default function DisputeDetailPage() {
               </div>
               <div className="flex items-end gap-2">
                 <div className="flex-1 space-y-1">
-                  <Label className="text-xs">File</Label>
+                  <Label className="text-xs">{t("disputeDetail.file")}</Label>
                   <Input
                     ref={fileInputRef}
                     type="file"
@@ -422,8 +463,8 @@ export default function DisputeDetailPage() {
                 >
                   <Upload className="mr-2 h-4 w-4" />
                   {uploadMutation.isPending || submitEvidenceMutation.isPending
-                    ? "Uploading…"
-                    : "Upload & Submit"}
+                    ? t("disputeDetail.uploading")
+                    : t("disputeDetail.uploadAndSubmit")}
                 </Button>
               </div>
             </form>
@@ -434,20 +475,20 @@ export default function DisputeDetailPage() {
       {/* Already-submitted evidence */}
       <div className="grid gap-6 md:grid-cols-2">
         <EvidenceList
-          title="Buyer Evidence"
+          title={t("disputeDetail.buyerEvidence")}
           attachments={buyerAttachments}
           allAttachments={attachments}
           evidenceIds={dispute.buyerEvidence ?? []}
           onDownload={handleDownload}
-          emptyText="No buyer evidence submitted yet"
+          emptyText={t("disputeDetail.noBuyerEvidence")}
         />
         <EvidenceList
-          title="Supplier Evidence"
+          title={t("disputeDetail.supplierEvidence")}
           attachments={supplierAttachments}
           allAttachments={attachments}
           evidenceIds={dispute.supplierEvidence ?? []}
           onDownload={handleDownload}
-          emptyText="No supplier evidence submitted yet"
+          emptyText={t("disputeDetail.noSupplierEvidence")}
         />
       </div>
 
@@ -457,7 +498,7 @@ export default function DisputeDetailPage() {
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
               <ShieldCheck className="h-4 w-4 text-purple-600" />
-              Admin Actions
+              {t("disputeDetail.adminActions")}
             </CardTitle>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-2">
@@ -468,7 +509,9 @@ export default function DisputeDetailPage() {
                 disabled={reviewMutation.isPending}
               >
                 <Clock className="mr-2 h-4 w-4" />
-                {reviewMutation.isPending ? "Updating…" : "Mark Under Review"}
+                {reviewMutation.isPending
+                  ? t("disputeDetail.updating")
+                  : t("disputeDetail.markUnderReview")}
               </Button>
             )}
 
@@ -476,12 +519,12 @@ export default function DisputeDetailPage() {
               <DialogTrigger asChild>
                 <Button>
                   <CheckCircle2 className="mr-2 h-4 w-4" />
-                  Resolve Dispute
+                  {t("disputeDetail.resolveDispute")}
                 </Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>Resolve Dispute</DialogTitle>
+                  <DialogTitle>{t("disputeDetail.resolveDispute")}</DialogTitle>
                   <DialogDescription>
                     Choose an outcome for this dispute. PO:{" "}
                     {dispute.purchaseOrder?.referenceNumber}
@@ -490,26 +533,32 @@ export default function DisputeDetailPage() {
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium mb-1">
-                      Outcome
+                      {t("disputes.outcome")}
                     </label>
                     <select
                       className="w-full rounded border px-3 py-2 text-sm"
                       value={resolveOutcome}
                       onChange={(e) => setResolveOutcome(e.target.value)}
                     >
-                      <option value="FULL_REFUND">Full Refund to Buyer</option>
-                      <option value="PARTIAL_REFUND">Partial Refund</option>
-                      <option value="RELEASE_TO_SUPPLIER">
-                        Release to Supplier
+                      <option value="FULL_REFUND">
+                        {t("disputes.fullRefundToBuyer")}
                       </option>
-                      <option value="REWORK">Rework Required</option>
+                      <option value="PARTIAL_REFUND">
+                        {t("disputes.partialRefund")}
+                      </option>
+                      <option value="RELEASE_TO_SUPPLIER">
+                        {t("disputes.releaseToSupplier")}
+                      </option>
+                      <option value="REWORK">
+                        {t("disputes.reworkRequired")}
+                      </option>
                     </select>
                   </div>
 
                   {resolveOutcome === "PARTIAL_REFUND" && (
                     <div>
                       <label className="block text-sm font-medium mb-1">
-                        Refund Amount (smallest unit)
+                        {t("disputes.refundAmountMinorUnit")}
                       </label>
                       <input
                         type="number"
@@ -523,14 +572,14 @@ export default function DisputeDetailPage() {
 
                   <div>
                     <label className="block text-sm font-medium mb-1">
-                      Resolution Notes
+                      {t("disputes.resolutionNotesLabel")}
                     </label>
                     <textarea
                       className="w-full rounded border px-3 py-2 text-sm"
                       rows={3}
                       value={resolutionNotes}
                       onChange={(e) => setResolutionNotes(e.target.value)}
-                      placeholder="Explain the resolution decision…"
+                      placeholder={t("disputes.resolutionNotesPlaceholder")}
                     />
                   </div>
 
@@ -548,8 +597,8 @@ export default function DisputeDetailPage() {
                     disabled={resolveMutation.isPending}
                   >
                     {resolveMutation.isPending
-                      ? "Resolving…"
-                      : "Confirm Resolution"}
+                      ? t("disputes.resolving")
+                      : t("disputes.confirmResolution")}
                   </Button>
                 </div>
               </DialogContent>
@@ -562,7 +611,9 @@ export default function DisputeDetailPage() {
       {dispute.status !== "RESOLVED" && (
         <Alert>
           <AlertCircle className="h-4 w-4" />
-          <AlertTitle>How dispute resolution works</AlertTitle>
+          <AlertTitle>
+            {t("disputeDetail.howDisputeResolutionWorks")}
+          </AlertTitle>
           <AlertDescription className="text-sm space-y-1">
             <p>
               1. Both the <strong>buyer</strong> and <strong>supplier</strong>{" "}

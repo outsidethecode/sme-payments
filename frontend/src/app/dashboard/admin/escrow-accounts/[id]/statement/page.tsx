@@ -31,6 +31,7 @@ import {
   XCircle,
   RefreshCw,
 } from "lucide-react";
+import { useTranslation } from "@/i18n";
 
 const TX_TYPE_CONFIG: Record<
   string,
@@ -73,10 +74,19 @@ const TX_TYPE_CONFIG: Record<
   },
 };
 
+const TX_TYPE_I18N_KEY: Record<string, string> = {
+  DEPOSIT: "escrowStatement.txDeposit",
+  RELEASE_SUPPLIER: "escrowStatement.txReleaseSupplier",
+  RELEASE_LP: "escrowStatement.txReleaseLP",
+  REFUND_BUYER: "escrowStatement.txRefund",
+  FEE_DEDUCTION: "escrowStatement.txPlatformFee",
+};
+
 export default function EscrowStatementPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const accountId = params.id;
+  const { t } = useTranslation();
 
   const {
     data: statement,
@@ -117,7 +127,7 @@ export default function EscrowStatementPage() {
           </Button>
           <div>
             <h1 className="text-2xl font-bold tracking-tight">
-              Escrow Statement
+              {t("escrowStatement.title")}
             </h1>
             <p className="text-sm text-muted-foreground">
               {statement?.label} &middot; {statement?.currency}
@@ -141,10 +151,15 @@ export default function EscrowStatementPage() {
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Current Balance</CardDescription>
+            <CardDescription>
+              {t("escrowStatement.currentBalance")}
+            </CardDescription>
             <CardTitle className="text-2xl">
               {statement
-                ? formatCurrency(statement.currentBalance, statement.currency)
+                ? formatCurrency(
+                    statement.currentBalance,
+                    statement.currency as "GBP" | "SAR",
+                  )
                 : "—"}
             </CardTitle>
           </CardHeader>
@@ -152,7 +167,9 @@ export default function EscrowStatementPage() {
 
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Total Transactions</CardDescription>
+            <CardDescription>
+              {t("escrowStatement.totalTransactions")}
+            </CardDescription>
             <CardTitle className="text-2xl">
               {statement?.transactions.length ?? 0}
             </CardTitle>
@@ -161,18 +178,24 @@ export default function EscrowStatementPage() {
 
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Journal Verification</CardDescription>
+            <CardDescription>
+              {t("escrowStatement.journalVerification")}
+            </CardDescription>
             <CardTitle className="flex items-center gap-2 text-2xl">
               {verification ? (
                 verification.match ? (
                   <>
                     <CheckCircle2 className="h-5 w-5 text-green-600" />
-                    <span className="text-green-700">Balanced</span>
+                    <span className="text-green-700">
+                      {t("escrowStatement.balanced")}
+                    </span>
                   </>
                 ) : (
                   <>
                     <XCircle className="h-5 w-5 text-red-600" />
-                    <span className="text-red-700">Mismatch</span>
+                    <span className="text-red-700">
+                      {t("escrowStatement.mismatch")}
+                    </span>
                   </>
                 )
               ) : (
@@ -183,8 +206,10 @@ export default function EscrowStatementPage() {
           {verification && !verification.match && (
             <CardContent>
               <p className="text-sm text-destructive">
-                Shadow: {verification.shadowBalance} | Journal:{" "}
-                {verification.computedBalance}
+                {t("escrowStatement.shadowJournal", {
+                  shadow: verification.shadowBalance,
+                  journal: verification.computedBalance,
+                })}
               </p>
             </CardContent>
           )}
@@ -194,25 +219,29 @@ export default function EscrowStatementPage() {
       {/* Transaction table */}
       <Card>
         <CardHeader>
-          <CardTitle>Transaction Journal</CardTitle>
+          <CardTitle>{t("escrowStatement.transactionJournal")}</CardTitle>
           <CardDescription>
-            All escrow balance movements in chronological order
+            {t("escrowStatement.transactionJournalDescription")}
           </CardDescription>
         </CardHeader>
         <CardContent>
           {statement?.transactions.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              No transactions yet
+              {t("escrowStatement.noTransactions")}
             </p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Reference</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
-                  <TableHead className="text-right">Balance After</TableHead>
+                  <TableHead>{t("escrowStatement.colDate")}</TableHead>
+                  <TableHead>{t("escrowStatement.colType")}</TableHead>
+                  <TableHead>{t("escrowStatement.colReference")}</TableHead>
+                  <TableHead className="text-right">
+                    {t("escrowStatement.colAmount")}
+                  </TableHead>
+                  <TableHead className="text-right">
+                    {t("escrowStatement.colBalanceAfter")}
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -236,7 +265,9 @@ export default function EscrowStatementPage() {
                           className={`${config.color} gap-1`}
                         >
                           <Icon className="h-3 w-3" />
-                          {config.label}
+                          {TX_TYPE_I18N_KEY[tx.type]
+                            ? t(TX_TYPE_I18N_KEY[tx.type])
+                            : config.label}
                         </Badge>
                       </TableCell>
                       <TableCell className="font-mono text-xs">
@@ -251,12 +282,18 @@ export default function EscrowStatementPage() {
                       >
                         {config.sign}
                         {statement
-                          ? formatCurrency(tx.amountMinor, statement.currency)
+                          ? formatCurrency(
+                              tx.amountMinor,
+                              statement.currency as "GBP" | "SAR",
+                            )
                           : tx.amountMinor}
                       </TableCell>
                       <TableCell className="text-right font-medium">
                         {statement
-                          ? formatCurrency(tx.balanceAfter, statement.currency)
+                          ? formatCurrency(
+                              tx.balanceAfter,
+                              statement.currency as "GBP" | "SAR",
+                            )
                           : tx.balanceAfter}
                       </TableCell>
                     </TableRow>

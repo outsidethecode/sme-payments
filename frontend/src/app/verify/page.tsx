@@ -12,6 +12,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import api from "@/lib/api";
+import { useTranslation } from "@/i18n";
 import {
   Upload,
   FileJson,
@@ -82,33 +83,39 @@ export default function VerifyPage() {
   const [fileName, setFileName] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { t } = useTranslation();
 
-  const processFile = useCallback(async (file: File) => {
-    setError(null);
-    setReport(null);
-    setFileName(file.name);
+  const processFile = useCallback(
+    async (file: File) => {
+      setError(null);
+      setReport(null);
+      setFileName(file.name);
 
-    if (!file.name.endsWith(".json")) {
-      setError("Please upload a JSON file (.json)");
-      return;
-    }
-
-    try {
-      const text = await file.text();
-      const pack = JSON.parse(text);
-      setLoading(true);
-      const { data } = await api.post<VerifyReport>("/verify", pack);
-      setReport(data);
-    } catch (err: any) {
-      if (err instanceof SyntaxError) {
-        setError("Invalid JSON — could not parse the file");
-      } else {
-        setError(err.response?.data?.message || "Verification request failed");
+      if (!file.name.endsWith(".json")) {
+        setError(t("verify.errorJsonOnly"));
+        return;
       }
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+
+      try {
+        const text = await file.text();
+        const pack = JSON.parse(text);
+        setLoading(true);
+        const { data } = await api.post<VerifyReport>("/verify", pack);
+        setReport(data);
+      } catch (err: any) {
+        if (err instanceof SyntaxError) {
+          setError(t("verify.errorInvalidJson"));
+        } else {
+          setError(
+            err.response?.data?.message || t("verify.errorRequestFailed"),
+          );
+        }
+      } finally {
+        setLoading(false);
+      }
+    },
+    [t],
+  );
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -141,11 +148,10 @@ export default function VerifyPage() {
         {/* Header */}
         <div className="text-center">
           <h1 className="text-3xl font-bold tracking-tight">
-            Evidence Pack Verifier
+            {t("verify.title")}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Upload a Trust Envelope JSON to independently verify its integrity,
-            hash chains, signatures, and tamper-evidence
+            {t("verify.subtitle")}
           </p>
         </div>
 
@@ -154,12 +160,9 @@ export default function VerifyPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <FileJson className="h-5 w-5" />
-              Upload Evidence Pack
+              {t("verify.uploadTitle")}
             </CardTitle>
-            <CardDescription>
-              Drag &amp; drop a <code>.json</code> evidence pack file, or click
-              to browse
-            </CardDescription>
+            <CardDescription>{t("verify.uploadDescription")}</CardDescription>
           </CardHeader>
           <CardContent>
             <div
@@ -186,15 +189,17 @@ export default function VerifyPage() {
               {loading ? (
                 <div className="flex flex-col items-center gap-2">
                   <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                  <p className="text-sm text-muted-foreground">Verifying…</p>
+                  <p className="text-sm text-muted-foreground">
+                    {t("verify.verifying")}
+                  </p>
                 </div>
               ) : (
                 <div className="flex flex-col items-center gap-2">
                   <Upload className="h-8 w-8 text-muted-foreground" />
                   <p className="text-sm text-muted-foreground">
                     {fileName
-                      ? `Loaded: ${fileName}`
-                      : "Drop evidence-pack.json here or click to browse"}
+                      ? t("verify.loaded", { fileName })
+                      : t("verify.dropOrBrowse")}
                   </p>
                 </div>
               )}
@@ -220,16 +225,25 @@ export default function VerifyPage() {
                 {verdictConfig[report.verdict].icon}
                 <div>
                   <p className="font-bold text-lg">
-                    {verdictConfig[report.verdict].label}
+                    {report.verdict === "PASSED"
+                      ? t("verify.verdictAllPassed")
+                      : report.verdict === "PASSED_WITH_WARNINGS"
+                        ? t("verify.verdictPassedWithWarnings")
+                        : t("verify.verdictFailed")}
                   </p>
                   <p className="text-sm opacity-80">
-                    {report.totalPass} passed · {report.totalFail} failed ·{" "}
-                    {report.totalWarn} warnings
+                    {t("verify.resultsSummary", {
+                      passed: report.totalPass,
+                      failed: report.totalFail,
+                      warnings: report.totalWarn,
+                    })}
                   </p>
                 </div>
               </div>
               <div className="text-right text-xs opacity-70">
-                <p>Envelope v{report.version}</p>
+                <p>
+                  {t("verify.envelopeVersion", { version: report.version })}
+                </p>
                 {report.envelopeId && (
                   <p className="font-mono">
                     {report.envelopeId.substring(0, 12)}…
@@ -249,15 +263,19 @@ export default function VerifyPage() {
                   <CardHeader className="pb-3">
                     <CardTitle className="flex items-center justify-between text-base">
                       <span>{section.title}</span>
-                      {hasFail && <Badge variant="destructive">FAIL</Badge>}
+                      {hasFail && (
+                        <Badge variant="destructive">
+                          {t("verify.badgeFail")}
+                        </Badge>
+                      )}
                       {hasWarn && (
                         <Badge className="bg-yellow-100 text-yellow-800 border border-yellow-300">
-                          WARN
+                          {t("verify.badgeWarn")}
                         </Badge>
                       )}
                       {!hasFail && !hasWarn && (
                         <Badge className="bg-green-100 text-green-800 border border-green-300">
-                          OK
+                          {t("verify.badgeOk")}
                         </Badge>
                       )}
                     </CardTitle>
@@ -294,7 +312,7 @@ export default function VerifyPage() {
             {/* Footer */}
             <div className="flex justify-center pb-8">
               <Button variant="outline" onClick={reset}>
-                Verify Another Pack
+                {t("verify.verifyAnother")}
               </Button>
             </div>
           </>
@@ -306,31 +324,20 @@ export default function VerifyPage() {
             <CardContent className="pt-6">
               <div className="space-y-2 text-sm text-muted-foreground">
                 <p className="font-medium text-foreground">
-                  What does this verify?
+                  {t("verify.whatDoesThisVerify")}
                 </p>
                 <ul className="list-disc list-inside space-y-1 ml-2">
-                  <li>SHA-256 hash chain integrity across all events</li>
-                  <li>Payload hash & intent hash correctness</li>
-                  <li>
-                    WebAuthn ECDSA P-256 digital signatures (passkey-signed
-                    approvals)
-                  </li>
-                  <li>Challenge binding to clientDataJSON</li>
-                  <li>
-                    Integrity root hashes (document, ledger, attachments,
-                    envelope)
-                  </li>
-                  <li>Actor & approval cross-references</li>
-                  <li>Platform signature (ECDSA P-256 envelope seal)</li>
-                  <li>Timestamp ordering & credential uniqueness</li>
+                  <li>{t("verify.check1")}</li>
+                  <li>{t("verify.check2")}</li>
+                  <li>{t("verify.check3")}</li>
+                  <li>{t("verify.check4")}</li>
+                  <li>{t("verify.check5")}</li>
+                  <li>{t("verify.check6")}</li>
+                  <li>{t("verify.check7")}</li>
+                  <li>{t("verify.check8")}</li>
                 </ul>
                 <Separator className="my-3" />
-                <p className="text-xs">
-                  This verification runs entirely on the server using the same
-                  cryptographic primitives as the platform. No login required —
-                  this is a public service for banks, auditors, and
-                  counterparties.
-                </p>
+                <p className="text-xs">{t("verify.footer")}</p>
               </div>
             </CardContent>
           </Card>

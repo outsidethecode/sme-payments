@@ -31,6 +31,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "@/i18n";
 
 const STATUS_BADGE: Record<
   string,
@@ -108,28 +109,32 @@ export default function ApprovalsPage() {
 
   const userCurrency: "GBP" | "SAR" =
     (user?.currency as "GBP" | "SAR") || "GBP";
+  const { t } = useTranslation();
 
   if (!user) return null;
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Approvals</h1>
-        <p className="text-muted-foreground">
-          Review and approve pending purchase orders for your organisation.
-        </p>
+        <h1 className="text-3xl font-bold tracking-tight">
+          {t("approvals.title")}
+        </h1>
+        <p className="text-muted-foreground">{t("approvals.subtitle")}</p>
       </div>
 
       {isLoading ? (
-        <div className="text-muted-foreground">Loading approvals…</div>
+        <div className="text-muted-foreground">
+          {t("approvals.loadingApprovals")}
+        </div>
       ) : pendingRequests.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
             <ShieldCheck className="h-12 w-12 text-muted-foreground/50 mb-4" />
-            <p className="text-muted-foreground">No pending approvals</p>
+            <p className="text-muted-foreground">
+              {t("approvals.noPendingApprovals")}
+            </p>
             <p className="text-sm text-muted-foreground/70">
-              All caught up! Approval requests will appear here when POs exceed
-              your organisation&apos;s auto-approve threshold.
+              {t("approvals.noPendingDescription")}
             </p>
           </CardContent>
         </Card>
@@ -154,12 +159,16 @@ export default function ApprovalsPage() {
                         </CardTitle>
                         <CardDescription>
                           {req.entityType === "PURCHASE_ORDER"
-                            ? "Purchase Order Approval"
+                            ? t("approvals.purchaseOrderApproval")
                             : req.entityType}
                         </CardDescription>
                       </div>
                     </div>
-                    <Badge variant={badge.variant}>{badge.label}</Badge>
+                    <Badge variant={badge.variant}>
+                      {t(
+                        `approvals.status${req.status.charAt(0)}${req.status.slice(1).toLowerCase()}`,
+                      )}
+                    </Badge>
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -168,7 +177,7 @@ export default function ApprovalsPage() {
                       <>
                         <div>
                           <p className="text-sm text-muted-foreground">
-                            Amount
+                            {t("approvals.amount")}
                           </p>
                           <p className="font-semibold">
                             {formatCurrency(
@@ -179,7 +188,7 @@ export default function ApprovalsPage() {
                         </div>
                         <div>
                           <p className="text-sm text-muted-foreground">
-                            Supplier
+                            {t("approvals.supplierLabel")}
                           </p>
                           <p className="font-medium">
                             {po.supplier?.companyName || "—"}
@@ -188,7 +197,9 @@ export default function ApprovalsPage() {
                       </>
                     )}
                     <div>
-                      <p className="text-sm text-muted-foreground">Progress</p>
+                      <p className="text-sm text-muted-foreground">
+                        {t("approvals.progress")}
+                      </p>
                       <p className="font-medium">
                         {req.currentApprovals} / {req.requiredApprovals}{" "}
                         approvals
@@ -196,7 +207,7 @@ export default function ApprovalsPage() {
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">
-                        Required Roles
+                        {t("approvals.requiredRoles")}
                       </p>
                       <div className="flex gap-1 flex-wrap">
                         {req.policyRule?.requiredRoles?.map((role) => (
@@ -215,7 +226,9 @@ export default function ApprovalsPage() {
                   {/* Existing approvals */}
                   {req.approvals && req.approvals.length > 0 && (
                     <div className="mb-4 space-y-2">
-                      <p className="text-sm font-medium">Decisions</p>
+                      <p className="text-sm font-medium">
+                        {t("approvals.decisions")}
+                      </p>
                       {req.approvals.map((a) => (
                         <div
                           key={a.id}
@@ -257,9 +270,7 @@ export default function ApprovalsPage() {
                         return (
                           <div className="flex items-center gap-2 text-sm text-muted-foreground">
                             <CheckCircle2 className="h-4 w-4 shrink-0 text-green-500" />
-                            <span>
-                              You have already submitted your decision.
-                            </span>
+                            <span>{t("approvals.alreadySubmitted")}</span>
                           </div>
                         );
                       }
@@ -268,16 +279,7 @@ export default function ApprovalsPage() {
                         return (
                           <div className="flex items-center gap-2 text-sm text-muted-foreground">
                             <AlertCircle className="h-4 w-4 shrink-0" />
-                            <span>
-                              Your role ({user?.orgRole ?? "unknown"}) cannot
-                              approve this request. Requires:{" "}
-                              {requiredRoles
-                                .map(
-                                  (r) => r.charAt(0) + r.slice(1).toLowerCase(),
-                                )
-                                .join(" or ")}
-                              .
-                            </span>
+                            <span>{t("approvals.roleRestriction")}</span>
                           </div>
                         );
                       }
@@ -287,7 +289,7 @@ export default function ApprovalsPage() {
                           {req.status === "ESCALATED" && (
                             <Badge variant="destructive" className="mr-2">
                               <AlertCircle className="h-3 w-3 mr-1" />
-                              Escalated
+                              {t("approvals.statusEscalated")}
                             </Badge>
                           )}
                           {req.expiresAt && (
@@ -306,7 +308,7 @@ export default function ApprovalsPage() {
                             }}
                           >
                             <ShieldCheck className="h-4 w-4 mr-1" />
-                            Approve
+                            {t("approvals.approve")}
                           </Button>
                           <Button
                             size="sm"
@@ -318,7 +320,7 @@ export default function ApprovalsPage() {
                             }}
                           >
                             <ShieldX className="h-4 w-4 mr-1" />
-                            Reject
+                            {t("approvals.reject")}
                           </Button>
                         </div>
                       );
@@ -349,7 +351,10 @@ export default function ApprovalsPage() {
               ) : (
                 <AlertCircle className="h-5 w-5 text-red-500" />
               )}
-              {decision === "APPROVE" ? "Approve" : "Reject"} Purchase Order
+              {decision === "APPROVE"
+                ? t("approvals.approve")
+                : t("approvals.reject")}{" "}
+              Purchase Order
             </DialogTitle>
             <DialogDescription>
               {decision === "APPROVE"
@@ -360,12 +365,14 @@ export default function ApprovalsPage() {
 
           <div className="space-y-4">
             <div>
-              <label className="text-sm font-medium">Comment (optional)</label>
+              <label className="text-sm font-medium">
+                {t("approvals.commentOptional")}
+              </label>
               <Textarea
                 placeholder={
                   decision === "APPROVE"
-                    ? "Approved — looks good."
-                    : "Reason for rejection…"
+                    ? t("approvals.approvePlaceholder")
+                    : t("approvals.rejectPlaceholder")
                 }
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
@@ -397,10 +404,10 @@ export default function ApprovalsPage() {
               }}
             >
               {decideMutation.isPending
-                ? "Submitting…"
+                ? t("approvals.submitting")
                 : decision === "APPROVE"
-                  ? "Confirm Approval"
-                  : "Confirm Rejection"}
+                  ? t("approvals.confirmApproval")
+                  : t("approvals.confirmRejection")}
             </Button>
           </DialogFooter>
         </DialogContent>

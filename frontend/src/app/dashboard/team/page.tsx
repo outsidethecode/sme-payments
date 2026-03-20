@@ -44,6 +44,7 @@ import {
   X,
 } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "@/i18n";
 
 // ── Constants ──────────────────────────────────────────────
 
@@ -92,15 +93,14 @@ type Tab = "members" | "permissions" | "delegations";
 export default function TeamPage() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>("members");
+  const { t } = useTranslation();
   const orgId = user?.organisationId;
   const isOwnerOrAdmin = user?.orgRole === "OWNER" || user?.role === "ADMIN";
 
   if (!orgId) {
     return (
       <div className="p-6">
-        <p className="text-muted-foreground">
-          You are not part of an organisation.
-        </p>
+        <p className="text-muted-foreground">{t("team.noOrganisation")}</p>
       </div>
     );
   }
@@ -108,34 +108,36 @@ export default function TeamPage() {
   return (
     <div className="space-y-6 p-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">
-          Team & Permissions
-        </h1>
-        <p className="text-muted-foreground">
-          Manage members, permission overrides, and authority delegations.
-        </p>
+        <h1 className="text-2xl font-bold tracking-tight">{t("team.title")}</h1>
+        <p className="text-muted-foreground">{t("team.subtitle")}</p>
       </div>
 
       {/* Tab bar */}
       <div className="flex gap-2 border-b">
-        {(
-          [
-            { key: "members", label: "Members", icon: Users },
-            { key: "permissions", label: "Permission Matrix", icon: Shield },
-            { key: "delegations", label: "Delegations", icon: ArrowRightLeft },
-          ] as const
-        ).map((t) => (
+        {[
+          { key: "members" as const, label: t("team.tabMembers"), icon: Users },
+          {
+            key: "permissions" as const,
+            label: t("team.tabPermissionMatrix"),
+            icon: Shield,
+          },
+          {
+            key: "delegations" as const,
+            label: t("team.tabDelegations"),
+            icon: ArrowRightLeft,
+          },
+        ].map((tab) => (
           <button
-            key={t.key}
-            onClick={() => setActiveTab(t.key)}
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
             className={`flex items-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
-              activeTab === t.key
+              activeTab === tab.key
                 ? "border-primary text-primary"
                 : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
-            <t.icon className="h-4 w-4" />
-            {t.label}
+            <tab.icon className="h-4 w-4" />
+            {tab.label}
           </button>
         ))}
       </div>
@@ -156,6 +158,7 @@ export default function TeamPage() {
 // ── Members Tab ─────────────────────────────────────────────
 
 function MembersTab({ orgId, isOwner }: { orgId: string; isOwner: boolean }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [editingUser, setEditingUser] = useState<OrgMember | null>(null);
   const [newRole, setNewRole] = useState<string>("");
@@ -212,12 +215,12 @@ function MembersTab({ orgId, isOwner }: { orgId: string; isOwner: boolean }) {
       setInviteError("");
     },
     onError: (err: any) => {
-      setInviteError(err?.response?.data?.message || "Failed to invite member");
+      setInviteError(err?.response?.data?.message || t("team.inviteFailed"));
     },
   });
 
   if (isLoading) {
-    return <p className="text-muted-foreground">Loading members…</p>;
+    return <p className="text-muted-foreground">{t("team.loadingMembers")}</p>;
   }
 
   return (
@@ -226,16 +229,15 @@ function MembersTab({ orgId, isOwner }: { orgId: string; isOwner: boolean }) {
         <div className="flex items-center justify-between">
           <div>
             <CardTitle className="flex items-center gap-2">
-              <Users className="h-5 w-5" /> Members ({members.length})
+              <Users className="h-5 w-5" />{" "}
+              {t("team.membersCount", { count: members.length })}
             </CardTitle>
-            <CardDescription>
-              Organisation members and their roles.
-            </CardDescription>
+            <CardDescription>{t("team.membersDescription")}</CardDescription>
           </div>
           {isOwner && (
             <Button onClick={() => setShowInvite(true)} size="sm">
               <Plus className="mr-2 h-4 w-4" />
-              Invite Member
+              {t("team.inviteMember")}
             </Button>
           )}
         </div>
@@ -265,7 +267,7 @@ function MembersTab({ orgId, isOwner }: { orgId: string; isOwner: boolean }) {
                         setNewRole(m.orgRole);
                       }}
                     >
-                      Change Role
+                      {t("team.changeRole")}
                     </Button>
                     <Button
                       variant="ghost"
@@ -290,14 +292,16 @@ function MembersTab({ orgId, isOwner }: { orgId: string; isOwner: boolean }) {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Change Role for {editingUser?.name}</DialogTitle>
+            <DialogTitle>
+              {t("team.changeRoleFor", { name: editingUser?.name ?? "" })}
+            </DialogTitle>
             <DialogDescription>
-              Select a new role for this member.
+              {t("team.changeRoleDescription")}
             </DialogDescription>
           </DialogHeader>
           <Select value={newRole} onValueChange={setNewRole}>
             <SelectTrigger>
-              <SelectValue placeholder="Select role" />
+              <SelectValue placeholder={t("team.selectRole")} />
             </SelectTrigger>
             <SelectContent>
               {ALL_ROLES.filter((r) => r !== "OWNER").map((r) => (
@@ -336,16 +340,16 @@ function MembersTab({ orgId, isOwner }: { orgId: string; isOwner: boolean }) {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Invite Team Member</DialogTitle>
+            <DialogTitle>{t("team.inviteTeamMember")}</DialogTitle>
             <DialogDescription>
-              Create an account and add them to your organisation.
+              {t("team.inviteTeamDescription")}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>Name</Label>
+              <Label>{t("team.name")}</Label>
               <Input
-                placeholder="Full name"
+                placeholder={t("team.namePlaceholder")}
                 value={inviteForm.name}
                 onChange={(e) =>
                   setInviteForm((f) => ({ ...f, name: e.target.value }))
@@ -353,10 +357,10 @@ function MembersTab({ orgId, isOwner }: { orgId: string; isOwner: boolean }) {
               />
             </div>
             <div className="space-y-2">
-              <Label>Email</Label>
+              <Label>{t("team.email")}</Label>
               <Input
                 type="email"
-                placeholder="email@example.com"
+                placeholder={t("team.emailPlaceholder")}
                 value={inviteForm.email}
                 onChange={(e) =>
                   setInviteForm((f) => ({ ...f, email: e.target.value }))
@@ -364,10 +368,10 @@ function MembersTab({ orgId, isOwner }: { orgId: string; isOwner: boolean }) {
               />
             </div>
             <div className="space-y-2">
-              <Label>Temporary Password</Label>
+              <Label>{t("team.temporaryPassword")}</Label>
               <Input
                 type="password"
-                placeholder="Initial password"
+                placeholder={t("team.passwordPlaceholder")}
                 value={inviteForm.password}
                 onChange={(e) =>
                   setInviteForm((f) => ({ ...f, password: e.target.value }))
@@ -383,7 +387,7 @@ function MembersTab({ orgId, isOwner }: { orgId: string; isOwner: boolean }) {
                 }
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select role" />
+                  <SelectValue placeholder={t("team.selectRole")} />
                 </SelectTrigger>
                 <SelectContent>
                   {ALL_ROLES.filter((r) => r !== "OWNER").map((r) => (
@@ -411,7 +415,9 @@ function MembersTab({ orgId, isOwner }: { orgId: string; isOwner: boolean }) {
                 !inviteForm.password
               }
             >
-              {inviteMember.isPending ? "Inviting…" : "Invite"}
+              {inviteMember.isPending
+                ? t("team.inviting")
+                : t("team.inviteButton")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -429,6 +435,7 @@ function PermissionsTab({
   orgId: string;
   isOwner: boolean;
 }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
 
   const { data: overrides = [], isLoading } = useQuery({
@@ -487,17 +494,19 @@ function PermissionsTab({
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Shield className="h-5 w-5" /> Permission Matrix
+          <Shield className="h-5 w-5" /> {t("team.permissionMatrix")}
         </CardTitle>
         <CardDescription>
-          Which roles can perform each action. Blue cells are custom overrides.
+          {t("team.permissionMatrixDescription")}
         </CardDescription>
       </CardHeader>
       <CardContent className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b">
-              <th className="py-2 pr-4 text-left font-medium">Action</th>
+              <th className="py-2 pr-4 text-left font-medium">
+                {t("team.action")}
+              </th>
               {ALL_ROLES.map((r) => (
                 <th key={r} className="px-2 py-2 text-center font-medium">
                   {r}
@@ -518,7 +527,7 @@ function PermissionsTab({
                         variant="outline"
                         className="ml-2 text-xs text-blue-600"
                       >
-                        Custom
+                        {t("team.customBadge")}
                       </Badge>
                     )}
                   </td>
@@ -583,6 +592,7 @@ function DelegationsTab({
   orgId: string;
   isOwner: boolean;
 }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
   const [delegateUserId, setDelegateUserId] = useState("");
@@ -632,7 +642,9 @@ function DelegationsTab({
   });
 
   if (isLoading) {
-    return <p className="text-muted-foreground">Loading delegations…</p>;
+    return (
+      <p className="text-muted-foreground">{t("team.loadingDelegations")}</p>
+    );
   }
 
   return (
@@ -642,23 +654,23 @@ function DelegationsTab({
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="flex items-center gap-2">
-                <ArrowRightLeft className="h-5 w-5" /> Delegations (
-                {delegations.length})
+                <ArrowRightLeft className="h-5 w-5" />{" "}
+                {t("team.delegationsCount", { count: delegations.length })}
               </CardTitle>
               <CardDescription>
-                Temporary authority transfers between members. Max 30 days.
+                {t("team.delegationsDescription")}
               </CardDescription>
             </div>
             {isOwner && (
               <Button size="sm" onClick={() => setShowCreate(true)}>
-                <Plus className="mr-1 h-4 w-4" /> New Delegation
+                <Plus className="mr-1 h-4 w-4" /> {t("team.newDelegation")}
               </Button>
             )}
           </div>
         </CardHeader>
         <CardContent>
           {delegations.length === 0 ? (
-            <p className="text-muted-foreground">No active delegations.</p>
+            <p className="text-muted-foreground">{t("team.noDelegations")}</p>
           ) : (
             <div className="space-y-3">
               {delegations.map((d) => (
@@ -706,18 +718,18 @@ function DelegationsTab({
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create Delegation</DialogTitle>
+            <DialogTitle>{t("team.createDelegation")}</DialogTitle>
             <DialogDescription>
-              Temporarily grant a member authority to perform specific actions.
+              {t("team.createDelegationDescription")}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
             <div>
-              <Label>Delegate to</Label>
+              <Label>{t("team.delegateTo")}</Label>
               <Select value={delegateUserId} onValueChange={setDelegateUserId}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select member" />
+                  <SelectValue placeholder={t("team.selectMember")} />
                 </SelectTrigger>
                 <SelectContent>
                   {members
@@ -732,7 +744,7 @@ function DelegationsTab({
             </div>
 
             <div>
-              <Label>Actions</Label>
+              <Label>{t("team.delegationActions")}</Label>
               <div className="mt-1 flex flex-wrap gap-2">
                 {ALL_ACTIONS.map((action) => {
                   const selected = selectedActions.includes(action);
@@ -760,7 +772,7 @@ function DelegationsTab({
             </div>
 
             <div>
-              <Label>Valid until</Label>
+              <Label>{t("team.validUntil")}</Label>
               <Input
                 type="date"
                 value={validTo}
@@ -788,7 +800,7 @@ function DelegationsTab({
                 create.isPending
               }
             >
-              Create
+              {t("team.create")}
             </Button>
           </DialogFooter>
         </DialogContent>

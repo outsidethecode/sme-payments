@@ -39,18 +39,22 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "@/i18n";
 
 const STATUS_BADGE: Record<
   string,
   {
     variant: "default" | "secondary" | "destructive" | "outline";
-    label: string;
+    labelKey: string;
   }
 > = {
-  PENDING: { variant: "outline", label: "Pending" },
-  ACCEPTED: { variant: "default", label: "Accepted" },
-  EXPIRED: { variant: "secondary", label: "Expired" },
-  CANCELLED: { variant: "destructive", label: "Cancelled" },
+  PENDING: { variant: "outline", labelKey: "invitations.statusPending" },
+  ACCEPTED: { variant: "default", labelKey: "invitations.statusAccepted" },
+  EXPIRED: { variant: "secondary", labelKey: "invitations.statusExpired" },
+  CANCELLED: {
+    variant: "destructive",
+    labelKey: "invitations.statusCancelled",
+  },
 };
 
 export default function InvitationsPage() {
@@ -61,6 +65,7 @@ export default function InvitationsPage() {
     "SUPPLIER",
   );
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
+  const { t } = useTranslation();
 
   const { data: invitations = [], isLoading } = useQuery({
     queryKey: ["invitations"],
@@ -96,35 +101,37 @@ export default function InvitationsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight">Invitations</h2>
-        <p className="text-muted-foreground">
-          Invite suppliers to join your supply chain
-        </p>
+        <h2 className="text-2xl font-bold tracking-tight">
+          {t("invitations.title")}
+        </h2>
+        <p className="text-muted-foreground">{t("invitations.subtitle")}</p>
       </div>
 
       {/* Create Invitation */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Send Invitation</CardTitle>
+          <CardTitle className="text-base">
+            {t("invitations.sendInvitation")}
+          </CardTitle>
           <CardDescription>
-            Invited suppliers will receive a 1-click registration link
+            {t("invitations.sendInvitationDescription")}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex items-end gap-3">
             <div className="flex-1 space-y-1">
-              <Label htmlFor="invEmail">Email Address</Label>
+              <Label htmlFor="invEmail">{t("invitations.emailAddress")}</Label>
               <Input
                 id="invEmail"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="supplier@example.com"
+                placeholder={t("invitations.emailPlaceholder")}
               />
             </div>
             {user?.role === "ADMIN" && (
               <div className="w-44 space-y-1">
-                <Label>Role</Label>
+                <Label>{t("invitations.role")}</Label>
                 <Select
                   value={role}
                   onValueChange={(v) =>
@@ -135,9 +142,11 @@ export default function InvitationsPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="SUPPLIER">Supplier</SelectItem>
+                    <SelectItem value="SUPPLIER">
+                      {t("invitations.roleSupplier")}
+                    </SelectItem>
                     <SelectItem value="LIQUIDITY_PARTNER">
-                      Liquidity Partner
+                      {t("invitations.roleLiquidityPartner")}
                     </SelectItem>
                   </SelectContent>
                 </Select>
@@ -148,18 +157,20 @@ export default function InvitationsPage() {
               disabled={!email || createMutation.isPending}
             >
               <UserPlus className="mr-2 h-4 w-4" />
-              {createMutation.isPending ? "Sending…" : "Send Invite"}
+              {createMutation.isPending
+                ? t("invitations.sending")
+                : t("invitations.sendInvite")}
             </Button>
           </div>
           {createMutation.isError && (
             <p className="mt-2 text-sm text-destructive">
               {(createMutation.error as any)?.response?.data?.message ||
-                "Failed to create invitation"}
+                t("invitations.invitationFailed")}
             </p>
           )}
           {createMutation.isSuccess && (
             <p className="mt-2 text-sm text-green-600">
-              Invitation sent successfully!
+              {t("invitations.invitationSent")}
             </p>
           )}
         </CardContent>
@@ -169,10 +180,10 @@ export default function InvitationsPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
-            Invitations{" "}
+            {t("invitations.title")}{" "}
             {pendingCount > 0 && (
               <Badge variant="secondary" className="ml-2">
-                {pendingCount} pending
+                {t("invitations.pendingCount", { count: pendingCount })}
               </Badge>
             )}
           </CardTitle>
@@ -182,18 +193,20 @@ export default function InvitationsPage() {
             <p className="text-sm text-muted-foreground">Loading…</p>
           ) : invitations.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No invitations sent yet
+              {t("invitations.noInvitations")}
             </p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Sent</TableHead>
-                  <TableHead>Expires</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead>{t("invitations.colEmail")}</TableHead>
+                  <TableHead>{t("invitations.colRole")}</TableHead>
+                  <TableHead>{t("invitations.colStatus")}</TableHead>
+                  <TableHead>{t("invitations.colSent")}</TableHead>
+                  <TableHead>{t("invitations.colExpires")}</TableHead>
+                  <TableHead className="text-right">
+                    {t("invitations.colActions")}
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -205,15 +218,17 @@ export default function InvitationsPage() {
                     <TableCell>
                       <Badge variant="outline" className="text-xs">
                         {inv.inviteeRole === "LIQUIDITY_PARTNER"
-                          ? "LP"
-                          : "Supplier"}
+                          ? t("invitations.lpBadge")
+                          : t("invitations.roleSupplier")}
                       </Badge>
                     </TableCell>
                     <TableCell>
                       <Badge
                         variant={STATUS_BADGE[inv.status]?.variant || "outline"}
                       >
-                        {STATUS_BADGE[inv.status]?.label || inv.status}
+                        {STATUS_BADGE[inv.status]?.labelKey
+                          ? t(STATUS_BADGE[inv.status].labelKey)
+                          : inv.status}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">

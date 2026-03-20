@@ -52,6 +52,7 @@ import {
   Plus,
 } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "@/i18n";
 
 const RULE_TYPE_LABELS: Record<string, string> = {
   PO_APPROVAL: "PO Approval",
@@ -81,6 +82,7 @@ const isFundingLimitType = (rt: string) => rt === FUNDING_LIMIT_TYPE;
 
 export default function PoliciesPage() {
   const { user } = useAuth();
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const orgId = user?.organisationId;
   const isAdmin = user?.role === "ADMIN";
@@ -232,9 +234,7 @@ export default function PoliciesPage() {
   if (!orgId) {
     return (
       <div className="p-6">
-        <p className="text-muted-foreground">
-          No organisation linked. Please complete registration.
-        </p>
+        <p className="text-muted-foreground">{t("policies.noOrganisation")}</p>
       </div>
     );
   }
@@ -245,12 +245,9 @@ export default function PoliciesPage() {
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <ShieldCheck className="h-6 w-6" />
-            Policy Rules
+            {t("policies.title")}
           </h1>
-          <p className="text-muted-foreground">
-            Manage approval tiers, limits and compliance rules for your
-            organisation
-          </p>
+          <p className="text-muted-foreground">{t("policies.subtitle")}</p>
         </div>
         {
           <div className="flex gap-2">
@@ -258,12 +255,12 @@ export default function PoliciesPage() {
               <DialogTrigger asChild>
                 <Button size="sm">
                   <Plus className="h-4 w-4 mr-1" />
-                  Add Rule
+                  {t("policies.addRule")}
                 </Button>
               </DialogTrigger>
               <DialogContent className="sm:max-w-[520px]">
                 <DialogHeader>
-                  <DialogTitle>Create Policy Rule</DialogTitle>
+                  <DialogTitle>{t("policies.createPolicyRule")}</DialogTitle>
                   <DialogDescription>
                     {isFundingLimitType(newRule.ruleType)
                       ? "Configure exposure caps and fees for liquidity provider funding."
@@ -273,7 +270,7 @@ export default function PoliciesPage() {
                 <div className="grid gap-4 py-4">
                   {/* ── Common: Name + Type ── */}
                   <div className="grid gap-2">
-                    <Label htmlFor="rule-name">Rule Name</Label>
+                    <Label htmlFor="rule-name">{t("policies.ruleName")}</Label>
                     <Input
                       id="rule-name"
                       placeholder="e.g. Auto-approve POs ≤ £10,000"
@@ -287,7 +284,7 @@ export default function PoliciesPage() {
                     />
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="rule-type">Rule Type</Label>
+                    <Label htmlFor="rule-type">{t("policies.ruleType")}</Label>
                     <Select
                       value={newRule.ruleType}
                       onValueChange={(v) =>
@@ -321,7 +318,7 @@ export default function PoliciesPage() {
                     <>
                       <div className="grid gap-2">
                         <Label htmlFor="max-exposure">
-                          Max Exposure Total (minor units)
+                          {t("policies.maxExposureTotal")}
                         </Label>
                         <Input
                           id="max-exposure"
@@ -339,7 +336,7 @@ export default function PoliciesPage() {
                       <div className="grid grid-cols-2 gap-4">
                         <div className="grid gap-2">
                           <Label htmlFor="per-buyer">
-                            Max % per Buyer (0–1)
+                            {t("policies.maxPerBuyer")}
                           </Label>
                           <Input
                             id="per-buyer"
@@ -357,7 +354,7 @@ export default function PoliciesPage() {
                         </div>
                         <div className="grid gap-2">
                           <Label htmlFor="per-supplier">
-                            Max % per Supplier (0–1)
+                            {t("policies.maxPerSupplier")}
                           </Label>
                           <Input
                             id="per-supplier"
@@ -376,7 +373,9 @@ export default function PoliciesPage() {
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                         <div className="grid gap-2">
-                          <Label htmlFor="tenor">Max Tenor (days)</Label>
+                          <Label htmlFor="tenor">
+                            {t("policies.maxTenorDays")}
+                          </Label>
                           <Input
                             id="tenor"
                             type="number"
@@ -391,7 +390,9 @@ export default function PoliciesPage() {
                           />
                         </div>
                         <div className="grid gap-2">
-                          <Label htmlFor="fee">Fee (basis points)</Label>
+                          <Label htmlFor="fee">
+                            {t("policies.feeBasisPoints")}
+                          </Label>
                           <Input
                             id="fee"
                             type="number"
@@ -412,7 +413,7 @@ export default function PoliciesPage() {
                     <div className="grid grid-cols-2 gap-4">
                       <div className="grid gap-2">
                         <Label htmlFor="min-amount">
-                          Min Amount (minor units)
+                          {t("policies.minAmount")}
                         </Label>
                         <Input
                           id="min-amount"
@@ -429,7 +430,7 @@ export default function PoliciesPage() {
                       </div>
                       <div className="grid gap-2">
                         <Label htmlFor="max-amount">
-                          Max Amount (minor units)
+                          {t("policies.maxAmount")}
                         </Label>
                         <Input
                           id="max-amount"
@@ -449,9 +450,7 @@ export default function PoliciesPage() {
 
                   {/* ── Common: Priority ── */}
                   <div className="grid gap-2">
-                    <Label htmlFor="priority">
-                      Priority (higher = matched first)
-                    </Label>
+                    <Label htmlFor="priority">{t("policies.priority")}</Label>
                     <Input
                       id="priority"
                       type="number"
@@ -491,10 +490,10 @@ export default function PoliciesPage() {
                           : ""
                       }
                     >
-                      Auto-approve
+                      {t("policies.autoApprove")}
                       {isFundingLimitType(newRule.ruleType)
-                        ? " (always on for Funding Limit)"
-                        : " (no manual approval needed)"}
+                        ? ` ${t("policies.autoApproveFundingLimit")}`
+                        : ` ${t("policies.autoApproveNone")}`}
                     </Label>
                   </div>
 
@@ -503,7 +502,7 @@ export default function PoliciesPage() {
                     <>
                       <div className="grid gap-2">
                         <Label htmlFor="required-approvals">
-                          Required Approvals
+                          {t("policies.requiredApprovals")}
                         </Label>
                         <Input
                           id="required-approvals"
@@ -519,7 +518,7 @@ export default function PoliciesPage() {
                         />
                       </div>
                       <div className="grid gap-2">
-                        <Label>Required Roles</Label>
+                        <Label>{t("policies.requiredRoles")}</Label>
                         <div className="flex flex-wrap gap-3">
                           {AVAILABLE_ROLES.map((role) => (
                             <div
@@ -576,7 +575,7 @@ export default function PoliciesPage() {
                     ) : (
                       <Plus className="h-4 w-4 mr-1" />
                     )}
-                    Create Rule
+                    {t("policies.createRule")}
                   </Button>
                 </DialogFooter>
               </DialogContent>
@@ -592,7 +591,7 @@ export default function PoliciesPage() {
               ) : (
                 <Database className="h-4 w-4 mr-1" />
               )}
-              Seed Defaults
+              {t("policies.seedDefaults")}
             </Button>
             <Button
               variant="outline"
@@ -605,7 +604,7 @@ export default function PoliciesPage() {
               ) : (
                 <RefreshCcw className="h-4 w-4 mr-1" />
               )}
-              Reset to Defaults
+              {t("policies.resetToDefaults")}
             </Button>
           </div>
         }
@@ -616,8 +615,10 @@ export default function PoliciesPage() {
         <Card className="border-green-200 bg-green-50">
           <CardContent className="pt-4">
             <p className="text-sm text-green-800">
-              Seeded {(seedMutation.data as any).created} rules, skipped{" "}
-              {(seedMutation.data as any).skipped}
+              {t("policies.seededResult", {
+                created: (seedMutation.data as any).created,
+                skipped: (seedMutation.data as any).skipped,
+              })}
             </p>
           </CardContent>
         </Card>
@@ -626,8 +627,9 @@ export default function PoliciesPage() {
         <Card className="border-blue-200 bg-blue-50">
           <CardContent className="pt-4">
             <p className="text-sm text-blue-800">
-              Reset complete — {(resetMutation.data as any).created} rules
-              re-seeded
+              {t("policies.resetResult", {
+                count: (resetMutation.data as any).created,
+              })}
             </p>
           </CardContent>
         </Card>
@@ -637,13 +639,13 @@ export default function PoliciesPage() {
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Total Rules</CardDescription>
+            <CardDescription>{t("policies.totalRules")}</CardDescription>
             <CardTitle className="text-2xl">{rules.length}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Active Rules</CardDescription>
+            <CardDescription>{t("policies.activeRules")}</CardDescription>
             <CardTitle className="text-2xl text-green-600">
               {activeRules.length}
             </CardTitle>
@@ -651,13 +653,13 @@ export default function PoliciesPage() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Rule Types</CardDescription>
+            <CardDescription>{t("policies.ruleTypes")}</CardDescription>
             <CardTitle className="text-2xl">{ruleTypes.length}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Pilot Readiness</CardDescription>
+            <CardDescription>{t("policies.pilotReadiness")}</CardDescription>
             <CardTitle className="text-2xl">
               {readinessLoading ? "…" : `${readiness?.readyPercentage ?? 0}%`}
             </CardTitle>
@@ -671,12 +673,14 @@ export default function PoliciesPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Activity className="h-5 w-5" />
-              Pilot Readiness Checklist
+              {t("policies.pilotChecklist")}
             </CardTitle>
             <CardDescription>
-              {readiness.readyPercentage}% complete —{" "}
-              {readiness.checks.filter((c) => c.complete).length}/
-              {readiness.checks.length} checks passed
+              {t("policies.pilotProgress", {
+                pct: readiness.readyPercentage,
+                passed: readiness.checks.filter((c) => c.complete).length,
+                total: readiness.checks.length,
+              })}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -712,17 +716,17 @@ export default function PoliciesPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Search className="h-5 w-5" />
-            Policy Simulator
+            {t("policies.policySimulator")}
           </CardTitle>
           <CardDescription>
-            Test which policy rule matches for a given amount and rule type
+            {t("policies.simulatorDescription")}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex gap-3 items-end">
             <div className="flex-1">
               <label className="text-sm font-medium mb-1 block">
-                Amount (minor units)
+                {t("policies.amountMinorUnits")}
               </label>
               <Input
                 type="number"
@@ -733,7 +737,7 @@ export default function PoliciesPage() {
             </div>
             <div className="w-[200px]">
               <label className="text-sm font-medium mb-1 block">
-                Rule Type
+                {t("policies.simulateRuleType")}
               </label>
               <Select value={simRuleType} onValueChange={setSimRuleType}>
                 <SelectTrigger>
@@ -757,7 +761,7 @@ export default function PoliciesPage() {
               ) : (
                 <Search className="h-4 w-4 mr-1" />
               )}
-              Simulate
+              {t("policies.simulateButton")}
             </Button>
           </div>
           {simMutation.data && (
@@ -765,19 +769,27 @@ export default function PoliciesPage() {
               {simMutation.data.matched ? (
                 <div>
                   <p className="font-medium text-green-700">
-                    ✓ Matched: {simMutation.data.rule?.name}
+                    {t("policies.simMatched", {
+                      name: simMutation.data.rule?.name ?? "",
+                    })}
                   </p>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Required approvals:{" "}
-                    {simMutation.data.rule?.requiredApprovals} | Roles:{" "}
-                    {simMutation.data.rule?.requiredRoles?.join(", ") || "None"}{" "}
-                    | Auto-approve:{" "}
-                    {simMutation.data.rule?.autoApprove ? "Yes" : "No"}
+                    {t("policies.simDetails", {
+                      approvals: simMutation.data.rule?.requiredApprovals ?? 0,
+                      roles:
+                        simMutation.data.rule?.requiredRoles?.join(", ") ||
+                        "None",
+                      autoApprove: simMutation.data.rule?.autoApprove
+                        ? t("policies.simAutoApproveYes")
+                        : t("policies.simAutoApproveNo"),
+                    })}
                   </p>
                 </div>
               ) : (
                 <p className="text-muted-foreground">
-                  No matching rule — {simMutation.data.message}
+                  {t("policies.simNoMatch", {
+                    message: simMutation.data.message ?? "",
+                  })}
                 </p>
               )}
             </div>
@@ -790,18 +802,17 @@ export default function PoliciesPage() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle>Active Policy Rules</CardTitle>
+              <CardTitle>{t("policies.activePolicyRules")}</CardTitle>
               <CardDescription>
-                {filteredRules.length} rule
-                {filteredRules.length !== 1 ? "s" : ""} shown
+                {t("policies.rulesShown", { count: filteredRules.length })}
               </CardDescription>
             </div>
             <Select value={ruleTypeFilter} onValueChange={setRuleTypeFilter}>
               <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="Filter by type" />
+                <SelectValue placeholder={t("policies.filterByType")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Types</SelectItem>
+                <SelectItem value="all">{t("policies.allTypes")}</SelectItem>
                 {ruleTypes.map((rt) => (
                   <SelectItem key={rt} value={rt}>
                     {RULE_TYPE_LABELS[rt] ?? rt}
@@ -818,21 +829,20 @@ export default function PoliciesPage() {
             </div>
           ) : filteredRules.length === 0 ? (
             <p className="text-center text-muted-foreground py-8">
-              No policy rules configured.{" "}
-              {isAdmin && "Use 'Seed Defaults' to create standard templates."}
+              {t("policies.noPolicyRules")} {isAdmin && t("policies.seedHint")}
             </p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Range</TableHead>
-                  <TableHead>Approvals</TableHead>
-                  <TableHead>Roles</TableHead>
-                  <TableHead>Auto</TableHead>
-                  <TableHead>Priority</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>{t("policies.colName")}</TableHead>
+                  <TableHead>{t("policies.colType")}</TableHead>
+                  <TableHead>{t("policies.colRange")}</TableHead>
+                  <TableHead>{t("policies.colApprovals")}</TableHead>
+                  <TableHead>{t("policies.colRoles")}</TableHead>
+                  <TableHead>{t("policies.colAuto")}</TableHead>
+                  <TableHead>{t("policies.colPriority")}</TableHead>
+                  <TableHead>{t("policies.colStatus")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -869,7 +879,9 @@ export default function PoliciesPage() {
                       <TableCell>{rule.priority}</TableCell>
                       <TableCell>
                         <Badge variant={rule.active ? "default" : "secondary"}>
-                          {rule.active ? "Active" : "Inactive"}
+                          {rule.active
+                            ? t("policies.activeBadge")
+                            : t("policies.inactiveBadge")}
                         </Badge>
                       </TableCell>
                     </TableRow>

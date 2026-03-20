@@ -73,16 +73,18 @@ import {
   Info,
 } from "lucide-react";
 import { useState, useMemo } from "react";
+import { useTranslation } from "@/i18n";
 
 export default function EarlyPaymentsPage() {
   const { user } = useAuth();
+  const { t } = useTranslation();
   if (!user) return null;
   if (user.role === "SUPPLIER") return <SupplierView />;
   if (user.role === "LIQUIDITY_PARTNER") return <LPView />;
   if (user.role === "ADMIN") return <AdminView />;
   return (
     <div className="py-12 text-center text-muted-foreground">
-      Early payments is not available for your role.
+      {t("earlyPayments.roleNotAvailable")}
     </div>
   );
 }
@@ -93,6 +95,7 @@ function SupplierView() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const { hasPasskey, signing, signAction } = usePasskey();
+  const { t } = useTranslation();
 
   const { data: earlyPayments, isLoading: epLoading } = useQuery({
     queryKey: ["early-payments"],
@@ -131,13 +134,13 @@ function SupplierView() {
       queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
       toast.success(
         hasPasskey
-          ? "Early payment requested ✓ Passkey signed"
-          : "Early payment requested successfully",
+          ? t("earlyPayments.requestedPasskey")
+          : t("earlyPayments.requestedSuccess"),
       );
     },
     onError: (err: Error & { response?: { data?: { message?: string } } }) => {
       toast.error(
-        err.response?.data?.message || "Failed to request early payment",
+        err.response?.data?.message || t("earlyPayments.requestFailed"),
       );
     },
   });
@@ -171,9 +174,11 @@ function SupplierView() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Early Payments</h1>
+        <h1 className="text-2xl font-bold tracking-tight">
+          {t("earlyPayments.title")}
+        </h1>
         <p className="text-sm text-muted-foreground">
-          Get paid early on purchase orders with locked payment
+          {t("earlyPayments.subtitle")}
         </p>
       </div>
 
@@ -181,31 +186,24 @@ function SupplierView() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <Zap className="h-4 w-4" />
-            How Early Payment Works
+            {t("earlyPayments.howItWorks")}
           </CardTitle>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground space-y-2">
-          <p>
-            1. The buyer must have <strong>funded escrow</strong> (PO in
-            Fulfillment, Shipped, or Delivered status).
-          </p>
-          <p>2. Request early payment — a flat 2.5% service fee applies.</p>
-          <p>
-            3. A liquidity partner funds the advance, you receive the net amount
-            immediately.
-          </p>
-          <p>
-            4. When the buyer verifies delivery, the locked funds settle to the
-            liquidity partner.
-          </p>
+          <p>{t("earlyPayments.howStep1")}</p>
+          <p>{t("earlyPayments.howStep2")}</p>
+          <p>{t("earlyPayments.howStep3")}</p>
+          <p>{t("earlyPayments.howStep4")}</p>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Eligible Purchase Orders</CardTitle>
+          <CardTitle className="text-base">
+            {t("earlyPayments.eligiblePOs")}
+          </CardTitle>
           <CardDescription>
-            POs with locked payment that you can request early payment on
+            {t("earlyPayments.eligiblePOsDescription")}
           </CardDescription>
           {!canRequest && (
             <div className="mt-2 flex items-start gap-2 rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3 text-sm text-amber-800 dark:text-amber-200">
@@ -226,22 +224,21 @@ function SupplierView() {
             </div>
           ) : !eligiblePOs?.length ? (
             <div className="py-8 text-center text-muted-foreground">
-              <p>No eligible purchase orders for early payment.</p>
+              <p>{t("earlyPayments.noEligiblePOs")}</p>
               <p className="text-xs mt-1">
-                POs must be accepted with locked payment and not already have an
-                early payment request.
+                {t("earlyPayments.noEligiblePOsDescription")}
               </p>
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Reference</TableHead>
-                  <TableHead>Buyer</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Amount</TableHead>
-                  <TableHead>Fee (2.5%)</TableHead>
-                  <TableHead>You Receive</TableHead>
+                  <TableHead>{t("earlyPayments.colReference")}</TableHead>
+                  <TableHead>{t("earlyPayments.colBuyer")}</TableHead>
+                  <TableHead>{t("earlyPayments.colStatus")}</TableHead>
+                  <TableHead>{t("earlyPayments.colAmount")}</TableHead>
+                  <TableHead>{t("earlyPayments.colFee")}</TableHead>
+                  <TableHead>{t("earlyPayments.colYouReceive")}</TableHead>
                   <TableHead className="w-32" />
                 </TableRow>
               </TableHeader>
@@ -286,7 +283,9 @@ function SupplierView() {
                             ) : (
                               <Zap className="mr-1 h-3 w-3" />
                             )}
-                            {signing ? "Signing…" : "Request"}
+                            {signing
+                              ? t("earlyPayments.signing")
+                              : t("earlyPayments.request")}
                           </Button>
                         ) : (
                           <span className="text-xs text-muted-foreground">
@@ -307,19 +306,19 @@ function SupplierView() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">
-              Your Early Payment Requests
+              {t("earlyPayments.yourRequests")}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>PO Reference</TableHead>
-                  <TableHead>Face Value</TableHead>
-                  <TableHead>Fee</TableHead>
-                  <TableHead>You Received</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Date</TableHead>
+                  <TableHead>{t("earlyPayments.colPOReference")}</TableHead>
+                  <TableHead>{t("earlyPayments.colFaceValue")}</TableHead>
+                  <TableHead>{t("earlyPayments.colFeeLabel")}</TableHead>
+                  <TableHead>{t("earlyPayments.colYouReceived")}</TableHead>
+                  <TableHead>{t("earlyPayments.colStatus")}</TableHead>
+                  <TableHead>{t("earlyPayments.colDate")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -597,6 +596,7 @@ function LPView() {
   const [fundingId, setFundingId] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<string>("newest");
   const { hasPasskey, signing, signAction } = usePasskey();
+  const { t } = useTranslation();
 
   const { data: marketplace, isLoading: mktLoading } = useQuery({
     queryKey: ["early-payments-marketplace"],
@@ -657,15 +657,13 @@ function LPView() {
       queryClient.invalidateQueries({ queryKey: ["balance"] });
       toast.success(
         hasPasskey
-          ? "Early payment funded ✓ Passkey signed"
-          : "Early payment funded successfully",
+          ? t("earlyPayments.fundedPasskey")
+          : t("earlyPayments.fundedSuccess"),
       );
       setFundingId(null);
     },
     onError: (err: Error & { response?: { data?: { message?: string } } }) => {
-      toast.error(
-        err.response?.data?.message || "Failed to fund early payment",
-      );
+      toast.error(err.response?.data?.message || t("earlyPayments.fundFailed"));
       setFundingId(null);
     },
   });
@@ -676,10 +674,10 @@ function LPView() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">
-          Early Payment Marketplace
+          {t("earlyPayments.lpTitle")}
         </h1>
         <p className="text-sm text-muted-foreground">
-          Fund verified purchase orders for a service fee return
+          {t("earlyPayments.lpSubtitle")}
         </p>
       </div>
 
@@ -687,26 +685,14 @@ function LPView() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <TrendingUp className="h-4 w-4" />
-            How It Works for Liquidity Partners
+            {t("earlyPayments.lpHowItWorks")}
           </CardTitle>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground space-y-2">
-          <p>
-            1. Browse accepted POs where suppliers have requested early payment.
-          </p>
-          <p>
-            2. You advance the <strong>net amount</strong> (face value minus
-            2.5% service fee) to the supplier.
-          </p>
-          <p>
-            3. When the buyer verifies delivery, the{" "}
-            <strong>full locked amount</strong> (minus platform fee) settles to
-            you.
-          </p>
-          <p>
-            4. You bear genuine delivery risk, if the buyer disputes, settlement
-            is delayed.
-          </p>
+          <p>{t("earlyPayments.lpStep1")}</p>
+          <p>{t("earlyPayments.lpStep2")}</p>
+          <p>{t("earlyPayments.lpStep3")}</p>
+          <p>{t("earlyPayments.lpStep4")}</p>
         </CardContent>
       </Card>
 
@@ -716,7 +702,7 @@ function LPView() {
             <div>
               <CardTitle className="flex items-center gap-2 text-base">
                 <DollarSign className="h-4 w-4" />
-                Available Requests
+                {t("earlyPayments.availableRequests")}
               </CardTitle>
               <CardDescription>
                 {marketplace?.length ?? 0} early payment request
@@ -729,12 +715,18 @@ function LPView() {
                 <SelectValue placeholder="Sort by" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="newest">Newest First</SelectItem>
-                <SelectItem value="risk-high">Safest First (Risk ↓)</SelectItem>
-                <SelectItem value="risk-low">
-                  Riskiest First (Risk ↑)
+                <SelectItem value="newest">
+                  {t("earlyPayments.sortNewest")}
                 </SelectItem>
-                <SelectItem value="value-high">Highest Value</SelectItem>
+                <SelectItem value="risk-high">
+                  {t("earlyPayments.sortSafest")}
+                </SelectItem>
+                <SelectItem value="risk-low">
+                  {t("earlyPayments.sortRiskiest")}
+                </SelectItem>
+                <SelectItem value="value-high">
+                  {t("earlyPayments.sortHighestValue")}
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -772,14 +764,16 @@ function LPView() {
                       {ep.risk && <RiskBadge risk={ep.risk} />}
                       <Badge variant="outline">
                         <ShieldCheck className="mr-1 h-3 w-3" />
-                        Payment Locked
+                        {t("earlyPayments.paymentLockedBadge")}
                       </Badge>
                     </div>
                   </div>
 
                   <div className="grid grid-cols-3 gap-4 text-sm">
                     <div>
-                      <p className="text-muted-foreground">Face Value</p>
+                      <p className="text-muted-foreground">
+                        {t("earlyPayments.faceValue")}
+                      </p>
                       <p className="font-medium">
                         {formatCurrency(
                           ep.faceValuePennies,
@@ -789,7 +783,7 @@ function LPView() {
                     </div>
                     <div>
                       <p className="text-muted-foreground">
-                        Service Fee (2.5%)
+                        {t("earlyPayments.serviceFee")}
                       </p>
                       <p className="font-medium text-green-600">
                         +
@@ -800,7 +794,9 @@ function LPView() {
                       </p>
                     </div>
                     <div>
-                      <p className="text-muted-foreground">You Advance</p>
+                      <p className="text-muted-foreground">
+                        {t("earlyPayments.youAdvance")}
+                      </p>
                       <p className="font-medium">
                         {formatCurrency(
                           ep.netAdvancePennies,
@@ -821,7 +817,7 @@ function LPView() {
                     {fundingId === ep.id ? (
                       <div className="flex items-center gap-2">
                         <span className="text-sm text-muted-foreground">
-                          Confirm funding?
+                          {t("earlyPayments.confirmFunding")}
                         </span>
                         <Button
                           size="sm"
@@ -831,10 +827,10 @@ function LPView() {
                           {signing ? (
                             <>
                               <Fingerprint className="mr-1 h-3 w-3 animate-pulse" />
-                              Signing…
+                              {t("earlyPayments.signing")}
                             </>
                           ) : fundMutation.isPending ? (
-                            "Funding…"
+                            t("earlyPayments.funding")
                           ) : (
                             "Confirm"
                           )}
@@ -850,7 +846,7 @@ function LPView() {
                     ) : (
                       <Button size="sm" onClick={() => setFundingId(ep.id)}>
                         <DollarSign className="mr-1 h-3 w-3" />
-                        Fund This Request
+                        {t("earlyPayments.fundThisRequest")}
                       </Button>
                     )}
                   </div>
@@ -864,18 +860,20 @@ function LPView() {
       {funded.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Your Funded Payments</CardTitle>
+            <CardTitle className="text-base">
+              {t("earlyPayments.yourFundedPayments")}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>PO Reference</TableHead>
-                  <TableHead>Supplier</TableHead>
-                  <TableHead>Advanced</TableHead>
-                  <TableHead>Fee Earned</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Funded</TableHead>
+                  <TableHead>{t("earlyPayments.colPOReference")}</TableHead>
+                  <TableHead>{t("earlyPayments.colSupplier")}</TableHead>
+                  <TableHead>{t("earlyPayments.colAdvanced")}</TableHead>
+                  <TableHead>{t("earlyPayments.colFeeEarned")}</TableHead>
+                  <TableHead>{t("earlyPayments.colStatus")}</TableHead>
+                  <TableHead>{t("earlyPayments.colFunded")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -920,6 +918,7 @@ function LPView() {
 // ── Admin View ────────────────────────────────────────────────
 
 function AdminView() {
+  const { t } = useTranslation();
   const { data: earlyPayments, isLoading } = useQuery({
     queryKey: ["early-payments"],
     queryFn: () => earlyPayApi.list().then((r) => r.data),
@@ -928,7 +927,9 @@ function AdminView() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Early Payments</h1>
+        <h1 className="text-2xl font-bold tracking-tight">
+          {t("earlyPayments.title")}
+        </h1>
         <p className="text-sm text-muted-foreground">
           Admin view of all early payment requests
         </p>
@@ -937,7 +938,7 @@ function AdminView() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
-            All Early Payment Requests
+            {t("earlyPayments.adminTitle")}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -945,18 +946,18 @@ function AdminView() {
             <Skeleton className="h-24 w-full" />
           ) : !earlyPayments?.length ? (
             <p className="py-8 text-center text-muted-foreground">
-              No early payment requests yet.
+              {t("earlyPayments.noRequestsYet")}
             </p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>PO Reference</TableHead>
-                  <TableHead>Supplier</TableHead>
+                  <TableHead>{t("earlyPayments.colPOReference")}</TableHead>
+                  <TableHead>{t("earlyPayments.colSupplier")}</TableHead>
                   <TableHead>LP</TableHead>
-                  <TableHead>Face Value</TableHead>
-                  <TableHead>Fee</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>{t("earlyPayments.colFaceValue")}</TableHead>
+                  <TableHead>{t("earlyPayments.colFeeLabel")}</TableHead>
+                  <TableHead>{t("earlyPayments.colStatus")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

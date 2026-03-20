@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/select";
 import { ToggleLeft, ToggleRight, Building2, Globe, X } from "lucide-react";
 import api from "@/lib/api";
+import { useTranslation } from "@/i18n";
 
 /** Human-friendly descriptions for each flag */
 const FLAG_DESCRIPTIONS: Record<string, string> = {
@@ -48,10 +49,10 @@ const FLAG_DESCRIPTIONS: Record<string, string> = {
 };
 
 const SOURCE_LABELS: Record<string, string> = {
-  env: "Env Var",
-  "db-global": "Global Override",
-  "db-org": "Org Override",
-  default: "Default",
+  env: "featureFlags.sourceEnvVar",
+  "db-global": "featureFlags.sourceGlobalOverride",
+  "db-org": "featureFlags.sourceOrgOverride",
+  default: "featureFlags.sourceDefault",
 };
 
 function sourceBadgeVariant(
@@ -79,6 +80,7 @@ export default function FeatureFlagsPage() {
   const [selectedOrgId, setSelectedOrgId] = useState<string | undefined>(
     undefined,
   );
+  const { t } = useTranslation();
 
   // Fetch all orgs for the selector
   const { data: orgsData } = useQuery({
@@ -127,9 +129,11 @@ export default function FeatureFlagsPage() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Feature Flags</h1>
+          <h1 className="text-2xl font-bold tracking-tight">
+            {t("featureFlags.title")}
+          </h1>
           <p className="text-sm text-muted-foreground">
-            Manage platform feature flags and pilot gating
+            {t("featureFlags.subtitle")}
           </p>
         </div>
         <div className="grid gap-4">
@@ -144,12 +148,12 @@ export default function FeatureFlagsPage() {
   if (error) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold tracking-tight">Feature Flags</h1>
+        <h1 className="text-2xl font-bold tracking-tight">
+          {t("featureFlags.title")}
+        </h1>
         <Card>
           <CardContent className="pt-6">
-            <p className="text-destructive">
-              Failed to load feature flags. Please try again.
-            </p>
+            <p className="text-destructive">{t("featureFlags.failedToLoad")}</p>
           </CardContent>
         </Card>
       </div>
@@ -162,20 +166,22 @@ export default function FeatureFlagsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Feature Flags</h1>
+        <h1 className="text-2xl font-bold tracking-tight">
+          {t("featureFlags.title")}
+        </h1>
         <p className="text-sm text-muted-foreground">
-          Manage platform feature flags and pilot gating. Toggle flags globally
-          or per-organisation.
+          {t("featureFlags.subtitle")} {t("featureFlags.description")}
         </p>
       </div>
 
       {/* ── Org Selector ───────────────────────────────────── */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium">Scope</CardTitle>
+          <CardTitle className="text-sm font-medium">
+            {t("featureFlags.scopeLabel")}
+          </CardTitle>
           <CardDescription>
-            View global defaults or select an organisation to see per-org
-            resolution and set overrides.
+            {t("featureFlags.scopeDescription")}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -187,13 +193,13 @@ export default function FeatureFlagsPage() {
               }
             >
               <SelectTrigger className="w-[360px]">
-                <SelectValue placeholder="Global (all organisations)" />
+                <SelectValue placeholder={t("featureFlags.globalAllOrgs")} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__global__">
                   <span className="flex items-center gap-2">
                     <Globe className="h-4 w-4" />
-                    Global (all organisations)
+                    {t("featureFlags.globalAllOrgs")}
                   </span>
                 </SelectItem>
                 {orgs.map((org) => (
@@ -216,7 +222,7 @@ export default function FeatureFlagsPage() {
                 onClick={() => setSelectedOrgId(undefined)}
               >
                 <X className="h-4 w-4 mr-1" />
-                Clear
+                {t("featureFlags.clear")}
               </Button>
             )}
           </div>
@@ -234,12 +240,15 @@ export default function FeatureFlagsPage() {
                     {f.flag}
                   </CardTitle>
                   <CardDescription>
-                    {FLAG_DESCRIPTIONS[f.flag] ?? "No description available"}
+                    {FLAG_DESCRIPTIONS[f.flag] ??
+                      t("featureFlags.noDescription")}
                   </CardDescription>
                 </div>
                 <div className="flex items-center gap-3">
                   <Badge variant={sourceBadgeVariant(f.source)}>
-                    {SOURCE_LABELS[f.source] ?? f.source}
+                    {SOURCE_LABELS[f.source]
+                      ? t(SOURCE_LABELS[f.source])
+                      : f.source}
                   </Badge>
                   <Badge
                     variant={f.enabled ? "default" : "outline"}
@@ -272,12 +281,12 @@ export default function FeatureFlagsPage() {
                     {f.enabled ? (
                       <>
                         <ToggleRight className="mr-2 h-4 w-4" />
-                        Disable Globally
+                        {t("featureFlags.disableGlobally")}
                       </>
                     ) : (
                       <>
                         <ToggleLeft className="mr-2 h-4 w-4" />
-                        Enable Globally
+                        {t("featureFlags.enableGlobally")}
                       </>
                     )}
                   </Button>
@@ -299,12 +308,17 @@ export default function FeatureFlagsPage() {
                       }
                     >
                       <Building2 className="mr-2 h-4 w-4" />
-                      {f.enabled ? "Disable" : "Enable"} for{" "}
-                      {selectedOrg?.name ?? "this org"}
+                      {f.enabled
+                        ? t("featureFlags.disableForOrg", {
+                            orgName: selectedOrg?.name ?? "this org",
+                          })
+                        : t("featureFlags.enableForOrg", {
+                            orgName: selectedOrg?.name ?? "this org",
+                          })}
                     </Button>
                     {f.source === "db-org" && (
                       <span className="text-xs text-muted-foreground ml-1">
-                        This org has a specific override
+                        {t("featureFlags.orgOverrideHint")}
                       </span>
                     )}
                   </>

@@ -38,6 +38,7 @@ import {
 import { toast } from "sonner";
 import { useState } from "react";
 import { formatDistanceToNow } from "date-fns";
+import { useTranslation } from "@/i18n";
 
 // ── Types ──
 
@@ -60,8 +61,8 @@ function DeviceIcon({ deviceType }: { deviceType: string | null }) {
   return <Monitor className="h-5 w-5 text-muted-foreground" />;
 }
 
-function timeAgo(date: string | null) {
-  if (!date) return "Never";
+function timeAgo(date: string | null, neverText = "Never") {
+  if (!date) return neverText;
   return formatDistanceToNow(new Date(date), { addSuffix: true });
 }
 
@@ -75,6 +76,7 @@ function PasskeyCard({
   isOnly: boolean;
 }) {
   const queryClient = useQueryClient();
+  const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(passkey.deviceName || "");
 
@@ -84,10 +86,10 @@ function PasskeyCard({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["passkeys"] });
       setEditing(false);
-      toast.success("Passkey renamed");
+      toast.success(t("security.passkeyRenamed"));
     },
     onError: (err: any) =>
-      toast.error(err.response?.data?.message || "Rename failed"),
+      toast.error(err.response?.data?.message || t("security.renameFailed")),
   });
 
   const deleteMutation = useMutation({
@@ -95,17 +97,17 @@ function PasskeyCard({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["passkeys"] });
       queryClient.invalidateQueries({ queryKey: ["passkey-status"] });
-      toast.success("Passkey deleted");
+      toast.success(t("security.passkeyDeleted"));
     },
     onError: (err: any) =>
-      toast.error(err.response?.data?.message || "Delete failed"),
+      toast.error(err.response?.data?.message || t("security.deleteFailed")),
   });
 
   const displayName =
     passkey.deviceName ||
     (passkey.deviceType === "singleDevice"
-      ? "Single-device passkey"
-      : "Synced passkey");
+      ? t("security.singleDevice")
+      : t("security.syncedPasskey"));
 
   return (
     <Card>
@@ -123,7 +125,7 @@ function PasskeyCard({
               <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. MacBook Pro, iPhone 16"
+                placeholder={t("security.deviceNameShortPlaceholder")}
                 className="h-8 text-sm"
                 autoFocus
               />
@@ -133,7 +135,7 @@ function PasskeyCard({
                 variant="outline"
                 disabled={!name.trim() || renameMutation.isPending}
               >
-                Save
+                {t("common.save")}
               </Button>
               <Button
                 type="button"
@@ -144,7 +146,7 @@ function PasskeyCard({
                   setName(passkey.deviceName || "");
                 }}
               >
-                Cancel
+                {t("common.cancel")}
               </Button>
             </form>
           ) : (
@@ -153,18 +155,22 @@ function PasskeyCard({
                 <span className="font-medium text-sm">{displayName}</span>
                 {passkey.backedUp && (
                   <Badge variant="secondary" className="text-xs">
-                    Synced
+                    {t("security.syncedBadge")}
                   </Badge>
                 )}
               </div>
               <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
                 <span className="flex items-center gap-1">
                   <CheckCircle2 className="h-3 w-3" />
-                  Created {timeAgo(passkey.createdAt)}
+                  {t("security.createdTimeAgo", {
+                    timeAgo: timeAgo(passkey.createdAt, t("security.never")),
+                  })}
                 </span>
                 <span className="flex items-center gap-1">
                   <Clock className="h-3 w-3" />
-                  Used {timeAgo(passkey.lastUsedAt)}
+                  {t("security.usedTimeAgo", {
+                    timeAgo: timeAgo(passkey.lastUsedAt, t("security.never")),
+                  })}
                 </span>
               </div>
             </>
@@ -177,7 +183,7 @@ function PasskeyCard({
               size="icon"
               className="h-8 w-8"
               onClick={() => setEditing(true)}
-              title="Rename"
+              title={t("security.rename")}
             >
               <Pencil className="h-3.5 w-3.5" />
             </Button>
@@ -191,8 +197,8 @@ function PasskeyCard({
                   disabled={isOnly}
                   title={
                     isOnly
-                      ? "Cannot delete your only passkey"
-                      : "Delete passkey"
+                      ? t("security.cannotDeleteOnly")
+                      : t("security.deletePasskeyTooltip")
                   }
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -200,20 +206,24 @@ function PasskeyCard({
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>Delete passkey?</AlertDialogTitle>
+                  <AlertDialogTitle>
+                    {t("security.deletePasskeyTitle")}
+                  </AlertDialogTitle>
                   <AlertDialogDescription>
-                    This will permanently remove &ldquo;{displayName}&rdquo;.
-                    You won&apos;t be able to sign actions from this device
-                    unless you register a new passkey.
+                    {t("security.deletePasskeyDescription", {
+                      name: displayName,
+                    })}
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
                   <AlertDialogAction
                     onClick={() => deleteMutation.mutate()}
                     className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                   >
-                    {deleteMutation.isPending ? "Deleting…" : "Delete"}
+                    {deleteMutation.isPending
+                      ? t("security.deleting")
+                      : t("security.delete")}
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
@@ -230,6 +240,7 @@ function PasskeyCard({
 export default function SecurityPage() {
   const queryClient = useQueryClient();
   const { register, registering } = usePasskey();
+  const { t } = useTranslation();
   const [deviceName, setDeviceName] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
 
@@ -256,12 +267,10 @@ export default function SecurityPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight">Security</h2>
-        <p className="text-muted-foreground">
-          Manage your passkeys across devices. Each passkey uses your
-          device&apos;s biometric (Face ID, Touch ID, PIN) to cryptographically
-          sign every action you take on the platform.
-        </p>
+        <h2 className="text-2xl font-bold tracking-tight">
+          {t("security.title")}
+        </h2>
+        <p className="text-muted-foreground">{t("security.subtitle")}</p>
       </div>
 
       {/* Info card */}
@@ -269,11 +278,9 @@ export default function SecurityPage() {
         <CardContent className="flex items-start gap-3 p-4">
           <ShieldCheck className="h-5 w-5 text-primary mt-0.5 shrink-0" />
           <div className="text-sm space-y-1">
-            <p className="font-medium">Multiple-device support</p>
+            <p className="font-medium">{t("security.multiDeviceSupport")}</p>
             <p className="text-muted-foreground">
-              Register a passkey on each device you use (laptop, phone, tablet).
-              Any registered passkey can sign actions. You cannot delete your
-              last passkey — at least one must remain active at all times.
+              {t("security.multiDeviceDescription")}
             </p>
           </div>
         </CardContent>
@@ -283,7 +290,7 @@ export default function SecurityPage() {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold">
-            Registered Passkeys
+            {t("security.registeredPasskeys")}
             {passkeys && (
               <Badge variant="secondary" className="ml-2">
                 {passkeys.length}
@@ -293,7 +300,7 @@ export default function SecurityPage() {
           {!showAddForm && (
             <Button size="sm" onClick={() => setShowAddForm(true)}>
               <Plus className="mr-2 h-4 w-4" />
-              Add Device
+              {t("security.addDevice")}
             </Button>
           )}
         </div>
@@ -304,18 +311,15 @@ export default function SecurityPage() {
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">
                 <Fingerprint className="h-4 w-4" />
-                Register New Passkey
+                {t("security.registerNewPasskey")}
               </CardTitle>
-              <CardDescription>
-                A biometric prompt will appear. Use Face ID, Touch ID, or your
-                device PIN to create the passkey.
-              </CardDescription>
+              <CardDescription>{t("security.biometricPrompt")}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <Input
                 value={deviceName}
                 onChange={(e) => setDeviceName(e.target.value)}
-                placeholder="Device name (optional) — e.g. MacBook Pro, iPhone 16"
+                placeholder={t("security.deviceNamePlaceholder")}
               />
               <div className="flex gap-2">
                 <Button
@@ -324,7 +328,9 @@ export default function SecurityPage() {
                   size="sm"
                 >
                   <Fingerprint className="mr-2 h-4 w-4" />
-                  {registering ? "Registering…" : "Register Passkey"}
+                  {registering
+                    ? t("security.registering")
+                    : t("security.registerPasskey")}
                 </Button>
                 <Button
                   variant="ghost"
@@ -334,7 +340,7 @@ export default function SecurityPage() {
                     setDeviceName("");
                   }}
                 >
-                  Cancel
+                  {t("common.cancel")}
                 </Button>
               </div>
             </CardContent>
@@ -343,29 +349,27 @@ export default function SecurityPage() {
 
         {/* Loading / error states */}
         {isLoading && (
-          <p className="text-sm text-muted-foreground">Loading passkeys…</p>
+          <p className="text-sm text-muted-foreground">
+            {t("security.loadingPasskeys")}
+          </p>
         )}
         {error && (
-          <p className="text-sm text-destructive">Failed to load passkeys.</p>
+          <p className="text-sm text-destructive">
+            {t("security.failedToLoadPasskeys")}
+          </p>
         )}
 
         {/* Passkey cards */}
         {passkeys?.map((pk) => (
-          <PasskeyCard
-            key={pk.id}
-            passkey={pk}
-            isOnly={passkeys.length <= 1}
-          />
+          <PasskeyCard key={pk.id} passkey={pk} isOnly={passkeys.length <= 1} />
         ))}
 
         {passkeys && passkeys.length === 0 && (
           <Card>
             <CardContent className="p-6 text-center text-muted-foreground">
               <Fingerprint className="mx-auto h-8 w-8 mb-2 opacity-40" />
-              <p>No passkeys registered.</p>
-              <p className="text-sm">
-                Click &ldquo;Add Device&rdquo; to register your first passkey.
-              </p>
+              <p>{t("security.noPasskeysRegistered")}</p>
+              <p className="text-sm">{t("security.noPasskeysHint")}</p>
             </CardContent>
           </Card>
         )}

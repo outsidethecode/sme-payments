@@ -54,6 +54,7 @@ import {
 import { toast } from "sonner";
 import Link from "next/link";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import { useTranslation } from "@/i18n";
 import {
   ArrowLeft,
   Send,
@@ -105,6 +106,7 @@ function PolicyBanner({
   noPermissionText?: string;
   actionLink?: { href: string; label: string };
 }) {
+  const { t } = useTranslation();
   const rolesFormatted = requiredRoles
     ?.map((r) => r.charAt(0) + r.slice(1).toLowerCase())
     .join(" or ");
@@ -139,47 +141,44 @@ function PolicyBanner({
           </p>
         )}
         <div className="mt-2 rounded-md bg-amber-100/60 dark:bg-amber-900/30 px-3 py-2 text-sm space-y-1">
-          <p className="font-medium">Policy: {policyName}</p>
+          <p className="font-medium">
+            {t("poDetail.policyLabel", { name: policyName })}
+          </p>
           <p>
             {autoApprove ? (
-              <>
-                This amount qualifies for{" "}
-                <span className="font-semibold">auto-approval</span>.
-              </>
+              <>{t("poDetail.autoApprovalQualify")}</>
             ) : (
               <>
-                Requires{" "}
-                <span className="font-semibold">
-                  {requiredApprovals ?? 1}{" "}
-                  {(requiredApprovals ?? 1) === 1 ? "approval" : "approvals"}
-                </span>
+                {t("poDetail.requiresApprovals", {
+                  count: requiredApprovals ?? 1,
+                  approvalWord:
+                    (requiredApprovals ?? 1) === 1
+                      ? t("poDetail.approval")
+                      : t("poDetail.approvals"),
+                })}{" "}
                 {rolesFormatted && (
-                  <>
-                    {" "}
-                    from a team member with the{" "}
-                    <span className="font-semibold">{rolesFormatted}</span> role
-                  </>
+                  <>{t("poDetail.fromRoleWith", { roles: rolesFormatted })}</>
                 )}
-                .
               </>
             )}
           </p>
           {currentApprovals !== undefined &&
             requiredApprovals !== undefined && (
               <p>
-                Progress: {currentApprovals} of {requiredApprovals} received.
+                {t("poDetail.approvalProgress", {
+                  current: currentApprovals,
+                  required: requiredApprovals,
+                })}
               </p>
             )}
         </div>
         {noPermissionText && !hasPermission && userRole && (
           <p className="flex items-center gap-1.5 text-sm text-amber-700 dark:text-amber-400">
             <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-            Your role (
-            <span className="font-semibold">
-              {userRole.charAt(0)}
-              {userRole.slice(1).toLowerCase()}
-            </span>
-            ) {noPermissionText}
+            {t("poDetail.noPermissionRole", {
+              role: userRole.charAt(0) + userRole.slice(1).toLowerCase(),
+              text: noPermissionText,
+            })}
           </p>
         )}
       </AlertDescription>
@@ -190,6 +189,7 @@ function PolicyBanner({
 export default function PurchaseOrderDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { hasPasskey, signing, signAction } = usePasskey();
 
@@ -220,7 +220,7 @@ export default function PurchaseOrderDetailPage() {
   useEffect(() => {
     if (po?.status === "FULFILLMENT" && escrowDetails) {
       setEscrowDetails(null);
-      toast.success("Bank confirmed — escrow funded, supplier can begin work");
+      toast.success(t("poDetail.bankConfirmedToast"));
       queryClient.invalidateQueries({ queryKey: ["ledger", id] });
     }
   }, [po?.status, escrowDetails, queryClient, id]);
@@ -560,7 +560,9 @@ export default function PurchaseOrderDetailPage() {
 
   if (!po) {
     return (
-      <div className="text-muted-foreground">Purchase order not found</div>
+      <div className="text-muted-foreground">
+        {t("poDetail.purchaseOrderNotFound")}
+      </div>
     );
   }
 
@@ -592,7 +594,7 @@ export default function PurchaseOrderDetailPage() {
             </Badge>
           </div>
           <p className="text-sm text-muted-foreground">
-            Created {formatDate(po.createdAt)}
+            {t("poDetail.createdDate", { date: formatDate(po.createdAt) })}
           </p>
         </div>
         <EvidencePackButton purchaseOrderId={id} />
@@ -601,11 +603,15 @@ export default function PurchaseOrderDetailPage() {
       {/* Pending Approval Banner */}
       {po.status === "PENDING_APPROVAL" && (
         <PolicyBanner
-          title="Awaiting Approval"
-          description="This purchase order requires approval before it can be sent to the supplier. Team members with the appropriate role can approve it on the"
-          actionLink={{ href: "/dashboard/approvals", label: "Approvals page" }}
+          title={t("poDetail.awaitingApproval")}
+          description={t("poDetail.awaitingApprovalDescription")}
+          actionLink={{
+            href: "/dashboard/approvals",
+            label: t("poDetail.approvalsPage"),
+          }}
           policyName={
-            pendingApproval?.policyRule?.name ?? "Organisation policy"
+            pendingApproval?.policyRule?.name ??
+            t("poDetail.organisationPolicy")
           }
           requiredApprovals={pendingApproval?.requiredApprovals}
           requiredRoles={pendingApproval?.policyRule?.requiredRoles}
@@ -617,55 +623,55 @@ export default function PurchaseOrderDetailPage() {
       {/* Supplier Acceptance Policy Banner */}
       {isSupplier && po.status === "SENT" && supplierPolicy?.rule && (
         <PolicyBanner
-          title="Supplier Acceptance Policy"
-          description="Your organisation's policy for accepting purchase orders."
+          title={t("poDetail.supplierAcceptancePolicy")}
+          description={t("poDetail.supplierAcceptancePolicyDesc")}
           policyName={supplierPolicy.rule.name}
           requiredApprovals={supplierPolicy.rule.requiredApprovals}
           requiredRoles={supplierPolicy.rule.requiredRoles}
           autoApprove={supplierPolicy.rule.autoApprove}
           userRole={user?.orgRole}
-          noPermissionText="does not have permission to act on this PO."
+          noPermissionText={t("poDetail.doesNotHavePermission")}
         />
       )}
 
       {/* Negotiation Policy Banner */}
       {canRespondToCounter && negotiationPolicy?.rule && (
         <PolicyBanner
-          title="Negotiation Policy"
-          description="Your organisation's policy for responding to counter-proposals."
+          title={t("poDetail.negotiationPolicy")}
+          description={t("poDetail.negotiationPolicyDesc")}
           policyName={negotiationPolicy.rule.name}
           requiredApprovals={negotiationPolicy.rule.requiredApprovals}
           requiredRoles={negotiationPolicy.rule.requiredRoles}
           userRole={user?.orgRole}
-          noPermissionText="does not have permission to respond to this counter-proposal."
+          noPermissionText={t("poDetail.doesNotHavePermissionCounter")}
         />
       )}
 
       {/* Supplier Fulfillment Policy Banner */}
       {isSupplier && po.status === "FULFILLMENT" && earlyPayPolicy?.rule && (
         <PolicyBanner
-          title="Early Payment Policy"
-          description="Your organisation's policy for requesting early payment."
+          title={t("poDetail.earlyPaymentPolicy")}
+          description={t("poDetail.earlyPaymentPolicyDesc")}
           policyName={earlyPayPolicy.rule.name}
           requiredApprovals={earlyPayPolicy.rule.requiredApprovals}
           requiredRoles={earlyPayPolicy.rule.requiredRoles}
           autoApprove={earlyPayPolicy.rule.autoApprove}
           userRole={user?.orgRole}
-          noPermissionText="does not have permission to request early payment."
+          noPermissionText={t("poDetail.doesNotHavePermissionEarlyPay")}
         />
       )}
 
       {/* Buyer Delivery Verification Policy Banner */}
       {isBuyer && po.status === "DELIVERED" && deliveryPolicy?.rule && (
         <PolicyBanner
-          title="Delivery Verification Policy"
-          description="Your organisation's policy for verifying delivery."
+          title={t("poDetail.deliveryVerificationPolicy")}
+          description={t("poDetail.deliveryVerificationPolicyDesc")}
           policyName={deliveryPolicy.rule.name}
           requiredApprovals={deliveryPolicy.rule.requiredApprovals}
           requiredRoles={deliveryPolicy.rule.requiredRoles}
           autoApprove={deliveryPolicy.rule.autoApprove}
           userRole={user?.orgRole}
-          noPermissionText="does not have permission to verify delivery."
+          noPermissionText={t("poDetail.doesNotHavePermissionVerify")}
         />
       )}
 
@@ -676,44 +682,41 @@ export default function PurchaseOrderDetailPage() {
           <Alert className="border-green-500/50 bg-green-50 dark:bg-green-950/20">
             <CheckCircle className="h-4 w-4 text-green-600" />
             <AlertTitle className="text-green-800 dark:text-green-200">
-              Dispute Resolved
+              {t("poDetail.disputeResolved")}
             </AlertTitle>
             <AlertDescription className="text-green-700 dark:text-green-300 space-y-2">
               <p>
-                This dispute was resolved with outcome:{" "}
+                {t("poDetail.disputeResolvedOutcome", { outcome: "" })}{" "}
                 <span className="font-semibold">
                   {poDispute.outcome === "FULL_REFUND"
-                    ? "Full Refund"
+                    ? t("poDetail.outcomeFullRefund")
                     : poDispute.outcome === "PARTIAL_REFUND"
-                      ? "Partial Refund"
+                      ? t("poDetail.outcomePartialRefund")
                       : poDispute.outcome === "RELEASE_TO_SUPPLIER"
-                        ? "Released to Supplier"
+                        ? t("poDetail.outcomeReleaseToSupplier")
                         : poDispute.outcome === "REWORK"
-                          ? "Rework Required"
+                          ? t("poDetail.outcomeRework")
                           : statusLabel(poDispute.outcome ?? "")}
                 </span>
               </p>
               {poDispute.refundAmount !== null &&
                 poDispute.refundAmount !== undefined && (
                   <p className="text-sm">
-                    Refund Amount:{" "}
-                    <span className="font-semibold">
-                      {formatCurrency(
+                    {t("poDetail.refundAmountLabel", {
+                      amount: formatCurrency(
                         poDispute.refundAmount,
                         po.currency as "GBP" | "SAR",
-                      )}
-                    </span>{" "}
-                    of{" "}
-                    {formatCurrency(
-                      po.totalAmountPennies,
-                      po.currency as "GBP" | "SAR",
-                    )}{" "}
-                    total
+                      ),
+                      total: formatCurrency(
+                        po.totalAmountPennies,
+                        po.currency as "GBP" | "SAR",
+                      ),
+                    })}
                   </p>
                 )}
               {poDispute.resolutionNotes && (
                 <div className="rounded-md bg-green-100/60 dark:bg-green-900/30 px-3 py-2 text-sm">
-                  <p className="font-medium">Resolution Notes</p>
+                  <p className="font-medium">{t("poDetail.resolutionNotes")}</p>
                   <p>{poDispute.resolutionNotes}</p>
                 </div>
               )}
@@ -721,7 +724,7 @@ export default function PurchaseOrderDetailPage() {
                 href={`/dashboard/disputes/${poDispute.id}`}
                 className="inline-block text-xs underline"
               >
-                View full dispute details
+                {t("poDetail.viewFullDisputeDetails")}
               </Link>
             </AlertDescription>
           </Alert>
@@ -732,52 +735,52 @@ export default function PurchaseOrderDetailPage() {
         <Alert className="border-red-500/50 bg-red-50 dark:bg-red-950/20">
           <Scale className="h-4 w-4 text-red-600" />
           <AlertTitle className="text-red-800 dark:text-red-200">
-            Dispute in Progress
+            {t("poDetail.disputeInProgress")}
           </AlertTitle>
           <AlertDescription className="text-red-700 dark:text-red-300 space-y-2">
             {poDispute ? (
               <>
                 <p>
-                  This PO was disputed by the buyer. Status:{" "}
-                  <span className="font-semibold">
-                    {statusLabel(poDispute.status)}
-                  </span>
+                  {t("poDetail.disputedByBuyer", {
+                    status: statusLabel(poDispute.status),
+                  })}
                 </p>
                 <div className="rounded-md bg-red-100/60 dark:bg-red-900/30 px-3 py-2 text-sm space-y-1">
-                  <p className="font-medium">Reason</p>
+                  <p className="font-medium">{t("poDetail.reason")}</p>
                   <p>{poDispute.reason}</p>
                 </div>
                 <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm mt-2">
                   <span>
-                    Buyer Evidence:{" "}
+                    {t("poDetail.buyerEvidence")}{" "}
                     <span className="font-semibold">
                       {(poDispute.buyerEvidence?.length ?? 0) > 0
-                        ? `${poDispute.buyerEvidence!.length} file(s)`
-                        : "None yet"}
+                        ? t("poDetail.filesCount", {
+                            count: poDispute.buyerEvidence!.length,
+                          })
+                        : t("poDetail.noneYet")}
                     </span>
                   </span>
                   <span>
-                    Supplier Evidence:{" "}
+                    {t("poDetail.supplierEvidence")}{" "}
                     <span className="font-semibold">
                       {(poDispute.supplierEvidence?.length ?? 0) > 0
-                        ? `${poDispute.supplierEvidence!.length} file(s)`
-                        : "None yet"}
+                        ? t("poDetail.filesCount", {
+                            count: poDispute.supplierEvidence!.length,
+                          })
+                        : t("poDetail.noneYet")}
                     </span>
                   </span>
                 </div>
                 <p className="text-xs text-red-600 dark:text-red-400 mt-1">
                   {user?.role === "ADMIN"
-                    ? "As admin, you can review and resolve this dispute from the Disputes page."
+                    ? t("poDetail.adminResolveHint")
                     : user?.role === "BUYER" || user?.role === "SUPPLIER"
-                      ? "Both buyer and supplier can submit evidence. An admin will review and resolve the dispute."
-                      : "An admin will review the evidence and decide the outcome."}
+                      ? t("poDetail.bothPartiesHint")
+                      : t("poDetail.adminWillReview")}
                 </p>
               </>
             ) : (
-              <p>
-                This purchase order is under dispute. A platform admin will
-                review and resolve it.
-              </p>
+              <p>{t("poDetail.poUnderDispute")}</p>
             )}
           </AlertDescription>
         </Alert>
@@ -788,7 +791,7 @@ export default function PurchaseOrderDetailPage() {
         {signing && (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Fingerprint className="h-4 w-4 animate-pulse" />
-            Waiting for biometric…
+            {t("poDetail.waitingForBiometric")}
           </div>
         )}
         {isBuyer && po.status === "DRAFT" && (
@@ -797,7 +800,7 @@ export default function PurchaseOrderDetailPage() {
             disabled={sendMutation.isPending || signing}
           >
             <Send className="mr-2 h-4 w-4" />
-            Send to Supplier
+            {t("poDetail.sendToSupplier")}
           </Button>
         )}
         {isSupplier &&
@@ -819,7 +822,7 @@ export default function PurchaseOrderDetailPage() {
                   disabled={acceptMutation.isPending || signing}
                 >
                   <Check className="mr-2 h-4 w-4" />
-                  Accept
+                  {t("poDetail.accept")}
                 </Button>
                 {(po.currentRevision ?? 0) === 0 && (
                   <Button
@@ -832,7 +835,7 @@ export default function PurchaseOrderDetailPage() {
                     disabled={counterMutation.isPending || signing}
                   >
                     <MessageSquare className="mr-2 h-4 w-4" />
-                    Counter-Propose
+                    {t("poDetail.counterPropose")}
                   </Button>
                 )}
                 <Button
@@ -841,7 +844,7 @@ export default function PurchaseOrderDetailPage() {
                   disabled={rejectMutation.isPending || signing}
                 >
                   <X className="mr-2 h-4 w-4" />
-                  Reject
+                  {t("poDetail.reject")}
                 </Button>
               </>
             );
@@ -855,7 +858,7 @@ export default function PurchaseOrderDetailPage() {
               disabled={fundEscrowMutation.isPending || signing}
             >
               <Wallet className="mr-2 h-4 w-4" />
-              Fund Escrow
+              {t("poDetail.fundEscrow")}
             </Button>
           )}
         {isBuyer &&
@@ -863,7 +866,7 @@ export default function PurchaseOrderDetailPage() {
           (escrowDetails || isServerFundingPending) && (
             <div className="flex items-center gap-2 text-sm text-amber-600 font-medium">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Awaiting bank confirmation…
+              {t("poDetail.awaitingBankConfirmation")}
             </div>
           )}
         {isSupplier &&
@@ -881,12 +884,12 @@ export default function PurchaseOrderDetailPage() {
                 {po.paymentLock?.status === "LOCKED" ? (
                   <div className="flex items-center gap-2 text-sm font-medium text-green-600">
                     <ShieldCheck className="h-5 w-5" />
-                    Payment Secured — Buyer has funded escrow
+                    {t("poDetail.paymentSecured")}
                   </div>
                 ) : (
                   <div className="flex items-center gap-2 text-sm font-medium text-amber-600">
                     <AlertTriangle className="h-5 w-5" />
-                    Payment Not Locked — Waiting for buyer to fund escrow
+                    {t("poDetail.paymentNotLocked")}
                   </div>
                 )}
                 <Separator />
@@ -901,32 +904,28 @@ export default function PurchaseOrderDetailPage() {
                       }
                     >
                       <Package className="mr-2 h-4 w-4" />
-                      Mark Shipped
+                      {t("poDetail.markShipped")}
                     </Button>
                     {!hasEarlyPayRequest &&
                     po.paymentLock?.status === "LOCKED" ? (
                       <Link href="/dashboard/early-payments">
                         <Button variant="outline">
                           <CreditCard className="mr-2 h-4 w-4" />
-                          Request Early Payment
+                          {t("poDetail.requestEarlyPayment")}
                         </Button>
                       </Link>
                     ) : hasEarlyPayRequest ? (
                       <span className="inline-flex items-center rounded-md bg-amber-50 px-3 py-1 text-sm font-medium text-amber-700 ring-1 ring-inset ring-amber-300">
                         <CreditCard className="mr-1.5 h-4 w-4" />
-                        Early Payment Requested
+                        {t("poDetail.earlyPaymentRequested")}
                       </span>
                     ) : null}
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">
-                    Your role (
-                    <span className="font-semibold">
-                      {user?.orgRole?.charAt(0)}
-                      {user?.orgRole?.slice(1).toLowerCase()}
-                    </span>
-                    ) does not have permission to perform actions on this PO.
-                    Required: {fulfillmentRoles.join(", ")}.
+                    {t("poDetail.doesNotHavePermissionActions", {
+                      roles: fulfillmentRoles.join(", "),
+                    })}
                   </p>
                 )}
               </div>
@@ -949,19 +948,19 @@ export default function PurchaseOrderDetailPage() {
                   disabled={deliverMutation.isPending || signing}
                 >
                   <Truck className="mr-2 h-4 w-4" />
-                  Mark Delivered
+                  {t("poDetail.markDelivered")}
                 </Button>
                 {!hasEarlyPayRequest && po.paymentLock?.status === "LOCKED" ? (
                   <Link href="/dashboard/early-payments">
                     <Button variant="outline">
                       <CreditCard className="mr-2 h-4 w-4" />
-                      Request Early Payment
+                      {t("poDetail.requestEarlyPayment")}
                     </Button>
                   </Link>
                 ) : hasEarlyPayRequest ? (
                   <span className="inline-flex items-center rounded-md bg-amber-50 px-3 py-1 text-sm font-medium text-amber-700 ring-1 ring-inset ring-amber-300">
                     <CreditCard className="mr-1.5 h-4 w-4" />
-                    Early Payment Requested
+                    {t("poDetail.earlyPaymentRequested")}
                   </span>
                 ) : null}
               </>
@@ -981,7 +980,7 @@ export default function PurchaseOrderDetailPage() {
               return (
                 <span className="inline-flex items-center rounded-md bg-amber-50 px-3 py-1 text-sm font-medium text-amber-700 ring-1 ring-inset ring-amber-300">
                   <CreditCard className="mr-1.5 h-4 w-4" />
-                  Early Payment Requested
+                  {t("poDetail.earlyPaymentRequested")}
                 </span>
               );
             if (po.paymentLock?.status !== "LOCKED") return null;
@@ -989,7 +988,7 @@ export default function PurchaseOrderDetailPage() {
               <Link href="/dashboard/early-payments">
                 <Button>
                   <CreditCard className="mr-2 h-4 w-4" />
-                  Request Early Payment
+                  {t("poDetail.requestEarlyPayment")}
                 </Button>
               </Link>
             );
@@ -1011,7 +1010,7 @@ export default function PurchaseOrderDetailPage() {
                   disabled={verifyMutation.isPending || signing}
                 >
                   <ShieldCheck className="mr-2 h-4 w-4" />
-                  Verify Delivery
+                  {t("poDetail.verifyDelivery")}
                 </Button>
                 <Button
                   variant="destructive"
@@ -1019,7 +1018,7 @@ export default function PurchaseOrderDetailPage() {
                   disabled={disputeMutation.isPending || signing}
                 >
                   <AlertTriangle className="mr-2 h-4 w-4" />
-                  Dispute
+                  {t("poDetail.dispute")}
                 </Button>
               </>
             );
@@ -1040,7 +1039,7 @@ export default function PurchaseOrderDetailPage() {
                 disabled={acknowledgeMutation.isPending || signing}
               >
                 <HandCoins className="mr-2 h-4 w-4" />
-                Acknowledge &amp; Settle
+                {t("poDetail.acknowledgeAndSettle")}
               </Button>
             );
           })()}
@@ -1063,7 +1062,7 @@ export default function PurchaseOrderDetailPage() {
                   disabled={acceptCounterMutation.isPending || signing}
                 >
                   <Check className="mr-2 h-4 w-4" />
-                  Accept Counter
+                  {t("poDetail.acceptCounter")}
                 </Button>
                 <Button
                   variant="outline"
@@ -1080,7 +1079,7 @@ export default function PurchaseOrderDetailPage() {
                   disabled={counterMutation.isPending || signing}
                 >
                   <RotateCcw className="mr-2 h-4 w-4" />
-                  Counter Again
+                  {t("poDetail.counterAgain")}
                 </Button>
                 <Button
                   variant="destructive"
@@ -1088,7 +1087,7 @@ export default function PurchaseOrderDetailPage() {
                   disabled={rejectCounterMutation.isPending || signing}
                 >
                   <X className="mr-2 h-4 w-4" />
-                  Reject Counter
+                  {t("poDetail.rejectCounter")}
                 </Button>
               </>
             );
@@ -1102,7 +1101,7 @@ export default function PurchaseOrderDetailPage() {
               <div className="flex w-full flex-col gap-3 rounded-lg border border-red-200 bg-red-50/30 dark:border-red-900 dark:bg-red-950/10 p-4">
                 <div className="flex items-center gap-2 text-sm font-medium text-red-700 dark:text-red-400">
                   <Scale className="h-5 w-5" />
-                  Dispute Actions
+                  {t("poDetail.disputeActions")}
                 </div>
                 <Separator />
                 <div className="flex flex-wrap gap-2">
@@ -1111,7 +1110,7 @@ export default function PurchaseOrderDetailPage() {
                       <Link href={disputeHref}>
                         <Button>
                           <FileText className="mr-2 h-4 w-4" />
-                          Submit Evidence
+                          {t("poDetail.submitEvidence")}
                         </Button>
                       </Link>
                     )}
@@ -1119,21 +1118,20 @@ export default function PurchaseOrderDetailPage() {
                     <Link href={disputeHref}>
                       <Button>
                         <Scale className="mr-2 h-4 w-4" />
-                        Review &amp; Resolve
+                        {t("poDetail.reviewAndResolve")}
                       </Button>
                     </Link>
                   )}
                   <Link href={disputeHref}>
                     <Button variant="outline">
                       <ExternalLink className="mr-2 h-4 w-4" />
-                      View Details
+                      {t("poDetail.viewDetails")}
                     </Button>
                   </Link>
                 </div>
                 {!isAdmin && (
                   <p className="text-xs text-muted-foreground">
-                    Only a platform admin can resolve disputes. Contact your
-                    admin or wait for the resolution.
+                    {t("poDetail.adminOnlyResolve")}
                   </p>
                 )}
               </div>

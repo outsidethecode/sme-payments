@@ -41,6 +41,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "@/i18n";
 
 export default function SettlementsPage() {
   const { user } = useAuth();
@@ -113,6 +114,7 @@ function statusIcon(status: string) {
 
 function UserView() {
   const { user } = useAuth();
+  const { t } = useTranslation();
   const { data: settlements, isLoading } = useQuery({
     queryKey: ["settlements"],
     queryFn: () => settlementsApi.list().then((r) => r.data),
@@ -136,10 +138,10 @@ function UserView() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Settlements</h1>
-          <p className="text-muted-foreground">
-            Track all fund transfers for your purchase orders.
-          </p>
+          <h1 className="text-2xl font-bold tracking-tight">
+            {t("settlements.title")}
+          </h1>
+          <p className="text-muted-foreground">{t("settlements.subtitle")}</p>
         </div>
         {adapterInfo && (
           <Badge
@@ -147,7 +149,7 @@ function UserView() {
             className="flex items-center gap-1.5 px-3 py-1"
           >
             <Server className="h-3.5 w-3.5" />
-            {adapterInfo.adapter} Rail
+            {t("settlements.railBadge", { adapter: adapterInfo.adapter })}
           </Badge>
         )}
       </div>
@@ -157,7 +159,7 @@ function UserView() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">
-              Total Settlements
+              {t("settlements.totalSettlements")}
             </CardTitle>
             <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
@@ -168,7 +170,7 @@ function UserView() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">
-              Completed Volume
+              {t("settlements.completedVolume")}
             </CardTitle>
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
@@ -180,7 +182,9 @@ function UserView() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Success Rate</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              {t("settlements.successRate")}
+            </CardTitle>
             <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -199,8 +203,7 @@ function UserView() {
       {items.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
-            No settlements yet. Settlements are created when purchase orders are
-            verified or early payments are funded.
+            {t("settlements.noSettlements")}
           </CardContent>
         </Card>
       ) : (
@@ -214,6 +217,7 @@ function UserView() {
 
 function AdminView() {
   const queryClient = useQueryClient();
+  const { t } = useTranslation();
   const [reconcilingId, setReconcilingId] = useState<string | null>(null);
 
   const { data: settlements, isLoading } = useQuery({
@@ -237,17 +241,20 @@ function AdminView() {
     onSuccess: (result) => {
       if (result.changed) {
         toast.success(
-          `Settlement reconciled: ${result.previousStatus} → ${result.currentStatus}`,
+          t("settlements.reconciled", {
+            prev: result.previousStatus,
+            current: result.currentStatus,
+          }),
         );
       } else {
-        toast.info("Settlement status unchanged — already up to date.");
+        toast.info(t("settlements.reconcileUnchanged"));
       }
       queryClient.invalidateQueries({ queryKey: ["settlements"] });
       queryClient.invalidateQueries({ queryKey: ["settlements-pending"] });
       setReconcilingId(null);
     },
     onError: () => {
-      toast.error("Reconciliation failed.");
+      toast.error(t("settlements.reconcileFailed"));
       setReconcilingId(null);
     },
   });
@@ -265,10 +272,10 @@ function AdminView() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">
-            Settlement Management
+            {t("settlements.adminTitle")}
           </h1>
           <p className="text-muted-foreground">
-            Monitor all platform settlements and trigger reconciliation.
+            {t("settlements.adminSubtitle")}
           </p>
         </div>
         {adapterInfo && (
@@ -277,7 +284,7 @@ function AdminView() {
             className="flex items-center gap-1.5 px-3 py-1"
           >
             <Server className="h-3.5 w-3.5" />
-            {adapterInfo.adapter} Rail
+            {t("settlements.railBadge", { adapter: adapterInfo.adapter })}
           </Badge>
         )}
       </div>
@@ -286,7 +293,9 @@ function AdminView() {
       <div className="grid gap-4 sm:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Total</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              {t("settlements.adminTotal")}
+            </CardTitle>
             <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -295,7 +304,9 @@ function AdminView() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Completed</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              {t("settlements.adminCompleted")}
+            </CardTitle>
             <CheckCircle2 className="h-4 w-4 text-emerald-600" />
           </CardHeader>
           <CardContent>
@@ -304,7 +315,9 @@ function AdminView() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Pending</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              {t("settlements.adminPending")}
+            </CardTitle>
             <Clock className="h-4 w-4 text-amber-500" />
           </CardHeader>
           <CardContent>
@@ -313,7 +326,9 @@ function AdminView() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Failed</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              {t("settlements.adminFailed")}
+            </CardTitle>
             <XCircle className="h-4 w-4 text-red-600" />
           </CardHeader>
           <CardContent>
@@ -324,8 +339,12 @@ function AdminView() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Platform Volume</CardTitle>
-          <CardDescription>Total completed settlement volume</CardDescription>
+          <CardTitle className="text-lg">
+            {t("settlements.platformVolume")}
+          </CardTitle>
+          <CardDescription>
+            {t("settlements.totalCompletedVolume")}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {(() => {
@@ -358,18 +377,20 @@ function AdminView() {
           <Separator />
           <div>
             <h2 className="mb-3 text-lg font-semibold">
-              Pending Reconciliation
+              {t("settlements.pendingReconciliation")}
             </h2>
             <Card>
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>PO Ref</TableHead>
-                    <TableHead>Amount</TableHead>
-                    <TableHead>Rail</TableHead>
-                    <TableHead>External Ref</TableHead>
+                    <TableHead>{t("settlements.colAmount")}</TableHead>
+                    <TableHead>{t("settlements.colRail")}</TableHead>
+                    <TableHead>{t("settlements.colExternalRef")}</TableHead>
                     <TableHead>Created</TableHead>
-                    <TableHead className="text-right">Action</TableHead>
+                    <TableHead className="text-right">
+                      {t("settlements.colAction")}
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -414,7 +435,7 @@ function AdminView() {
                           <RefreshCw
                             className={`mr-1.5 h-3.5 w-3.5 ${reconcilingId === s.id ? "animate-spin" : ""}`}
                           />
-                          Reconcile
+                          {t("settlements.reconcile")}
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -430,11 +451,13 @@ function AdminView() {
 
       {/* All Settlements */}
       <div>
-        <h2 className="mb-3 text-lg font-semibold">All Settlements</h2>
+        <h2 className="mb-3 text-lg font-semibold">
+          {t("settlements.allSettlements")}
+        </h2>
         {items.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center text-muted-foreground">
-              No settlements recorded yet.
+              {t("settlements.noSettlementsRecorded")}
             </CardContent>
           </Card>
         ) : (
@@ -477,21 +500,26 @@ function SettlementsTable({
   reconcilingId?: string | null;
   isReconciling?: boolean;
 }) {
+  const { t } = useTranslation();
   return (
     <Card>
       <Table>
         <TableHeader>
           <TableRow>
-            {showPO && <TableHead>PO</TableHead>}
-            <TableHead>Type</TableHead>
-            <TableHead>Amount</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Rail</TableHead>
-            <TableHead>External Ref</TableHead>
-            {showCounterparty && <TableHead>From → To</TableHead>}
-            <TableHead>Date</TableHead>
+            {showPO && <TableHead>{t("settlements.colPO")}</TableHead>}
+            <TableHead>{t("settlements.colType")}</TableHead>
+            <TableHead>{t("settlements.colAmount")}</TableHead>
+            <TableHead>{t("settlements.colStatus")}</TableHead>
+            <TableHead>{t("settlements.colRail")}</TableHead>
+            <TableHead>{t("settlements.colExternalRef")}</TableHead>
+            {showCounterparty && (
+              <TableHead>{t("settlements.colFromTo")}</TableHead>
+            )}
+            <TableHead>{t("settlements.colDate")}</TableHead>
             {showReconcile && (
-              <TableHead className="text-right">Action</TableHead>
+              <TableHead className="text-right">
+                {t("settlements.colAction")}
+              </TableHead>
             )}
           </TableRow>
         </TableHeader>
@@ -507,7 +535,15 @@ function SettlementsTable({
               <TableCell>
                 <span className="flex items-center gap-1.5">
                   {typeIcon(s.type)}
-                  <span className="text-sm">{typeLabel(s.type)}</span>
+                  <span className="text-sm">
+                    {s.type === "STANDARD"
+                      ? t("settlements.typeStandard")
+                      : s.type === "EARLY_PAY_ADVANCE"
+                        ? t("settlements.typeEarlyPayAdvance")
+                        : s.type === "EARLY_PAY_SETTLEMENT"
+                          ? t("settlements.typeEarlyPaySettlement")
+                          : statusLabel(s.type)}
+                  </span>
                 </span>
               </TableCell>
               <TableCell className="font-medium">

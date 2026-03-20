@@ -17,6 +17,7 @@ import {
 } from "../common/guards/onboarding.guard";
 import { PasskeyGuard, RequirePasskey } from "../common/guards/passkey.guard";
 import { Roles } from "../auth/roles.decorator";
+import { Idempotent } from "../idempotency/idempotent.decorator";
 import { DisputesService } from "./disputes.service";
 
 @Controller("disputes")
@@ -80,6 +81,7 @@ export class DisputesController {
   @Patch(":id/resolve")
   @UseGuards(RolesGuard)
   @Roles("ADMIN")
+  @Idempotent()
   async resolve(
     @Req() req: any,
     @Param("id") id: string,

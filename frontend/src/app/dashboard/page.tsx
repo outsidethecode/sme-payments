@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "@/lib/auth-context";
+import { useTranslation } from "@/i18n";
 import { useQuery } from "@tanstack/react-query";
 import { poApi, usersApi, adminApi } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
@@ -27,6 +28,7 @@ import {
 
 export default function DashboardPage() {
   const { user } = useAuth();
+  const { t } = useTranslation();
 
   const { data: pos, isLoading: posLoading } = useQuery({
     queryKey: ["purchase-orders"],
@@ -48,7 +50,9 @@ export default function DashboardPage() {
 
   if (!user) return null;
 
-  const greeting = `Welcome, ${user.name.split(" ")[0]}`;
+  const greeting = t("dashboard.welcome", {
+    firstName: user.name.split(" ")[0],
+  });
 
   // Compute quick stats
   const totalPOs = pos?.length ?? 0;
@@ -91,7 +95,7 @@ export default function DashboardPage() {
           <Link href="/dashboard/purchase-orders/new">
             <Button>
               <Plus className="mr-2 h-4 w-4" />
-              New Purchase Order
+              {t("dashboard.newPurchaseOrder")}
             </Button>
           </Link>
         )}
@@ -100,7 +104,11 @@ export default function DashboardPage() {
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          title={isAdmin ? "Escrow Balance" : "Account Balance"}
+          title={
+            isAdmin
+              ? t("dashboard.escrowBalance")
+              : t("dashboard.accountBalance")
+          }
           icon={<Coins className="h-4 w-4 text-muted-foreground" />}
           loading={isAdmin ? adminStatsLoading : balanceLoading}
           value={
@@ -117,17 +125,23 @@ export default function DashboardPage() {
                 ? formatCurrency(balanceData.balance, user.currency ?? "GBP")
                 : "—"
           }
-          description={isAdmin ? "Platform escrow" : "Available funds"}
+          description={
+            isAdmin
+              ? t("dashboard.platformEscrow")
+              : t("dashboard.availableFunds")
+          }
         />
         <StatCard
-          title="Total POs"
+          title={t("dashboard.totalPOs")}
           icon={<FileText className="h-4 w-4 text-muted-foreground" />}
           loading={posLoading}
           value={totalPOs.toString()}
-          description={`${activePOs} active`}
+          description={`${activePOs} ${t("dashboard.activePOs")}`}
         />
         <StatCard
-          title={isAdmin ? "Locked Amount" : "Pending Action"}
+          title={
+            isAdmin ? t("dashboard.lockedAmount") : t("dashboard.pendingAction")
+          }
           icon={
             isAdmin ? (
               <ShieldAlert className="h-4 w-4 text-muted-foreground" />
@@ -149,11 +163,13 @@ export default function DashboardPage() {
               : pendingPOs.toString()
           }
           description={
-            isAdmin ? "Funds locked against POs" : "Awaiting response"
+            isAdmin
+              ? t("dashboard.fundsLockedAgainstPOs")
+              : t("dashboard.awaitingResponse")
           }
         />
         <StatCard
-          title="Total Value"
+          title={t("dashboard.totalValue")}
           icon={<Zap className="h-4 w-4 text-muted-foreground" />}
           loading={isAdmin ? adminStatsLoading : posLoading}
           value={
@@ -174,7 +190,7 @@ export default function DashboardPage() {
                     )
                     .join(" / ")
           }
-          description="All purchase orders"
+          description={t("dashboard.allPurchaseOrders")}
         />
       </div>
 
@@ -205,7 +221,7 @@ export default function DashboardPage() {
               <CardHeader className="flex flex-row items-center gap-2 pb-2">
                 <ShieldAlert className="h-5 w-5 text-amber-600" />
                 <CardTitle className="text-sm font-medium text-amber-800 dark:text-amber-400">
-                  Escrow / Locked Amount Discrepancy
+                  {t("dashboard.escrowLockedDiscrepancy")}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-1">
@@ -221,7 +237,8 @@ export default function DashboardPage() {
                   href="/dashboard/admin/reconciliation"
                   className="inline-flex items-center gap-1 text-sm font-medium text-amber-800 underline underline-offset-2 hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-300"
                 >
-                  Run reconciliation <ArrowRight className="h-3 w-3" />
+                  {t("dashboard.runReconciliation")}{" "}
+                  <ArrowRight className="h-3 w-3" />
                 </Link>
               </CardContent>
             </Card>
@@ -233,14 +250,14 @@ export default function DashboardPage() {
         {user.role === "BUYER" && (
           <>
             <QuickActionCard
-              title="Create Purchase Order"
-              description="Send a new PO to a supplier for goods or services"
+              title={t("dashboard.createPurchaseOrder")}
+              description={t("dashboard.createPODescription")}
               href="/dashboard/purchase-orders/new"
               icon={<Plus className="h-5 w-5" />}
             />
             <QuickActionCard
-              title="View Purchase Orders"
-              description="Track all your purchase orders and their statuses"
+              title={t("dashboard.viewPurchaseOrders")}
+              description={t("dashboard.viewPODescription")}
               href="/dashboard/purchase-orders"
               icon={<FileText className="h-5 w-5" />}
             />
@@ -249,14 +266,14 @@ export default function DashboardPage() {
         {user.role === "SUPPLIER" && (
           <>
             <QuickActionCard
-              title="Incoming Orders"
-              description="View and accept purchase orders from buyers"
+              title={t("dashboard.incomingOrders")}
+              description={t("dashboard.incomingOrdersDescription")}
               href="/dashboard/purchase-orders"
               icon={<FileText className="h-5 w-5" />}
             />
             <QuickActionCard
-              title="Early Payment"
-              description="Request early payment on verified deliveries"
+              title={t("dashboard.earlyPayment")}
+              description={t("dashboard.earlyPaymentDescription")}
               href="/dashboard/early-payments"
               icon={<Zap className="h-5 w-5" />}
             />
@@ -265,14 +282,14 @@ export default function DashboardPage() {
         {user.role === "LIQUIDITY_PARTNER" && (
           <>
             <QuickActionCard
-              title="Marketplace"
-              description="Browse verified POs available for early payment funding"
+              title={t("dashboard.marketplace")}
+              description={t("dashboard.marketplaceDescription")}
               href="/dashboard/early-payments"
               icon={<Zap className="h-5 w-5" />}
             />
             <QuickActionCard
-              title="Audit Ledger"
-              description="Verify the cryptographic integrity of all events"
+              title={t("dashboard.auditLedger")}
+              description={t("dashboard.auditLedgerDescription")}
               href="/dashboard/ledger"
               icon={<Lock className="h-5 w-5" />}
             />
@@ -281,14 +298,14 @@ export default function DashboardPage() {
         {user.role === "ADMIN" && (
           <>
             <QuickActionCard
-              title="Platform Admin"
-              description="View platform statistics and manage operations"
+              title={t("dashboard.platformAdmin")}
+              description={t("dashboard.platformAdminDescription")}
               href="/dashboard/admin"
               icon={<Lock className="h-5 w-5" />}
             />
             <QuickActionCard
-              title="Full Ledger"
-              description="Audit the complete event ledger with hash verification"
+              title={t("dashboard.fullLedger")}
+              description={t("dashboard.fullLedgerDescription")}
               href="/dashboard/ledger"
               icon={<FileText className="h-5 w-5" />}
             />

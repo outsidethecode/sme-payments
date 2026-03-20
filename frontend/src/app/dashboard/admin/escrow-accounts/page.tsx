@@ -43,10 +43,12 @@ import { toast } from "sonner";
 import { Building2, Plus, Power, PowerOff } from "lucide-react";
 import { useState } from "react";
 import Link from "next/link";
+import { useTranslation } from "@/i18n";
 
 export default function EscrowAccountsPage() {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
+  const { t } = useTranslation();
 
   const { data: accounts, isLoading } = useQuery({
     queryKey: ["escrow-accounts"],
@@ -58,9 +60,9 @@ export default function EscrowAccountsPage() {
       adminApi.updateEscrowAccount(id, { active }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["escrow-accounts"] });
-      toast.success("Escrow account updated");
+      toast.success(t("escrowAccounts.accountUpdated"));
     },
-    onError: () => toast.error("Failed to update escrow account"),
+    onError: () => toast.error(t("escrowAccounts.accountUpdateFailed")),
   });
 
   const activeAccounts = accounts?.filter((a) => a.active) ?? [];
@@ -73,16 +75,18 @@ export default function EscrowAccountsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Escrow Accounts</h1>
+          <h1 className="text-2xl font-bold tracking-tight">
+            {t("escrowAccounts.title")}
+          </h1>
           <p className="text-sm text-muted-foreground">
-            Manage segregated escrow accounts per country and currency
+            {t("escrowAccounts.subtitle")}
           </p>
         </div>
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogTrigger asChild>
             <Button>
               <Plus className="mr-2 h-4 w-4" />
-              New Account
+              {t("escrowAccounts.newAccount")}
             </Button>
           </DialogTrigger>
           <CreateEscrowDialog
@@ -100,19 +104,23 @@ export default function EscrowAccountsPage() {
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-1.5">
               <Building2 className="h-3.5 w-3.5" />
-              Total Accounts
+              {t("escrowAccounts.totalAccounts")}
             </CardDescription>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold">{accounts?.length ?? 0}</p>
             <p className="text-xs text-muted-foreground mt-1">
-              {activeAccounts.length} active
+              {t("escrowAccounts.activeCount", {
+                count: activeAccounts.length,
+              })}
             </p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Shadow Balance (GBP)</CardDescription>
+            <CardDescription>
+              {t("escrowAccounts.shadowBalanceGBP")}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold">
@@ -127,7 +135,9 @@ export default function EscrowAccountsPage() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Shadow Balance (SAR)</CardDescription>
+            <CardDescription>
+              {t("escrowAccounts.shadowBalanceSAR")}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold">
@@ -147,10 +157,10 @@ export default function EscrowAccountsPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <Building2 className="h-4 w-4" />
-            All Escrow Accounts
+            {t("escrowAccounts.allEscrowAccounts")}
           </CardTitle>
           <CardDescription>
-            Each escrow account holds funds for a specific country/currency pair
+            {t("escrowAccounts.allEscrowDescription")}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -162,20 +172,24 @@ export default function EscrowAccountsPage() {
             </div>
           ) : !accounts?.length ? (
             <div className="py-8 text-center text-muted-foreground">
-              No escrow accounts created yet.
+              {t("escrowAccounts.noAccounts")}
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Label</TableHead>
-                  <TableHead>Bank</TableHead>
-                  <TableHead>Country</TableHead>
-                  <TableHead>Currency</TableHead>
-                  <TableHead className="text-right">Shadow Balance</TableHead>
-                  <TableHead className="text-right">Instruments</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Created</TableHead>
+                  <TableHead>{t("escrowAccounts.colLabel")}</TableHead>
+                  <TableHead>{t("escrowAccounts.colBank")}</TableHead>
+                  <TableHead>{t("escrowAccounts.colCountry")}</TableHead>
+                  <TableHead>{t("escrowAccounts.colCurrency")}</TableHead>
+                  <TableHead className="text-right">
+                    {t("escrowAccounts.colShadowBalance")}
+                  </TableHead>
+                  <TableHead className="text-right">
+                    {t("escrowAccounts.colInstruments")}
+                  </TableHead>
+                  <TableHead>{t("escrowAccounts.colStatus")}</TableHead>
+                  <TableHead>{t("escrowAccounts.colCreated")}</TableHead>
                   <TableHead className="w-12" />
                 </TableRow>
               </TableHeader>
@@ -200,10 +214,12 @@ export default function EscrowAccountsPage() {
                     <TableCell>
                       {acct.active ? (
                         <Badge className="bg-emerald-500/15 text-emerald-700 border-emerald-500/30">
-                          Active
+                          {t("escrowAccounts.activeBadge")}
                         </Badge>
                       ) : (
-                        <Badge variant="secondary">Inactive</Badge>
+                        <Badge variant="secondary">
+                          {t("escrowAccounts.inactiveBadge")}
+                        </Badge>
                       )}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
@@ -215,7 +231,7 @@ export default function EscrowAccountsPage() {
                           href={`/dashboard/admin/escrow-accounts/${acct.id}/statement`}
                         >
                           <Button variant="ghost" size="sm" className="text-xs">
-                            Statement
+                            {t("escrowAccounts.statement")}
                           </Button>
                         </Link>
                         <Button
@@ -251,6 +267,7 @@ export default function EscrowAccountsPage() {
 // ── Create Dialog ─────────────────────────────────────────────
 
 function CreateEscrowDialog({ onCreated }: { onCreated: () => void }) {
+  const { t } = useTranslation();
   const [label, setLabel] = useState("");
   const [bank, setBank] = useState("");
   const [country, setCountry] = useState("GB");
@@ -260,12 +277,12 @@ function CreateEscrowDialog({ onCreated }: { onCreated: () => void }) {
     mutationFn: () =>
       adminApi.createEscrowAccount({ label, bank, country, currency }),
     onSuccess: () => {
-      toast.success("Escrow account created");
+      toast.success(t("escrowAccounts.accountCreated"));
       onCreated();
     },
     onError: (err: Error & { response?: { data?: { message?: string } } }) => {
       toast.error(
-        err.response?.data?.message || "Failed to create escrow account",
+        err.response?.data?.message || t("escrowAccounts.accountCreateFailed"),
       );
     },
   });
@@ -273,52 +290,60 @@ function CreateEscrowDialog({ onCreated }: { onCreated: () => void }) {
   return (
     <DialogContent>
       <DialogHeader>
-        <DialogTitle>Create Escrow Account</DialogTitle>
+        <DialogTitle>{t("escrowAccounts.createEscrowAccount")}</DialogTitle>
         <DialogDescription>
-          Add a new segregated escrow account for a country/currency pair.
+          {t("escrowAccounts.createEscrowDescription")}
         </DialogDescription>
       </DialogHeader>
       <div className="space-y-4 pt-2">
         <div className="space-y-2">
-          <Label htmlFor="label">Label</Label>
+          <Label htmlFor="label">{t("escrowAccounts.label")}</Label>
           <Input
             id="label"
-            placeholder="e.g. UK GBP Primary"
+            placeholder={t("escrowAccounts.labelPlaceholder")}
             value={label}
             onChange={(e) => setLabel(e.target.value)}
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="bank">Bank</Label>
+          <Label htmlFor="bank">{t("escrowAccounts.bankLabel")}</Label>
           <Input
             id="bank"
-            placeholder="e.g. Barclays PLC"
+            placeholder={t("escrowAccounts.bankPlaceholder")}
             value={bank}
             onChange={(e) => setBank(e.target.value)}
           />
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label>Country</Label>
+            <Label>{t("escrowAccounts.country")}</Label>
             <Select value={country} onValueChange={setCountry}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="GB">GB — United Kingdom</SelectItem>
-                <SelectItem value="SA">SA — Saudi Arabia</SelectItem>
+                <SelectItem value="GB">
+                  {t("escrowAccounts.countryGB")}
+                </SelectItem>
+                <SelectItem value="SA">
+                  {t("escrowAccounts.countrySA")}
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>Currency</Label>
+            <Label>{t("escrowAccounts.currency")}</Label>
             <Select value={currency} onValueChange={setCurrency}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="GBP">GBP (£)</SelectItem>
-                <SelectItem value="SAR">SAR (﷼)</SelectItem>
+                <SelectItem value="GBP">
+                  {t("escrowAccounts.currencyGBP")}
+                </SelectItem>
+                <SelectItem value="SAR">
+                  {t("escrowAccounts.currencySAR")}
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -328,7 +353,9 @@ function CreateEscrowDialog({ onCreated }: { onCreated: () => void }) {
           onClick={() => createMutation.mutate()}
           disabled={createMutation.isPending || !label.trim() || !bank.trim()}
         >
-          {createMutation.isPending ? "Creating…" : "Create Account"}
+          {createMutation.isPending
+            ? t("escrowAccounts.creatingAccount")
+            : t("escrowAccounts.createAccount")}
         </Button>
       </div>
     </DialogContent>
