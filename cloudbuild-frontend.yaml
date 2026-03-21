@@ -1,0 +1,51 @@
+# Cloud Build — Frontend
+# Triggered on push to main when frontend/ changes
+# Builds Docker image with baked API URL, pushes to AR, deploys to Cloud Run
+
+substitutions:
+  _REGION: me-central1
+  _SERVICE: taysiro-frontend-pilot
+  _REPO: me-central1-docker.pkg.dev/taysiro-dev/taysiro-frontend/frontend
+  _API_URL: https://taysiro-backend-pilot-795382313267.me-central1.run.app/api
+
+steps:
+  # 1 — Build (with API URL baked into the JS bundle)
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --platform=linux/amd64
+      - --build-arg
+      - NEXT_PUBLIC_API_URL=${_API_URL}
+      - -t
+      - ${_REPO}:${SHORT_SHA}
+      - -t
+      - ${_REPO}:latest
+      - -f
+      - frontend/Dockerfile
+      - frontend/
+
+  # 2 — Push
+  - name: gcr.io/cloud-builders/docker
+    args: ['push', '--all-tags', '${_REPO}']
+
+  # 3 — Deploy to Cloud Run
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --image=${_REPO}:${SHORT_SHA}
+      - --region=${_REGION}
+      - --platform=managed
+      - --quiet
+
+images:
+  - ${_REPO}:${SHORT_SHA}
+  - ${_REPO}:latest
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
+
+timeout: 1200s

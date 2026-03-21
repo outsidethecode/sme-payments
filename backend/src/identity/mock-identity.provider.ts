@@ -9,29 +9,37 @@ import {
  * Mock identity provider for development and testing.
  * Auto-verifies all national IDs except those starting with "FAIL".
  * Simulates the Nafath two-step flow (initiate → poll status).
+ *
+ * State is encoded in the transaction ID itself (base64url) so it
+ * survives Cloud Run cold-starts and multi-instance routing without
+ * needing Redis or any external storage.
  */
 @Injectable()
 export class MockIdentityProvider implements IdentityProvider {
   private readonly logger = new Logger(MockIdentityProvider.name);
 
-  /** In-memory store for pending verifications */
-  private pending = new Map<
-    string,
-    { nationalId: string; initiatedAt: number }
-  >();
+  private encode(data: { nationalId: string; initiatedAt: number }): string {
+    return Buffer.from(JSON.stringify(data)).toString("base64url");
+  }
+
+  private decode(
+    token: string,
+  ): { nationalId: string; initiatedAt: number } | null {
+    try {
+      return JSON.parse(Buffer.from(token, "base64url").toString());
+    } catch {
+      return null;
+    }
+  }
 
   async initiate(nationalId: string): Promise<IdentityInitiateResult> {
     this.logger.log(
       `[MOCK] Initiating identity verification for ${this.mask(nationalId)}`,
     );
 
-    const transactionId = `mock-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const payload = this.encode({ nationalId, initiatedAt: Date.now() });
+    const transactionId = `mock-${payload}`;
     const random = String(Math.floor(10 + Math.random() * 89)); // 2-digit number
-
-    this.pending.set(transactionId, {
-      nationalId,
-      initiatedAt: Date.now(),
-    });
 
     return {
       transactionId,
@@ -43,7 +51,8 @@ export class MockIdentityProvider implements IdentityProvider {
   async checkStatus(
     transactionId: string,
   ): Promise<IdentityVerificationResult> {
-    const entry = this.pending.get(transactionId);
+    const token = transactionId.replace(/^mock-/, "");
+    const entry = this.decode(token);
 
     if (!entry) {
       return {
@@ -63,9 +72,6 @@ export class MockIdentityProvider implements IdentityProvider {
         errorMessage: "WAITING — user has not confirmed yet",
       };
     }
-
-    // Clean up
-    this.pending.delete(transactionId);
 
     // Reject if national ID starts with "FAIL"
     if (entry.nationalId.startsWith("FAIL")) {

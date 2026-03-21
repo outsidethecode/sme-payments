@@ -1,0 +1,55 @@
+# Cloud Build — Backend
+# Triggered on push to main when backend/ changes
+# Builds Docker image, pushes to Artifact Registry, deploys to Cloud Run
+
+substitutions:
+  _REGION: me-central1
+  _SERVICE: taysiro-backend-pilot
+  _REPO: me-central1-docker.pkg.dev/taysiro-dev/taysiro-backend/backend
+  _SA: taysiro-backend-pilot@taysiro-dev.iam.gserviceaccount.com
+
+steps:
+  # 1 — Build
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --platform=linux/amd64
+      - -t
+      - ${_REPO}:${SHORT_SHA}
+      - -t
+      - ${_REPO}:latest
+      - -f
+      - backend/Dockerfile
+      - backend/
+
+  # 2 — Push
+  - name: gcr.io/cloud-builders/docker
+    args: ['push', '--all-tags', '${_REPO}']
+
+  # 3 — Run Prisma migrations (via Cloud Run job or direct)
+  # Migrations are applied automatically on Cloud Run start if using
+  # prisma migrate deploy in an entrypoint script, or can be run here.
+  # For now we skip — migrations are applied manually when schema changes.
+
+  # 4 — Deploy to Cloud Run
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --image=${_REPO}:${SHORT_SHA}
+      - --region=${_REGION}
+      - --service-account=${_SA}
+      - --platform=managed
+      - --quiet
+
+images:
+  - ${_REPO}:${SHORT_SHA}
+  - ${_REPO}:latest
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
+
+timeout: 1200s

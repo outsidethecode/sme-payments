@@ -30,7 +30,13 @@ async function seedUserWithOrg(opts: {
 }) {
   const user = await prisma.user.upsert({
     where: { email: opts.email },
-    update: {},
+    update: {
+      // Re-running the seed also marks identity as verified
+      identityProvider: "MOCK",
+      identityVerifiedAt: new Date(),
+      identityVerifiedName: opts.name,
+      identityData: { mockVerification: true, seeded: true },
+    },
     create: {
       email: opts.email,
       password: opts.password,
@@ -39,6 +45,10 @@ async function seedUserWithOrg(opts: {
       companyName: opts.companyName,
       companyNumber: opts.companyNumber,
       balance: opts.balance,
+      identityProvider: "MOCK",
+      identityVerifiedAt: new Date(),
+      identityVerifiedName: opts.name,
+      identityData: { mockVerification: true, seeded: true },
     },
   });
 
