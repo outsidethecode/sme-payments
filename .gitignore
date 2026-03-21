@@ -8,3 +8,9 @@ dist/
 .DS_Store
 coverage/
 .turbo/
+
+# Terraform secrets & state
+*.secret.tfvars
+.terraform/
+*.tfstate*
+tfplan

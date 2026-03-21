@@ -1,6 +1,6 @@
-# ─── Deploy Pipeline ───────────────────────────────────────────
-# Builds Docker images, pushes to ECR, deploys to ECS
-# Triggered on push to main branch
+# ─── Deploy Pipeline (GCP Cloud Run) ──────────────────────────
+# Builds Docker images, pushes to Artifact Registry, deploys to Cloud Run
+# Uses Workload Identity Federation (no service account keys)
 name: Deploy
 
 on:
@@ -12,11 +12,13 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  AWS_REGION: me-south-1
-  ECS_CLUSTER: sme-payments-pilot
+  GCP_REGION: me-central1
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  PROJECT_PREFIX: taysiro
+  ENVIRONMENT: pilot
 
 permissions:
-  id-token: write # Required for OIDC
+  id-token: write # Required for Workload Identity Federation
   contents: read
 
 jobs:
@@ -50,127 +52,108 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Authenticate to GCP
+        id: auth
+        uses: google-github-actions/auth@v2
         with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
-      - name: Login to ECR
-        id: ecr
-        uses: aws-actions/amazon-ecr-login@v2
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev --quiet
 
       - name: Build and push backend image
         env:
-          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
+          REPO: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.PROJECT_PREFIX }}-backend
         run: |
-          docker build -t $ECR_REGISTRY/sme-payments-backend:$IMAGE_TAG ./backend
-          docker tag $ECR_REGISTRY/sme-payments-backend:$IMAGE_TAG $ECR_REGISTRY/sme-payments-backend:latest
-          docker push $ECR_REGISTRY/sme-payments-backend:$IMAGE_TAG
-          docker push $ECR_REGISTRY/sme-payments-backend:latest
+          docker build \
+            -t $REPO/backend:$IMAGE_TAG \
+            -t $REPO/backend:latest \
+            ./backend
+          docker push $REPO/backend:$IMAGE_TAG
+          docker push $REPO/backend:latest
 
-      - name: Run Prisma migrations
+      - name: Deploy to Cloud Run
         env:
-          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
+          REPO: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.PROJECT_PREFIX }}-backend
+          SERVICE: ${{ env.PROJECT_PREFIX }}-backend-${{ env.ENVIRONMENT }}
         run: |
-          # Run migrations as a one-off ECS task
-          TASK_DEF=$(aws ecs describe-services \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --services sme-payments-pilot-backend \
-            --query 'services[0].taskDefinition' \
-            --output text)
-
-          NETWORK_CONFIG=$(aws ecs describe-services \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --services sme-payments-pilot-backend \
-            --query 'services[0].networkConfiguration' \
-            --output json)
-
-          aws ecs run-task \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --task-definition $TASK_DEF \
-            --launch-type FARGATE \
-            --network-configuration "$NETWORK_CONFIG" \
-            --overrides '{
-              "containerOverrides": [{
-                "name": "backend",
-                "command": ["npx", "prisma", "migrate", "deploy"]
-              }]
-            }' \
-            --started-by "github-actions-migrate"
-
-          # Wait for migration task to complete
-          echo "Waiting for migration to complete..."
-          sleep 30
-
-      - name: Deploy to ECS
-        run: |
-          aws ecs update-service \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --service sme-payments-pilot-backend \
-            --force-new-deployment
+          gcloud run services update $SERVICE \
+            --image $REPO/backend:$IMAGE_TAG \
+            --region ${{ env.GCP_REGION }} \
+            --quiet
 
           echo "Waiting for deployment to stabilize..."
-          aws ecs wait services-stable \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --services sme-payments-pilot-backend
+          gcloud run services describe $SERVICE \
+            --region ${{ env.GCP_REGION }} \
+            --format="value(status.url)"
 
           echo "✅ Backend deployed successfully"
 
   # ── Deploy Frontend ───────────────────────────────────────────
   deploy-frontend:
     name: Deploy Frontend
-    needs: changes
-    if: needs.changes.outputs.frontend == 'true'
+    needs: [changes, deploy-backend]
+    if: always() && needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Authenticate to GCP
+        id: auth
+        uses: google-github-actions/auth@v2
         with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
-      - name: Login to ECR
-        id: ecr
-        uses: aws-actions/amazon-ecr-login@v2
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
 
-      - name: Get ALB URL
-        id: alb
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev --quiet
+
+      - name: Get Backend URL
+        id: backend
+        env:
+          SERVICE: ${{ env.PROJECT_PREFIX }}-backend-${{ env.ENVIRONMENT }}
         run: |
-          ALB_DNS=$(aws elbv2 describe-load-balancers \
-            --names sme-payments-pilot-alb \
-            --query 'LoadBalancers[0].DNSName' \
-            --output text 2>/dev/null || echo "localhost")
-          echo "api_url=http://$ALB_DNS/api" >> $GITHUB_OUTPUT
+          BACKEND_URL=$(gcloud run services describe $SERVICE \
+            --region ${{ env.GCP_REGION }} \
+            --format="value(status.url)" 2>/dev/null || echo "https://placeholder.run.app")
+          echo "url=$BACKEND_URL" >> $GITHUB_OUTPUT
 
       - name: Build and push frontend image
         env:
-          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
+          REPO: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.PROJECT_PREFIX }}-frontend
         run: |
           docker build \
-            --build-arg NEXT_PUBLIC_API_URL=${{ steps.alb.outputs.api_url }} \
-            -t $ECR_REGISTRY/sme-payments-frontend:$IMAGE_TAG \
+            --build-arg NEXT_PUBLIC_API_URL=${{ steps.backend.outputs.url }} \
+            -t $REPO/frontend:$IMAGE_TAG \
+            -t $REPO/frontend:latest \
             ./frontend
-          docker tag $ECR_REGISTRY/sme-payments-frontend:$IMAGE_TAG $ECR_REGISTRY/sme-payments-frontend:latest
-          docker push $ECR_REGISTRY/sme-payments-frontend:$IMAGE_TAG
-          docker push $ECR_REGISTRY/sme-payments-frontend:latest
+          docker push $REPO/frontend:$IMAGE_TAG
+          docker push $REPO/frontend:latest
 
-      - name: Deploy to ECS
+      - name: Deploy to Cloud Run
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          REPO: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.PROJECT_PREFIX }}-frontend
+          SERVICE: ${{ env.PROJECT_PREFIX }}-frontend-${{ env.ENVIRONMENT }}
         run: |
-          aws ecs update-service \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --service sme-payments-pilot-frontend \
-            --force-new-deployment
+          gcloud run services update $SERVICE \
+            --image $REPO/frontend:$IMAGE_TAG \
+            --region ${{ env.GCP_REGION }} \
+            --quiet
 
-          echo "Waiting for deployment to stabilize..."
-          aws ecs wait services-stable \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --services sme-payments-pilot-frontend
+          FRONTEND_URL=$(gcloud run services describe $SERVICE \
+            --region ${{ env.GCP_REGION }} \
+            --format="value(status.url)")
 
-          echo "✅ Frontend deployed successfully"
+          echo "✅ Frontend deployed: $FRONTEND_URL"

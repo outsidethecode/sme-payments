@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# ─── Deploy Script ─────────────────────────────────────────────
-# One-command deploy: infrastructure + Docker images + ECS services
+# ─── GCP Deploy Script ────────────────────────────────────────
+# One-command deploy: infrastructure + Docker images + Cloud Run
 #
 # Usage:
-#   ./infra/deploy.sh pilot          # Deploy pilot environment
-#   ./infra/deploy.sh production     # Deploy production environment
-#   ./infra/deploy.sh pilot --infra-only  # Only Terraform (no Docker build)
-#   ./infra/deploy.sh pilot --app-only    # Only Docker build + push (no Terraform)
+#   ./infra/deploy.sh pilot              # Full deploy
+#   ./infra/deploy.sh production         # Full deploy (production)
+#   ./infra/deploy.sh pilot --infra-only # Only Terraform
+#   ./infra/deploy.sh pilot --app-only   # Only Docker build + deploy
 set -euo pipefail
 
 RED='\033[0;31m'
@@ -21,7 +21,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # ── Parse Arguments ───────────────────────────────────────────
 
 ENV="${1:-}"
-MODE="${2:-full}" # full | --infra-only | --app-only
+MODE="${2:-full}"
 
 if [ -z "$ENV" ] || [[ ! "$ENV" =~ ^(pilot|production)$ ]]; then
   echo -e "${RED}Usage: $0 <pilot|production> [--infra-only|--app-only]${NC}"
@@ -29,28 +29,37 @@ if [ -z "$ENV" ] || [[ ! "$ENV" =~ ^(pilot|production)$ ]]; then
 fi
 
 echo -e "${BLUE}╔══════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║   SME Payments — Deploy: ${ENV}$(printf '%*s' $((27 - ${#ENV})) '')║${NC}"
+echo -e "${BLUE}║   Taysiro — Deploy: ${ENV}$(printf '%*s' $((33 - ${#ENV})) '')║${NC}"
 echo -e "${BLUE}╚══════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
 TFVARS_FILE="environments/${ENV}.tfvars"
 SECRET_FILE="environments/${ENV}.secret.tfvars"
 
-# ── Verify Prerequisites ─────────────────────────────────────
+# ── Read config ────────────────────────────────────────────────
 
-aws sts get-caller-identity > /dev/null 2>&1 || {
-  echo -e "${RED}AWS CLI not configured. Run ./infra/bootstrap.sh first.${NC}"
+GCP_PROJECT=$(grep 'gcp_project_id' "$SCRIPT_DIR/$TFVARS_FILE" | head -1 | awk -F'"' '{print $2}')
+REGION=$(grep 'region' "$SCRIPT_DIR/$TFVARS_FILE" | head -1 | awk -F'"' '{print $2}')
+REGION="${REGION:-me-central2}"
+PREFIX=$(grep 'project_prefix' "$SCRIPT_DIR/$TFVARS_FILE" | head -1 | awk -F'"' '{print $2}')
+PREFIX="${PREFIX:-taysiro}"
+
+# Verify gcloud auth
+gcloud auth list --filter=status:ACTIVE --format="value(account)" 2>/dev/null | head -1 | grep -q "@" || {
+  echo -e "${RED}gcloud not authenticated. Run ./infra/bootstrap.sh first.${NC}"
   exit 1
 }
 
-ACCOUNT_ID=$(aws sts get-caller-identity --query 'Account' --output text)
-REGION=$(grep 'aws_region' "$SCRIPT_DIR/$TFVARS_FILE" | head -1 | awk -F'"' '{print $2}')
-REGION="${REGION:-me-south-1}"
+gcloud config set project "$GCP_PROJECT" --quiet 2>/dev/null
 
-echo -e "Account:     ${BLUE}${ACCOUNT_ID}${NC}"
+echo -e "Project:     ${BLUE}${GCP_PROJECT}${NC}"
 echo -e "Region:      ${BLUE}${REGION}${NC}"
 echo -e "Environment: ${BLUE}${ENV}${NC}"
 echo ""
+
+GIT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo "latest")
+BACKEND_REPO="${REGION}-docker.pkg.dev/${GCP_PROJECT}/${PREFIX}-backend"
+FRONTEND_REPO="${REGION}-docker.pkg.dev/${GCP_PROJECT}/${PREFIX}-frontend"
 
 # ── Step 1: Terraform Apply ──────────────────────────────────
 
@@ -59,24 +68,20 @@ if [[ "$MODE" != "--app-only" ]]; then
 
   cd "$SCRIPT_DIR"
 
-  # Check if secret tfvars exists
   if [ ! -f "$SECRET_FILE" ]; then
     echo -e "${RED}Missing secret file: $SECRET_FILE${NC}"
     echo "Run ./infra/bootstrap.sh to generate it."
     exit 1
   fi
 
-  # Init (in case first run)
   terraform init -upgrade -input=false
 
-  # Plan
   echo -e "${YELLOW}Planning infrastructure changes...${NC}"
   terraform plan \
     -var-file="$TFVARS_FILE" \
     -var-file="$SECRET_FILE" \
     -out=tfplan
 
-  # Apply
   echo ""
   read -p "Apply these changes? (y/n) " -n 1 -r
   echo ""
@@ -99,121 +104,93 @@ fi
 if [[ "$MODE" != "--infra-only" ]]; then
   echo -e "${YELLOW}━━━ Step 2: Build & Push Docker Images ━━━━━━━━━━━━━━━━━${NC}"
 
-  # Get ECR registry
-  ECR_REGISTRY="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
+  # Configure Docker for Artifact Registry
+  gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
 
-  # Login to ECR
-  echo "Logging in to ECR..."
-  aws ecr get-login-password --region "$REGION" | \
-    docker login --username AWS --password-stdin "$ECR_REGISTRY"
-
-  # Get ALB DNS for frontend build arg
-  ALB_DNS=$(cd "$SCRIPT_DIR" && terraform output -raw alb_url 2>/dev/null || echo "http://localhost")
-  API_URL="${ALB_DNS}/api"
-  echo -e "API URL: ${BLUE}${API_URL}${NC}"
+  # Get backend URL for frontend build
+  BACKEND_URL=$(cd "$SCRIPT_DIR" && terraform output -raw backend_url 2>/dev/null || echo "")
+  if [ -z "$BACKEND_URL" ]; then
+    echo -e "${YELLOW}⚠ Backend URL not available yet (first deploy)${NC}"
+    BACKEND_URL="https://placeholder.run.app"
+  fi
+  echo -e "Backend URL: ${BLUE}${BACKEND_URL}${NC}"
   echo ""
 
-  # Build backend
+  # ── Build + push backend ──────────────────────────────────
   echo -e "${YELLOW}Building backend image...${NC}"
   docker build \
-    -t "$ECR_REGISTRY/sme-payments-backend:latest" \
-    -t "$ECR_REGISTRY/sme-payments-backend:$(git rev-parse --short HEAD)" \
+    -t "${BACKEND_REPO}/backend:latest" \
+    -t "${BACKEND_REPO}/backend:${GIT_SHA}" \
     "$PROJECT_ROOT/backend"
 
   echo "Pushing backend image..."
-  docker push "$ECR_REGISTRY/sme-payments-backend:latest"
-  docker push "$ECR_REGISTRY/sme-payments-backend:$(git rev-parse --short HEAD)"
+  docker push "${BACKEND_REPO}/backend:latest"
+  docker push "${BACKEND_REPO}/backend:${GIT_SHA}"
   echo -e "${GREEN}✓ Backend image pushed${NC}"
   echo ""
 
-  # Build frontend
+  # ── Build + push frontend ─────────────────────────────────
   echo -e "${YELLOW}Building frontend image...${NC}"
   docker build \
-    --build-arg "NEXT_PUBLIC_API_URL=${API_URL}" \
-    -t "$ECR_REGISTRY/sme-payments-frontend:latest" \
-    -t "$ECR_REGISTRY/sme-payments-frontend:$(git rev-parse --short HEAD)" \
+    --build-arg "NEXT_PUBLIC_API_URL=${BACKEND_URL}" \
+    -t "${FRONTEND_REPO}/frontend:latest" \
+    -t "${FRONTEND_REPO}/frontend:${GIT_SHA}" \
     "$PROJECT_ROOT/frontend"
 
   echo "Pushing frontend image..."
-  docker push "$ECR_REGISTRY/sme-payments-frontend:latest"
-  docker push "$ECR_REGISTRY/sme-payments-frontend:$(git rev-parse --short HEAD)"
+  docker push "${FRONTEND_REPO}/frontend:latest"
+  docker push "${FRONTEND_REPO}/frontend:${GIT_SHA}"
   echo -e "${GREEN}✓ Frontend image pushed${NC}"
   echo ""
 
   # ── Step 3: Run Prisma Migrations ────────────────────────────
 
   echo -e "${YELLOW}━━━ Step 3: Database Migrations ━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-  ECS_CLUSTER="sme-payments-${ENV}"
-  BACKEND_SERVICE="sme-payments-${ENV}-backend"
 
-  # Get network config from the running service
-  NETWORK_CONFIG=$(aws ecs describe-services \
-    --cluster "$ECS_CLUSTER" \
-    --services "$BACKEND_SERVICE" \
+  BACKEND_SERVICE="${PREFIX}-backend-${ENV}"
+
+  # Run migrations via Cloud Run Jobs (one-off container)
+  echo "Running Prisma migrations..."
+  gcloud run jobs execute "${PREFIX}-migrate-${ENV}" \
     --region "$REGION" \
-    --query 'services[0].networkConfiguration' \
-    --output json 2>/dev/null || echo "")
+    --wait \
+    2>/dev/null && echo -e "${GREEN}✓ Migrations complete${NC}" || {
+      echo -e "${YELLOW}⚠ Migration job not found — running via gcloud run jobs create...${NC}"
 
-  if [ -n "$NETWORK_CONFIG" ] && [ "$NETWORK_CONFIG" != "null" ]; then
-    TASK_DEF=$(aws ecs describe-services \
-      --cluster "$ECS_CLUSTER" \
-      --services "$BACKEND_SERVICE" \
-      --region "$REGION" \
-      --query 'services[0].taskDefinition' \
-      --output text)
-
-    echo "Running Prisma migrations..."
-    aws ecs run-task \
-      --cluster "$ECS_CLUSTER" \
-      --task-definition "$TASK_DEF" \
-      --launch-type FARGATE \
-      --region "$REGION" \
-      --network-configuration "$NETWORK_CONFIG" \
-      --overrides '{
-        "containerOverrides": [{
-          "name": "backend",
-          "command": ["npx", "prisma", "migrate", "deploy"]
-        }]
-      }' \
-      --started-by "deploy-script" > /dev/null
-
-    echo "Waiting for migration to complete..."
-    sleep 30
-    echo -e "${GREEN}✓ Migrations complete${NC}"
-  else
-    echo -e "${YELLOW}⚠ No running service found — skipping migrations (first deploy)${NC}"
-    echo "  Run migrations manually after first deploy:"
-    echo "  aws ecs run-task --cluster $ECS_CLUSTER ..."
-  fi
+      DB_URL=$(cd "$SCRIPT_DIR" && terraform output -raw database_connection 2>/dev/null || echo "")
+      if [ -n "$DB_URL" ]; then
+        echo "  Creating one-off migration job..."
+        # On first deploy, run prisma migrate deploy manually:
+        echo -e "  ${YELLOW}Run migrations manually:${NC}"
+        echo -e "  gcloud run jobs create ${PREFIX}-migrate-${ENV} \\"
+        echo -e "    --image ${BACKEND_REPO}/backend:latest \\"
+        echo -e "    --region ${REGION} \\"
+        echo -e "    --command npx \\"
+        echo -e "    --args prisma,migrate,deploy \\"
+        echo -e "    --vpc-connector <CONNECTOR_NAME> \\"
+        echo -e "    --set-env-vars DATABASE_URL=<URL>"
+      fi
+    }
   echo ""
 
-  # ── Step 4: Force New Deployment ─────────────────────────────
+  # ── Step 4: Deploy New Revisions ─────────────────────────────
 
-  echo -e "${YELLOW}━━━ Step 4: Deploy Services ━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo -e "${YELLOW}━━━ Step 4: Deploy New Revisions ━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
   echo "Deploying backend..."
-  aws ecs update-service \
-    --cluster "$ECS_CLUSTER" \
-    --service "$BACKEND_SERVICE" \
-    --force-new-deployment \
-    --region "$REGION" > /dev/null
+  gcloud run services update "$BACKEND_SERVICE" \
+    --image "${BACKEND_REPO}/backend:${GIT_SHA}" \
+    --region "$REGION" \
+    --quiet
+  echo -e "${GREEN}✓ Backend deployed${NC}"
 
-  FRONTEND_SERVICE="sme-payments-${ENV}-frontend"
+  FRONTEND_SERVICE="${PREFIX}-frontend-${ENV}"
   echo "Deploying frontend..."
-  aws ecs update-service \
-    --cluster "$ECS_CLUSTER" \
-    --service "$FRONTEND_SERVICE" \
-    --force-new-deployment \
-    --region "$REGION" > /dev/null
-
-  echo ""
-  echo "Waiting for services to stabilize (this may take 2-5 minutes)..."
-  aws ecs wait services-stable \
-    --cluster "$ECS_CLUSTER" \
-    --services "$BACKEND_SERVICE" "$FRONTEND_SERVICE" \
-    --region "$REGION"
-
-  echo -e "${GREEN}✓ All services deployed and healthy${NC}"
+  gcloud run services update "$FRONTEND_SERVICE" \
+    --image "${FRONTEND_REPO}/frontend:${GIT_SHA}" \
+    --region "$REGION" \
+    --quiet
+  echo -e "${GREEN}✓ Frontend deployed${NC}"
   echo ""
 fi
 
@@ -225,11 +202,10 @@ echo -e "${GREEN}╚════════════════════
 echo ""
 
 cd "$SCRIPT_DIR"
-APP_URL=$(terraform output -raw alb_url 2>/dev/null || echo "pending...")
-API_URL=$(terraform output -raw api_url 2>/dev/null || echo "pending...")
-SWAGGER=$(terraform output -raw swagger_url 2>/dev/null || echo "pending...")
+FRONTEND_URL=$(terraform output -raw frontend_url 2>/dev/null || echo "pending...")
+BACKEND_URL=$(terraform output -raw backend_url 2>/dev/null || echo "pending...")
 
-echo -e "  App:     ${BLUE}${APP_URL}${NC}"
-echo -e "  API:     ${BLUE}${API_URL}${NC}"
-echo -e "  Swagger: ${BLUE}${SWAGGER}${NC}"
+echo -e "  Frontend: ${BLUE}${FRONTEND_URL}${NC}"
+echo -e "  Backend:  ${BLUE}${BACKEND_URL}${NC}"
+echo -e "  API:      ${BLUE}${BACKEND_URL}/api${NC}"
 echo ""

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# ─── Bootstrap Script ──────────────────────────────────────────
+# ─── GCP Bootstrap Script ─────────────────────────────────────
 # Run this ONCE before your first terraform apply.
-# It verifies prerequisites and helps you configure AWS CLI.
+# Verifies prerequisites, sets up gcloud, generates secrets.
 #
 # Usage: ./infra/bootstrap.sh
 set -euo pipefail
@@ -10,10 +10,10 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 echo -e "${BLUE}╔══════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║   SME Payments — AWS Bootstrap                         ║${NC}"
+echo -e "${BLUE}║   Taysiro — GCP Bootstrap                              ║${NC}"
 echo -e "${BLUE}╚══════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -32,7 +32,7 @@ check_command() {
 echo -e "${YELLOW}Checking prerequisites...${NC}"
 MISSING=0
 
-check_command "aws" || MISSING=1
+check_command "gcloud" || MISSING=1
 check_command "terraform" || MISSING=1
 check_command "docker" || MISSING=1
 check_command "node" || MISSING=1
@@ -42,71 +42,77 @@ echo ""
 if [ "$MISSING" -eq 1 ]; then
   echo -e "${RED}Missing prerequisites. Install them first:${NC}"
   echo ""
-  echo "  brew install awscli        # AWS CLI"
-  echo "  brew install terraform     # Terraform"
-  echo "  brew install --cask docker # Docker Desktop"
-  echo "  brew install node          # Node.js (if not installed)"
+  echo "  brew install --cask google-cloud-sdk  # gcloud CLI"
+  echo "  brew install terraform                # Terraform"
+  echo "  brew install --cask docker            # Docker Desktop"
+  echo "  brew install node                     # Node.js"
   echo ""
   exit 1
 fi
 
-# ── Check AWS CLI Configuration ────────────────────────────────
+# ── Check gcloud Configuration ─────────────────────────────────
 
-echo -e "${YELLOW}Checking AWS CLI configuration...${NC}"
-if aws sts get-caller-identity &> /dev/null; then
-  ACCOUNT_ID=$(aws sts get-caller-identity --query 'Account' --output text)
-  USER_ARN=$(aws sts get-caller-identity --query 'Arn' --output text)
-  echo -e "  ${GREEN}✓${NC} AWS CLI configured"
-  echo -e "  Account: ${BLUE}${ACCOUNT_ID}${NC}"
-  echo -e "  User:    ${BLUE}${USER_ARN}${NC}"
+echo -e "${YELLOW}Checking gcloud CLI configuration...${NC}"
+if gcloud auth list --filter=status:ACTIVE --format="value(account)" 2>/dev/null | head -1 | grep -q "@"; then
+  ACCOUNT=$(gcloud auth list --filter=status:ACTIVE --format="value(account)" 2>/dev/null | head -1)
+  PROJECT=$(gcloud config get-value project 2>/dev/null || echo "")
+  echo -e "  ${GREEN}✓${NC} gcloud authenticated"
+  echo -e "  Account: ${BLUE}${ACCOUNT}${NC}"
+  echo -e "  Project: ${BLUE}${PROJECT:-not set}${NC}"
 else
-  echo -e "  ${RED}✗${NC} AWS CLI not configured"
+  echo -e "  ${RED}✗${NC} gcloud not authenticated"
   echo ""
-  echo -e "${YELLOW}Let's set it up. You'll need:${NC}"
-  echo "  1. AWS Access Key ID"
-  echo "  2. AWS Secret Access Key"
-  echo "  3. Region: me-south-1 (Bahrain)"
+  echo -e "${YELLOW}Let's set it up:${NC}"
   echo ""
-  echo "To get access keys:"
-  echo "  → AWS Console → IAM → Users → Your User → Security Credentials → Create Access Key"
-  echo ""
-  read -p "Run 'aws configure' now? (y/n) " -n 1 -r
+  read -p "Run 'gcloud auth login' now? (y/n) " -n 1 -r
   echo ""
   if [[ $REPLY =~ ^[Yy]$ ]]; then
-    aws configure
+    gcloud auth login
+    gcloud auth application-default login
     echo ""
-    if aws sts get-caller-identity &> /dev/null; then
-      ACCOUNT_ID=$(aws sts get-caller-identity --query 'Account' --output text)
-      echo -e "  ${GREEN}✓${NC} AWS CLI configured successfully (Account: ${ACCOUNT_ID})"
-    else
-      echo -e "  ${RED}✗${NC} Configuration failed. Please check your credentials."
-      exit 1
-    fi
   else
-    echo "Run 'aws configure' manually, then re-run this script."
+    echo "Run 'gcloud auth login' manually, then re-run this script."
     exit 1
   fi
 fi
+
+# ── Set / Verify Project ───────────────────────────────────────
+
+PROJECT=$(gcloud config get-value project 2>/dev/null || echo "")
+if [ -z "$PROJECT" ]; then
+  echo ""
+  echo -e "${YELLOW}No GCP project selected. Available projects:${NC}"
+  gcloud projects list --format="table(projectId,name)"
+  echo ""
+  read -p "Enter your GCP Project ID: " PROJECT
+  gcloud config set project "$PROJECT"
+fi
+
+echo -e "  ${GREEN}✓${NC} Using project: ${BLUE}${PROJECT}${NC}"
 echo ""
 
-# ── Check Bahrain Region Opt-In ────────────────────────────────
+# ── Enable Required APIs ──────────────────────────────────────
 
-echo -e "${YELLOW}Checking me-south-1 (Bahrain) region access...${NC}"
-if aws ec2 describe-availability-zones --region me-south-1 &> /dev/null; then
-  echo -e "  ${GREEN}✓${NC} me-south-1 region is enabled"
-else
-  echo -e "  ${RED}✗${NC} me-south-1 region is NOT enabled"
-  echo ""
-  echo "  The Bahrain region must be opted-in manually:"
-  echo "  → AWS Console → Account Settings → Regions → me-south-1 → Enable"
-  echo "  (Takes a few minutes to activate)"
-  echo ""
-  read -p "Continue with a different region? (y/n) " -n 1 -r
-  echo ""
-  if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    exit 1
-  fi
-fi
+echo -e "${YELLOW}Enabling required GCP APIs (this may take a minute)...${NC}"
+
+APIS=(
+  "run.googleapis.com"
+  "sqladmin.googleapis.com"
+  "redis.googleapis.com"
+  "secretmanager.googleapis.com"
+  "artifactregistry.googleapis.com"
+  "vpcaccess.googleapis.com"
+  "servicenetworking.googleapis.com"
+  "compute.googleapis.com"
+  "monitoring.googleapis.com"
+  "cloudresourcemanager.googleapis.com"
+)
+
+for api in "${APIS[@]}"; do
+  gcloud services enable "$api" --quiet 2>/dev/null && \
+    echo -e "  ${GREEN}✓${NC} $api" || \
+    echo -e "  ${YELLOW}⚠${NC} $api (may already be enabled)"
+done
 echo ""
 
 # ── Generate Secrets ───────────────────────────────────────────
@@ -118,19 +124,14 @@ if [ -f "$SECRET_FILE" ]; then
 else
   echo -e "${YELLOW}Generating secrets file...${NC}"
 
-  # Generate random JWT secret
   JWT_SECRET=$(openssl rand -hex 32)
 
-  # Generate ECDSA P-256 key pair for platform signing
   TEMP_KEY=$(mktemp)
   openssl ecparam -genkey -name prime256v1 -noout -out "$TEMP_KEY" 2>/dev/null
   PLATFORM_KEY=$(openssl pkcs8 -topk8 -nocrypt -in "$TEMP_KEY" -outform DER | base64)
   rm -f "$TEMP_KEY"
 
-  # Generate random DB password
   DB_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=')
-
-  # Generate webhook secret
   WEBHOOK_SECRET=$(openssl rand -hex 16)
 
   cat > "$SECRET_FILE" << EOF
@@ -149,16 +150,47 @@ EOF
 fi
 echo ""
 
+# ── Update pilot.tfvars with project ID ───────────────────────
+
+PILOT_FILE="infra/environments/pilot.tfvars"
+if grep -q "REPLACE_WITH_YOUR_PROJECT_ID" "$PILOT_FILE" 2>/dev/null; then
+  sed -i '' "s/REPLACE_WITH_YOUR_PROJECT_ID/${PROJECT}/" "$PILOT_FILE"
+  echo -e "  ${GREEN}✓${NC} Updated pilot.tfvars with project ID: ${PROJECT}"
+fi
+
 # ── Add to .gitignore ──────────────────────────────────────────
 
 if ! grep -q "*.secret.tfvars" .gitignore 2>/dev/null; then
   echo "" >> .gitignore
-  echo "# Terraform secrets" >> .gitignore
+  echo "# Terraform secrets & state" >> .gitignore
   echo "*.secret.tfvars" >> .gitignore
   echo ".terraform/" >> .gitignore
   echo "*.tfstate*" >> .gitignore
+  echo "tfplan" >> .gitignore
   echo -e "  ${GREEN}✓${NC} Added Terraform patterns to .gitignore"
 fi
+
+# ── Configure Docker for Artifact Registry ─────────────────────
+
+echo -e "${YELLOW}Configuring Docker for Artifact Registry...${NC}"
+gcloud auth configure-docker me-central1-docker.pkg.dev --quiet 2>/dev/null
+  echo -e "  ${GREEN}✓${NC} Docker configured for me-central1-docker.pkg.dev"
+echo ""
+
+# ── Create Terraform State Bucket ──────────────────────────────
+
+STATE_BUCKET="taysiro-tfstate-${PROJECT}"
+echo -e "${YELLOW}Creating Terraform state bucket...${NC}"
+if gsutil ls "gs://${STATE_BUCKET}" &>/dev/null; then
+  echo -e "  ${GREEN}✓${NC} State bucket already exists: ${STATE_BUCKET}"
+else
+  gsutil mb -l me-central1 "gs://${STATE_BUCKET}" 2>/dev/null && \
+    echo -e "  ${GREEN}✓${NC} Created state bucket: ${STATE_BUCKET}" || \
+    echo -e "  ${YELLOW}⚠${NC} Could not create state bucket (create manually)"
+
+  gsutil versioning set on "gs://${STATE_BUCKET}" 2>/dev/null
+fi
+echo ""
 
 # ── Initialize Terraform ───────────────────────────────────────
 
@@ -174,6 +206,9 @@ echo -e "${GREEN}╔════════════════════
 echo -e "${GREEN}║   Bootstrap complete!                                   ║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
 echo ""
+echo -e "  GCP Project:  ${BLUE}${PROJECT}${NC}"
+echo -e "  Region:       ${BLUE}me-central1 (Doha, Qatar)${NC}"
+echo ""
 echo -e "Next steps:"
 echo ""
 echo -e "  ${BLUE}1.${NC} Review the pilot config:"
@@ -185,6 +220,6 @@ echo ""
 echo -e "  ${BLUE}3.${NC} Deploy everything:"
 echo -e "     ${YELLOW}./infra/deploy.sh pilot${NC}"
 echo ""
-echo -e "  Estimated time: ~10-15 minutes for first deploy"
-echo -e "  Estimated cost: ~\$150-200/month"
+echo -e "  Estimated time: ~8-12 minutes for first deploy"
+echo -e "  Estimated cost: ~\$60-80/month (Cloud Run scales to zero)"
 echo ""

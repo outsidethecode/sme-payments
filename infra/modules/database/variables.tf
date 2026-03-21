@@ -45,12 +45,12 @@ variable "backup_retention_count" {
 
 variable "db_name" {
   type    = string
-  default = "sme_payments"
+  default = "taysiro"
 }
 
 variable "db_username" {
   type    = string
-  default = "sme_user"
+  default = "taysiro_user"
 }
 
 variable "db_password" {

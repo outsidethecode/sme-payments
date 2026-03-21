@@ -1,59 +1,43 @@
-# ─── Pilot Environment ─────────────────────────────────────────
-# Small but reliable (~$150-200/month)
-# Single AZ for most resources, smallest viable instances
+# ─── Pilot Environment (GCP Dammam, KSA) ─────────────────────
+# Small but reliable (~$60-80/month with scale-to-zero)
+# Cloud Run + Cloud SQL + Memorystore in me-central1
 #
 # Deploy: terraform apply -var-file=environments/pilot.tfvars
 
-environment = "pilot"
-aws_region  = "me-south-1" # Bahrain (closest to KSA)
+gcp_project_id = "taysiro-dev"
+environment    = "pilot"
+region         = "me-central1" # Doha, Qatar — nearest to KSA (switch to me-central2 Dammam for prod)
+project_prefix = "taysiro"
 
-# ── Networking ───────────────────────────────────────────────
-az_count          = 2
-nat_gateway_count = 1 # Single NAT to save cost
+# ── Database (Cloud SQL PostgreSQL 15) ───────────────────────
+db_tier              = "db-f1-micro" # Shared-core, ~$8/mo
+db_high_availability = false         # Single zone for pilot
 
-# ── Database ─────────────────────────────────────────────────
-rds_instance_class    = "db.t4g.micro"  # 2 vCPU, 1 GB RAM — ~$15/mo
-rds_allocated_storage = 20              # 20 GB gp3
-rds_multi_az          = false           # Single AZ for pilot
+# ── Cache (Memorystore Redis 7) ──────────────────────────────
+redis_memory_gb         = 1     # 1 GB Basic tier, ~$35/mo
+redis_high_availability = false # No replica for pilot
 
-# ── Cache ────────────────────────────────────────────────────
-redis_node_type    = "cache.t4g.micro" # ~$13/mo
-redis_num_replicas = 0                 # No replicas for pilot
+# ── Backend (Cloud Run — NestJS) ─────────────────────────────
+backend_cpu           = "1"      # 1 vCPU
+backend_memory        = "512Mi"  # 512 MB
+backend_min_instances = 1        # Keep alive for @nestjs/schedule crons
+backend_max_instances = 3
 
-# ── Backend ──────────────────────────────────────────────────
-backend_cpu           = 512   # 0.5 vCPU
-backend_memory        = 1024  # 1 GB
-backend_desired_count = 1
-backend_min_count     = 1
-backend_max_count     = 2
-
-# ── Frontend ─────────────────────────────────────────────────
-frontend_cpu           = 256  # 0.25 vCPU
-frontend_memory        = 512  # 0.5 GB
-frontend_desired_count = 1
-frontend_min_count     = 1
-frontend_max_count     = 2
+# ── Frontend (Cloud Run — Next.js) ───────────────────────────
+frontend_cpu           = "1"      # 1 vCPU
+frontend_memory        = "256Mi"  # 256 MB
+frontend_min_instances = 0        # Scale to zero (saves ~$15/mo)
+frontend_max_instances = 2
 
 # ── Application ──────────────────────────────────────────────
 settlement_rail = "SIMULATED" # No real bank for pilot
-anchor_provider = "noop"      # No Sigstore for pilot
-certificate_arn = ""          # HTTP only (no custom domain)
-
-# ── CI/CD ────────────────────────────────────────────────────
-create_github_oidc = true
-# github_repo      = "your-org/sme-payments"  # Uncomment and set
 
 # ── Notifications ────────────────────────────────────────────
-# alert_email = "your-email@example.com"       # Uncomment and set
+alert_email = "your-email@example.com" # Replace with your email
 
 # ──────────────────────────────────────────────────────────────
-# SECRETS — pass via CLI or terraform.tfvars.secret (gitignored):
-#
-#   terraform apply -var-file=environments/pilot.tfvars \
-#     -var="db_password=YOUR_SECURE_PASSWORD" \
-#     -var="jwt_secret=YOUR_JWT_SECRET" \
-#     -var="platform_signing_key=YOUR_BASE64_KEY" \
-#     -var="bank_webhook_secret=YOUR_WEBHOOK_SECRET"
-#
-# Or create: environments/pilot.secret.tfvars (DO NOT COMMIT)
-# ──────────────────────────────────────────────────────────────
+# SECRETS — pass via environments/pilot.secret.tfvars (gitignored):
+#   db_password
+#   jwt_secret
+#   platform_signing_key
+#   bank_webhook_secret
